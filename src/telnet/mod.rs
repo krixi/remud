@@ -129,12 +129,18 @@ impl Decoder for Codec {
                     WILL | WONT | DO | DONT => {
                         // Negotiations resemble IAC <NEGOTIATION_COMMAND> <OPTION CODE>
                         if src.len() > 2 {
-                            let negotiation = Frame::Negotiate(
-                                Negotiate::try_from(src[1]).expect("valid negotiation command"),
-                                OptionCode::from(src[2]),
-                            );
-                            src.advance(3);
-                            Some(negotiation)
+                            match Negotiate::try_from(src[1]) {
+                                Ok(negotiate) => {
+                                    let negotiation =
+                                        Frame::Negotiate(negotiate, OptionCode::from(src[2]));
+                                    src.advance(3);
+                                    Some(negotiation)
+                                }
+                                Err(_) => {
+                                    tracing::error!("invalid negotiation received: {:?}", src);
+                                    None
+                                }
+                            }
                         } else {
                             None
                         }
@@ -256,6 +262,7 @@ impl Telnet {
                         if let Some(response) = list.checked_add_type(data) {
                             frames.push(response);
                         } else if let Some(best) = list.best() {
+                            tracing::info!("Chosen TType: {:?}", best);
                             if best.mtts {
                                 self.terminal_selection_state =
                                     TerminalSelectionState::Done(Some(best));
@@ -550,7 +557,8 @@ impl TerminalTypes {
         {
             let mut features = TerminalFeatures::empty();
 
-            let mut mtts_flags = self.types.last().unwrap().clone();
+            let name = self.types.last().expect("last TType exists").clone();
+            let mut mtts_flags = name.clone();
             mtts_flags.advance(5);
             if let Ok(flag_string) = std::str::from_utf8(&mtts_flags) {
                 if let Ok(int_flags) = flag_string.parse::<u16>() {
@@ -560,9 +568,8 @@ impl TerminalTypes {
                 }
             }
 
-            tracing::info!("MTTS flags: {:?}", features);
-
             return Some(TerminalType {
+                name,
                 mtts: true,
                 index: self.types.len() - 1,
                 features,
@@ -584,9 +591,8 @@ impl TerminalTypes {
                 features |= TerminalFeatures::TRUE_COLOR
             }
 
-            tracing::info!("XTERM flags: {:?}", features);
-
             return Some(TerminalType {
+                name: self.types[index].clone(),
                 mtts: false,
                 index,
                 features,
@@ -608,9 +614,8 @@ impl TerminalTypes {
                 features |= TerminalFeatures::COLORS_256;
             }
 
-            tracing::info!("VT100 flags: {:?}", features);
-
             return Some(TerminalType {
+                name: self.types[index].clone(),
                 mtts: false,
                 index,
                 features,
@@ -632,9 +637,8 @@ impl TerminalTypes {
                 features |= TerminalFeatures::COLORS_256;
             }
 
-            tracing::info!("ANSI flags: {:?}", features);
-
             return Some(TerminalType {
+                name: self.types[index].clone(),
                 mtts: false,
                 index,
                 features,
@@ -645,8 +649,9 @@ impl TerminalTypes {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct TerminalType {
+    pub name: Bytes,
     pub mtts: bool,
     pub index: usize,
     pub features: TerminalFeatures,
