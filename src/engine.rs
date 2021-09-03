@@ -8,7 +8,7 @@ use tokio::{
 
 #[derive(Debug)]
 pub enum ClientMessage {
-    Connect(usize, mpsc::UnboundedSender<EngineMessage>),
+    Connect(usize, mpsc::Sender<EngineMessage>),
     Disconnect(usize),
     Ready(usize),
     Input(usize, Bytes),
@@ -20,15 +20,15 @@ pub enum EngineMessage {
 }
 
 pub struct Engine {
-    rx: mpsc::UnboundedReceiver<ClientMessage>,
-    client_txs: HashMap<usize, mpsc::UnboundedSender<EngineMessage>>,
+    rx: mpsc::Receiver<ClientMessage>,
+    client_txs: HashMap<usize, mpsc::Sender<EngineMessage>>,
     ticker: Interval,
     world: World,
     schedule: Schedule,
 }
 
 impl Engine {
-    pub fn new(rx: mpsc::UnboundedReceiver<ClientMessage>) -> Self {
+    pub fn new(rx: mpsc::Receiver<ClientMessage>) -> Self {
         Engine {
             rx,
             client_txs: HashMap::new(),
@@ -46,14 +46,14 @@ impl Engine {
                 }
                 maybe_message = self.rx.recv() => {
                     if let Some(message) = maybe_message {
-                        self.process(message);
+                        self.process(message).await;
                     }
                 }
             }
         }
     }
 
-    fn process(&mut self, message: ClientMessage) {
+    async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client, client_tx) => {
                 self.client_txs.insert(client, client_tx);
@@ -65,13 +65,9 @@ impl Engine {
             }
             ClientMessage::Ready(client) => {
                 if let Some(tx) = self.client_txs.get(&client) {
-                    match tx.send(EngineMessage::Output(Bytes::from(
-                        "Welcome to the world.\r\n",
-                    ))) {
-                        Err(_) => {
-                            self.client_txs.remove(&client);
-                        }
-                        _ => (),
+                    let message = EngineMessage::Output(Bytes::from("Welcome to the world.\r\n"));
+                    if tx.send(message).await.is_err() {
+                        self.client_txs.remove(&client);
                     }
                 }
                 tracing::info!("Client {} ready", client)
