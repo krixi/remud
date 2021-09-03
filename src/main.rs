@@ -30,7 +30,7 @@ async fn main() {
     let mut client_id = 1;
 
     loop {
-        let (socket, _) = match listener.accept().await {
+        let (socket, addr) = match listener.accept().await {
             Ok(client_info) => client_info,
             Err(_) => return,
         };
@@ -38,6 +38,7 @@ async fn main() {
         let engine_tx = engine_tx.clone();
 
         tokio::spawn(async move {
+            tracing::info!("New client ({}): {:?}", client_id, addr);
             let engine_tx = engine_tx;
             let (client_tx, client_rx) = mpsc::channel(16);
             let message = ClientMessage::Connect(client_id, client_tx);
