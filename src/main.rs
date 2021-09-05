@@ -1,7 +1,8 @@
 mod engine;
 mod telnet;
 
-use bytes::{Buf, Bytes, BytesMut};
+use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
+use bytes::{Buf, Bytes};
 use engine::{ClientMessage, Engine, EngineMessage};
 use futures::{SinkExt, StreamExt};
 use std::collections::VecDeque;
@@ -73,16 +74,22 @@ async fn process(
     }
 
     let mut inputs = VecDeque::new();
-    let mut input_buffer = BytesMut::new();
+    let mut input_buffer = AsciiString::new();
 
     loop {
         tokio::select! {
             maybe_message = rx.recv() => {
                 if let Some(message) = maybe_message {
                     match message {
-                        EngineMessage::Output(bytes) => {
-                            if framed.send(Frame::Data(bytes)).await.is_err() {
-                                break
+                        EngineMessage::Output(message) => {
+                            match message.into_ascii_string() {
+                                Ok(str) => {
+                                    let bytes = Bytes::copy_from_slice(str.as_bytes());
+                                    if framed.send(Frame::Data(bytes)).await.is_err() {
+                                        break
+                                    }
+                                },
+                                Err(e) => tracing::warn!("Engine returned non-ASCII string: \"{}\"", e),
                             }
                         }
                     }
@@ -114,20 +121,21 @@ async fn process(
                                 }
                             }
                             Frame::Data(mut data) => {
-                                while let Some(end) = data
+                                while let Some(end_of_command) = data
                                     .as_ref()
                                     .windows(2)
                                     .position(|b| b[0] == b'\r' && b[1] == b'\n')
                                 {
-                                    input_buffer.extend(data.split_to(end));
+                                    let rest_of_command = data.split_to(end_of_command);
+                                    append_input(rest_of_command, &mut input_buffer);
+                                    inputs.push_back(input_buffer);
+
                                     data.advance(2);
 
-                                    inputs.push_back(input_buffer.freeze());
-
-                                    input_buffer = BytesMut::new();
+                                    input_buffer = AsciiString::new();
                                 }
 
-                                input_buffer.extend(data);
+                                append_input(data, &mut input_buffer);
                             }
                         },
                         Err(e) => {
@@ -139,7 +147,7 @@ async fn process(
                     if ready {
                         // send input and do things
                         for input in inputs.drain(..) {
-                            if tx.send(ClientMessage::Input(client_id, input)).await.is_err() {
+                            if tx.send(ClientMessage::Input(client_id, input.to_string())).await.is_err() {
                                 break
                             }
                         }
@@ -159,6 +167,20 @@ async fn process(
                     // TcpStream closed
                     break
                 }
+            }
+        }
+    }
+}
+
+fn append_input(input: Bytes, buffer: &mut AsciiString) {
+    for byte in input {
+        if let Ok(char) = byte.to_ascii_char() {
+            if char.is_ascii_control() {
+                if matches!(char, ascii::AsciiChar::BackSpace) {
+                    buffer.pop();
+                }
+            } else {
+                buffer.push(char)
             }
         }
     }

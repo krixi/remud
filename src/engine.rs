@@ -1,5 +1,5 @@
 use bevy_ecs::prelude::*;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use std::collections::HashMap;
 use tokio::{
     sync::mpsc,
@@ -11,12 +11,12 @@ pub enum ClientMessage {
     Connect(usize, mpsc::UnboundedSender<EngineMessage>),
     Disconnect(usize),
     Ready(usize),
-    Input(usize, Bytes),
+    Input(usize, String),
 }
 
 #[derive(Debug)]
 pub enum EngineMessage {
-    Output(Bytes),
+    Output(String),
 }
 
 pub struct Client {
@@ -33,18 +33,18 @@ impl Default for Client {
 
 pub enum ClientState {
     LoginUsername,
-    LoginPassword(Bytes),
+    LoginPassword(String),
     InGame(Entity),
 }
 
 pub struct Player {
-    name: Bytes,
+    name: String,
     location: Entity,
     sender: mpsc::UnboundedSender<EngineMessage>,
 }
 
 impl Player {
-    fn new(name: Bytes, location: Entity, sender: mpsc::UnboundedSender<EngineMessage>) -> Self {
+    fn new(name: String, location: Entity, sender: mpsc::UnboundedSender<EngineMessage>) -> Self {
         Player {
             name,
             location,
@@ -61,11 +61,11 @@ pub struct Room {
 pub enum Action {
     Look,
     Smell,
-    Say(Bytes),
+    Say(String),
 }
 
 pub struct WantsToSay {
-    message: Bytes,
+    message: String,
 }
 
 pub struct Engine {
@@ -93,13 +93,10 @@ fn say_system(
 
             if player.location == location {
                 let message = format!(
-                    "{:?} says \"{:?}\"\r\n",
+                    "{} says \"{}\"\r\n",
                     player_saying.name, wants_to_say.message
                 );
-                player
-                    .sender
-                    .send(EngineMessage::Output(Bytes::from(message)))
-                    .ok();
+                player.sender.send(EngineMessage::Output(message)).ok();
             }
         }
 
@@ -193,13 +190,13 @@ impl Engine {
                             }
                         }
                         ClientState::InGame(player_entity) => {
-                            if input.starts_with(b"look") {
+                            if input.starts_with("look") {
                                 self.perform(client, *player_entity, Action::Look).await;
-                            } else if input.starts_with(b"smell") {
+                            } else if input.starts_with("smell") {
                                 self.perform(client, *player_entity, Action::Smell).await;
-                            } else if input.starts_with(b"say ") {
-                                input.advance(4);
-                                self.perform(client, *player_entity, Action::Say(input))
+                            } else if input.starts_with("say ") {
+                                let message = input.split_off(4);
+                                self.perform(client, *player_entity, Action::Say(message))
                                     .await;
                             } else {
                                 self.send(
@@ -208,6 +205,7 @@ impl Engine {
                                 )
                                 .await;
                             }
+                            self.send(client, String::from("> ")).await
                         }
                     }
                 }
@@ -216,9 +214,8 @@ impl Engine {
     }
 
     async fn send(&self, client: usize, string: String) {
-        let bytes = Bytes::from(string);
         if let Some(tx) = self.client_txs.get(&client) {
-            if tx.send(EngineMessage::Output(bytes)).is_err() {
+            if tx.send(EngineMessage::Output(string)).is_err() {
                 return;
             }
         }
