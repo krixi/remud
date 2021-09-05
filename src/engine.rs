@@ -1,5 +1,4 @@
 use bevy_ecs::prelude::*;
-use bytes::Bytes;
 use std::collections::HashMap;
 use tokio::{
     sync::mpsc,
@@ -190,14 +189,15 @@ impl Engine {
                             }
                         }
                         ClientState::InGame(player_entity) => {
+                            let player = *player_entity;
+
                             if input.starts_with("look") {
-                                self.perform(client, *player_entity, Action::Look).await;
+                                self.perform(client, player, Action::Look).await;
                             } else if input.starts_with("smell") {
-                                self.perform(client, *player_entity, Action::Smell).await;
+                                self.perform(client, player, Action::Smell).await;
                             } else if input.starts_with("say ") {
                                 let message = input.split_off(4);
-                                self.perform(client, *player_entity, Action::Say(message))
-                                    .await;
+                                self.perform(client, player, Action::Say(message)).await;
                             } else {
                                 self.send(
                                     client,
