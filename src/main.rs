@@ -40,7 +40,7 @@ async fn main() {
                 tokio::spawn(async move {
                     tracing::info!("New client ({}): {:?}", client_id, addr);
                     let engine_tx = engine_tx;
-                    let (client_tx, client_rx) = mpsc::unbounded_channel();
+                    let (client_tx, client_rx) = mpsc::channel(16);
                     let message = ClientMessage::Connect(client_id, client_tx);
                     if engine_tx.send(message).await.is_err() {
                         return;
@@ -78,7 +78,7 @@ async fn process(
     client_id: usize,
     socket: TcpStream,
     tx: mpsc::Sender<ClientMessage>,
-    mut rx: mpsc::UnboundedReceiver<EngineMessage>,
+    mut rx: mpsc::Receiver<EngineMessage>,
 ) {
     let mut framed = Framed::new(socket, Codec);
     let mut telnet = Telnet::new();

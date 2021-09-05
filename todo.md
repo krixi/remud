@@ -1,0 +1,6 @@
+- add list of players in room to look command
+- add SQLite w/basic world gen for initialization (spawn room, settings)
+- add location -> players data
+- extract Location component
+- consolidate client data into a struct in the engine
+- figure out how to automatically prune disconnected clients from engine client data store
