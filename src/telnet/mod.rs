@@ -137,7 +137,7 @@ impl Decoder for Codec {
                                     Some(negotiation)
                                 }
                                 Err(_) => {
-                                    tracing::error!("invalid negotiation received: {:?}", src);
+                                    tracing::error!("Invalid negotiation received: {:?}", src);
                                     None
                                 }
                             }

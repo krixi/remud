@@ -5,7 +5,6 @@ use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
 use engine::{ClientMessage, Engine, EngineMessage};
 use futures::{SinkExt, StreamExt};
-use std::collections::VecDeque;
 use telnet::{Codec, Frame, Telnet};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -13,13 +12,16 @@ use tokio::{
 };
 use tokio_util::codec::Framed;
 
+use crate::engine::ControlMessage;
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
     let (engine_tx, engine_rx) = mpsc::channel(256);
+    let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let mut engine = Engine::new(engine_rx);
+    let mut engine = Engine::new(engine_rx, control_tx);
     tokio::spawn(async move { engine.run().await });
 
     let bind_address = "127.0.0.1:2004";
@@ -31,29 +33,44 @@ async fn main() {
     let mut client_id = 1;
 
     loop {
-        let (socket, addr) = match listener.accept().await {
-            Ok(client_info) => client_info,
-            Err(_) => return,
-        };
+        tokio::select! {
+            Ok((socket, addr)) = listener.accept() => {
+                let engine_tx = engine_tx.clone();
 
-        let engine_tx = engine_tx.clone();
+                tokio::spawn(async move {
+                    tracing::info!("New client ({}): {:?}", client_id, addr);
+                    let engine_tx = engine_tx;
+                    let (client_tx, client_rx) = mpsc::unbounded_channel();
+                    let message = ClientMessage::Connect(client_id, client_tx);
+                    if engine_tx.send(message).await.is_err() {
+                        return;
+                    }
 
-        tokio::spawn(async move {
-            tracing::info!("New client ({}): {:?}", client_id, addr);
-            let engine_tx = engine_tx;
-            let (client_tx, client_rx) = mpsc::unbounded_channel();
-            let message = ClientMessage::Connect(client_id, client_tx);
-            if engine_tx.send(message).await.is_err() {
-                return;
+                    process(client_id, socket, engine_tx.clone(), client_rx).await;
+
+                    let message = ClientMessage::Disconnect(client_id);
+                    engine_tx.send(message).await.ok();
+                });
+
+                client_id += 1;
             }
-
-            process(client_id, socket, engine_tx.clone(), client_rx).await;
-
-            let message = ClientMessage::Disconnect(client_id);
-            engine_tx.send(message).await.ok();
-        });
-
-        client_id += 1;
+            message = control_rx.recv() => {
+                match message {
+                    Some(message) => {
+                        match message {
+                            ControlMessage::Shutdown =>  {
+                                tracing::warn!("Engine shutdown, halting server.");
+                                break
+                            }
+                        }
+                    },
+                    None => {
+                        tracing::error!("Engine failed, halting server");
+                        break
+                    },
+                }
+            }
+        }
     }
 }
 
@@ -67,13 +84,14 @@ async fn process(
     let mut telnet = Telnet::new();
     let mut ready = false;
 
+    // Send initial telnet negotiation frames to the client to kick off negotiation
     for frame in telnet.initiate() {
         if framed.send(frame).await.is_err() {
             return;
         }
     }
 
-    let mut inputs = VecDeque::new();
+    let mut inputs = Vec::new();
     let mut input_buffer = AsciiString::new();
 
     loop {
@@ -84,8 +102,8 @@ async fn process(
                         EngineMessage::Output(message) => {
                             match message.into_ascii_string() {
                                 Ok(str) => {
-                                    let bytes = Bytes::copy_from_slice(str.as_bytes());
-                                    if framed.send(Frame::Data(bytes)).await.is_err() {
+                                    let bytes: Vec<u8> = str.into();
+                                    if framed.send(Frame::Data(Bytes::from(bytes))).await.is_err() {
                                         break
                                     }
                                 },
@@ -94,7 +112,7 @@ async fn process(
                         }
                     }
                 } else {
-                    let frame = Frame::Data(Bytes::from("Server shutting down. Thanks for playing. <3"));
+                    let frame = Frame::Data(Bytes::from("\r\nServer shutting down. Thanks for playing. <3\r\n"));
                     if framed.send(frame).await.is_err() {
                         break
                     }
@@ -128,7 +146,7 @@ async fn process(
                                 {
                                     let rest_of_command = data.split_to(end_of_command);
                                     append_input(rest_of_command, &mut input_buffer);
-                                    inputs.push_back(input_buffer);
+                                    inputs.push(input_buffer);
 
                                     data.advance(2);
 
@@ -139,7 +157,7 @@ async fn process(
                             }
                         },
                         Err(e) => {
-                            tracing::error!("error decoding frame: {:?}", e);
+                            tracing::error!("Error decoding frame: {:?}", e);
                             break;
                         }
                     }

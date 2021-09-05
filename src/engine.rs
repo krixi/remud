@@ -1,9 +1,15 @@
 use bevy_ecs::prelude::*;
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::collections::HashMap;
 use tokio::{
     sync::mpsc,
     time::{interval, Duration, Interval},
 };
+
+pub enum ControlMessage {
+    Shutdown,
+}
 
 #[derive(Debug)]
 pub enum ClientMessage {
@@ -18,22 +24,10 @@ pub enum EngineMessage {
     Output(String),
 }
 
-pub struct Client {
-    pub state: ClientState,
-}
-
-impl Default for Client {
-    fn default() -> Client {
-        Client {
-            state: ClientState::LoginUsername,
-        }
-    }
-}
-
 pub enum ClientState {
-    LoginUsername,
-    LoginPassword(String),
-    InGame(Entity),
+    LoginName,
+    LoginPassword { name: String },
+    InGame { player: Entity },
 }
 
 pub struct Player {
@@ -61,20 +55,11 @@ pub enum Action {
     Look,
     Smell,
     Say(String),
+    Shutdown,
 }
 
 pub struct WantsToSay {
     message: String,
-}
-
-pub struct Engine {
-    rx: mpsc::Receiver<ClientMessage>,
-    client_txs: HashMap<usize, mpsc::UnboundedSender<EngineMessage>>,
-    client_states: HashMap<usize, ClientState>,
-    ticker: Interval,
-    world: World,
-    schedule: Schedule,
-    spawn_room: Entity,
 }
 
 fn say_system(
@@ -92,7 +77,7 @@ fn say_system(
 
             if player.location == location {
                 let message = format!(
-                    "{} says \"{}\"\r\n",
+                    "\r\n{} says \"{}\"\r\n> ",
                     player_saying.name, wants_to_say.message
                 );
                 player.sender.send(EngineMessage::Output(message)).ok();
@@ -103,9 +88,30 @@ fn say_system(
     }
 }
 
+#[derive(Default)]
+pub struct WorldStatus {
+    shutdown: bool,
+}
+
+pub struct Engine {
+    engine_rx: mpsc::Receiver<ClientMessage>,
+    control_tx: mpsc::Sender<ControlMessage>,
+    client_txs: HashMap<usize, mpsc::UnboundedSender<EngineMessage>>,
+    client_states: HashMap<usize, ClientState>,
+    ticker: Interval,
+    world: World,
+    schedule: Schedule,
+    spawn_room: Entity,
+}
+
 impl Engine {
-    pub fn new(rx: mpsc::Receiver<ClientMessage>) -> Self {
+    pub fn new(
+        engine_rx: mpsc::Receiver<ClientMessage>,
+        control_tx: mpsc::Sender<ControlMessage>,
+    ) -> Self {
         let mut world = World::new();
+
+        world.insert_resource(WorldStatus::default());
 
         let room = Room {
             description: String::from("A dull white light permeates this shapeless space."),
@@ -121,7 +127,8 @@ impl Engine {
         schedule.add_stage("update", update);
 
         Engine {
-            rx,
+            engine_rx,
+            control_tx,
             client_txs: HashMap::new(),
             client_states: HashMap::new(),
             ticker: interval(Duration::from_millis(15)),
@@ -136,22 +143,29 @@ impl Engine {
             tokio::select! {
                 _ = self.ticker.tick() => {
                     self.schedule.run_once(&mut self.world);
+
+                    if let Some(status) = self.world.get_resource::<WorldStatus>() {
+                        if status.shutdown {
+                            break;
+                        }
+                    }
                 }
-                maybe_message = self.rx.recv() => {
+                maybe_message = self.engine_rx.recv() => {
                     if let Some(message) = maybe_message {
                         self.process(message).await;
                     }
                 }
             }
         }
+
+        self.control_tx.send(ControlMessage::Shutdown).await.ok();
     }
 
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client, client_tx) => {
                 self.client_txs.insert(client, client_tx);
-                self.client_states
-                    .insert(client, ClientState::LoginUsername);
+                self.client_states.insert(client, ClientState::LoginName);
                 tracing::info!("Client {} connected", client);
             }
             ClientMessage::Disconnect(client) => {
@@ -159,45 +173,60 @@ impl Engine {
                 tracing::info!("Client {} disconnected", client);
             }
             ClientMessage::Ready(client) => {
-                self.send(
-                    client,
-                    String::from("Welcome to the world.\r\n\r\nWhat is your name?\r\n> "),
-                )
-                .await;
+                let message = String::from("Welcome to the world.\r\n\r\nName?\r\n> ");
+                self.send(client, message).await;
                 tracing::info!("Client {} ready", client)
             }
             ClientMessage::Input(client, mut input) => {
                 tracing::info!("Client {} sent {:?}", client, input);
                 if let Some(client_state) = self.client_states.get(&client) {
                     match client_state {
-                        ClientState::LoginUsername => {
-                            self.client_states
-                                .insert(client, ClientState::LoginPassword(input));
+                        ClientState::LoginName => {
+                            if !name_valid(input.trim()) {
+                                self.send(
+                                    client,
+                                    String::from("That name is invalid.\r\n\r\nName?\r\n> "),
+                                )
+                                .await;
+                            } else {
+                                self.send(client, String::from("Password?\r\n> ")).await;
 
-                            self.send(client, String::from("Password?\r\n> ")).await;
-                        }
-                        ClientState::LoginPassword(username) => {
-                            if let Some(tx) = self.client_txs.get(&client) {
-                                let player =
-                                    Player::new(username.clone(), self.spawn_room, tx.clone());
-                                let player_entity = self.world.spawn().insert(player).id();
-
-                                self.client_states
-                                    .insert(client, ClientState::InGame(player_entity));
-
-                                self.perform(client, player_entity, Action::Look).await;
+                                self.client_states.insert(
+                                    client,
+                                    ClientState::LoginPassword {
+                                        name: input.trim().to_string(),
+                                    },
+                                );
                             }
                         }
-                        ClientState::InGame(player_entity) => {
-                            let player = *player_entity;
+                        ClientState::LoginPassword { name } => {
+                            if let Some(tx) = self.client_txs.get(&client) {
+                                let player = Player::new(name.clone(), self.spawn_room, tx.clone());
+                                let player_entity = self.world.spawn().insert(player).id();
 
-                            if input.starts_with("look") {
+                                self.perform(client, player_entity, Action::Look).await;
+                                self.send(client, String::from("> ")).await;
+
+                                self.client_states.insert(
+                                    client,
+                                    ClientState::InGame {
+                                        player: player_entity,
+                                    },
+                                );
+                            }
+                        }
+                        ClientState::InGame { player } => {
+                            let player = *player;
+
+                            if input == "look" {
                                 self.perform(client, player, Action::Look).await;
-                            } else if input.starts_with("smell") {
+                            } else if input == "smell" {
                                 self.perform(client, player, Action::Smell).await;
                             } else if input.starts_with("say ") {
                                 let message = input.split_off(4);
                                 self.perform(client, player, Action::Say(message)).await;
+                            } else if input == "shutdown" {
+                                self.perform(client, player, Action::Shutdown).await;
                             } else {
                                 self.send(
                                     client,
@@ -248,6 +277,21 @@ impl Engine {
             Action::Say(message) => {
                 self.world.entity_mut(player).insert(WantsToSay { message });
             }
+            Action::Shutdown => {
+                if let Some(mut status) = self.world.get_resource_mut::<WorldStatus>() {
+                    status.shutdown = true;
+                }
+            }
         }
     }
+}
+
+fn name_valid(name: &str) -> bool {
+    lazy_static! {
+        // Match names with between 2 and 32 characters which are alphanumeric and possibly include
+        // the following characters: ' ', ''', '-', and '_'
+        static ref NAME_FILTER: Regex = Regex::new(r"^[[:alnum:] '\-_]{2,32}$").unwrap();
+    }
+
+    NAME_FILTER.is_match(name)
 }
