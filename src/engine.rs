@@ -1,5 +1,5 @@
-use bevy_ecs::{schedule::Schedule, world::World};
-use bytes::Bytes;
+use bevy_ecs::prelude::*;
+use bytes::{Buf, Bytes};
 use std::collections::HashMap;
 use tokio::{
     sync::mpsc,
@@ -8,7 +8,7 @@ use tokio::{
 
 #[derive(Debug)]
 pub enum ClientMessage {
-    Connect(usize, mpsc::Sender<EngineMessage>),
+    Connect(usize, mpsc::UnboundedSender<EngineMessage>),
     Disconnect(usize),
     Ready(usize),
     Input(usize, Bytes),
@@ -19,22 +19,119 @@ pub enum EngineMessage {
     Output(Bytes),
 }
 
+pub struct Client {
+    pub state: ClientState,
+}
+
+impl Default for Client {
+    fn default() -> Client {
+        Client {
+            state: ClientState::LoginUsername,
+        }
+    }
+}
+
+pub enum ClientState {
+    LoginUsername,
+    LoginPassword(Bytes),
+    InGame(Entity),
+}
+
+pub struct Player {
+    name: Bytes,
+    location: Entity,
+    sender: mpsc::UnboundedSender<EngineMessage>,
+}
+
+impl Player {
+    fn new(name: Bytes, location: Entity, sender: mpsc::UnboundedSender<EngineMessage>) -> Self {
+        Player {
+            name,
+            location,
+            sender,
+        }
+    }
+}
+
+pub struct Room {
+    description: String,
+    smell: String,
+}
+
+pub enum Action {
+    Look,
+    Smell,
+    Say(Bytes),
+}
+
+pub struct WantsToSay {
+    message: Bytes,
+}
+
 pub struct Engine {
     rx: mpsc::Receiver<ClientMessage>,
-    client_txs: HashMap<usize, mpsc::Sender<EngineMessage>>,
+    client_txs: HashMap<usize, mpsc::UnboundedSender<EngineMessage>>,
+    client_states: HashMap<usize, ClientState>,
     ticker: Interval,
     world: World,
     schedule: Schedule,
+    spawn_room: Entity,
+}
+
+fn say_system(
+    mut commands: Commands,
+    players_saying: Query<(Entity, &Player, &WantsToSay)>,
+    players: Query<(Entity, &Player)>,
+) {
+    for (player_saying_entity, player_saying, wants_to_say) in players_saying.iter() {
+        let location = player_saying.location;
+
+        for (player_entity, player) in players.iter() {
+            if player_entity == player_saying_entity {
+                continue;
+            }
+
+            if player.location == location {
+                let message = format!(
+                    "{:?} says \"{:?}\"\r\n",
+                    player_saying.name, wants_to_say.message
+                );
+                player
+                    .sender
+                    .send(EngineMessage::Output(Bytes::from(message)))
+                    .ok();
+            }
+        }
+
+        commands.entity(player_saying_entity).remove::<WantsToSay>();
+    }
 }
 
 impl Engine {
     pub fn new(rx: mpsc::Receiver<ClientMessage>) -> Self {
+        let mut world = World::new();
+
+        let room = Room {
+            description: String::from("A dull white light permeates this shapeless space."),
+            smell: String::from("You smell a vast nothingness."),
+        };
+
+        let spawn_room = world.spawn().insert(room).id();
+
+        let mut schedule = Schedule::default();
+
+        let mut update = SystemStage::parallel();
+        update.add_system(say_system.system());
+        schedule.add_stage("update", update);
+
         Engine {
             rx,
             client_txs: HashMap::new(),
+            client_states: HashMap::new(),
             ticker: interval(Duration::from_millis(15)),
-            world: World::new(),
-            schedule: Schedule::default(),
+            world,
+            schedule,
+            spawn_room,
         }
     }
 
@@ -57,6 +154,8 @@ impl Engine {
         match message {
             ClientMessage::Connect(client, client_tx) => {
                 self.client_txs.insert(client, client_tx);
+                self.client_states
+                    .insert(client, ClientState::LoginUsername);
                 tracing::info!("Client {} connected", client);
             }
             ClientMessage::Disconnect(client) => {
@@ -64,16 +163,93 @@ impl Engine {
                 tracing::info!("Client {} disconnected", client);
             }
             ClientMessage::Ready(client) => {
-                if let Some(tx) = self.client_txs.get(&client) {
-                    let message = EngineMessage::Output(Bytes::from("Welcome to the world.\r\n"));
-                    if tx.send(message).await.is_err() {
-                        self.client_txs.remove(&client);
-                    }
-                }
+                self.send(
+                    client,
+                    String::from("Welcome to the world.\r\n\r\nWhat is your name?\r\n> "),
+                )
+                .await;
                 tracing::info!("Client {} ready", client)
             }
-            ClientMessage::Input(client, input) => {
-                tracing::info!("Client {} sent {:?}", client, input)
+            ClientMessage::Input(client, mut input) => {
+                tracing::info!("Client {} sent {:?}", client, input);
+                if let Some(client_state) = self.client_states.get(&client) {
+                    match client_state {
+                        ClientState::LoginUsername => {
+                            self.client_states
+                                .insert(client, ClientState::LoginPassword(input));
+
+                            self.send(client, String::from("Password?\r\n> ")).await;
+                        }
+                        ClientState::LoginPassword(username) => {
+                            if let Some(tx) = self.client_txs.get(&client) {
+                                let player =
+                                    Player::new(username.clone(), self.spawn_room, tx.clone());
+                                let player_entity = self.world.spawn().insert(player).id();
+
+                                self.client_states
+                                    .insert(client, ClientState::InGame(player_entity));
+
+                                self.perform(client, player_entity, Action::Look).await;
+                            }
+                        }
+                        ClientState::InGame(player_entity) => {
+                            if input.starts_with(b"look") {
+                                self.perform(client, *player_entity, Action::Look).await;
+                            } else if input.starts_with(b"smell") {
+                                self.perform(client, *player_entity, Action::Smell).await;
+                            } else if input.starts_with(b"say ") {
+                                input.advance(4);
+                                self.perform(client, *player_entity, Action::Say(input))
+                                    .await;
+                            } else {
+                                self.send(
+                                    client,
+                                    String::from("I don't know what that means.\r\n"),
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn send(&self, client: usize, string: String) {
+        let bytes = Bytes::from(string);
+        if let Some(tx) = self.client_txs.get(&client) {
+            if tx.send(EngineMessage::Output(bytes)).is_err() {
+                return;
+            }
+        }
+    }
+
+    async fn perform(&mut self, client: usize, player: Entity, action: Action) {
+        match action {
+            Action::Look => {
+                let room = if let Some(player) = self.world.get::<Player>(player) {
+                    player.location
+                } else {
+                    return;
+                };
+
+                if let Some(room) = self.world.get::<Room>(room) {
+                    self.send(client, format!("{}\r\n", room.description)).await
+                }
+            }
+            Action::Smell => {
+                let room = if let Some(player) = self.world.get::<Player>(player) {
+                    player.location
+                } else {
+                    return;
+                };
+
+                if let Some(room) = self.world.get::<Room>(room) {
+                    self.send(client, format!("{}\r\n", room.smell)).await
+                }
+            }
+            Action::Say(message) => {
+                self.world.entity_mut(player).insert(WantsToSay { message });
             }
         }
     }
