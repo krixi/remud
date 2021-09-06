@@ -14,9 +14,10 @@ use tokio::{
 
 use crate::{
     engine::{
+        action::Action,
         client::{ClientState, Clients},
         db::Db,
-        world::{Action, GameWorld},
+        world::GameWorld,
     },
     ClientId,
 };
@@ -129,7 +130,7 @@ impl Engine {
                     tracing::error!("Received message from unknown client: {:?}", message);
                 }
             }
-            ClientMessage::Input(client_id, mut input) => {
+            ClientMessage::Input(client_id, input) => {
                 let mut new_player = None;
 
                 if let Some(client) = self.clients.get_mut(client_id) {
@@ -153,20 +154,10 @@ impl Engine {
                             new_player = Some(player);
                             client.set_state(ClientState::InGame { player });
                         }
-                        ClientState::InGame { player } => {
-                            if input == "look" {
-                                self.game_world.player_action(*player, Action::Look);
-                            } else if input.starts_with("say ") {
-                                let message = input.split_off(4);
-                                self.game_world.player_action(*player, Action::Say(message));
-                            } else if input == "shutdown" {
-                                self.game_world.player_action(*player, Action::Shutdown);
-                            } else {
-                                client
-                                    .send(String::from("I don't know what that means.\r\n> "))
-                                    .await;
-                            }
-                        }
+                        ClientState::InGame { player } => match Action::parse(&input) {
+                            Ok(action) => self.game_world.player_action(*player, action),
+                            Err(message) => client.send(format!("{}\r\n> ", message)).await,
+                        },
                     }
                 } else {
                     tracing::error!("Received message from unknown client ({:?})", client_id);

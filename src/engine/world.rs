@@ -1,24 +1,58 @@
 #![allow(clippy::type_complexity)]
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::{queue_message, text::word_list};
+use crate::{engine::action::Action, queue_message, text::word_list};
 
+pub enum Direction {
+    North,
+    East,
+    South,
+    West,
+    Up,
+    Down,
+}
+
+impl FromStr for Direction {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "north" => Ok(Direction::North),
+            "east" => Ok(Direction::East),
+            "south" => Ok(Direction::South),
+            "west" => Ok(Direction::West),
+            "up" => Ok(Direction::Up),
+            "down" => Ok(Direction::Down),
+            _ => Err(()),
+        }
+    }
+}
+
+// Components
 pub struct Player {
     name: String,
 }
+
+pub struct WantsToSay {
+    message: String,
+}
+
+pub struct WantsToLook {}
 
 pub struct Location {
     room: Entity,
 }
 
-pub enum Action {
-    Look,
-    Say(String),
-    Shutdown,
+pub struct Room {
+    pub id: i64,
+    pub description: String,
 }
 
 pub struct Messages {
@@ -33,11 +67,7 @@ impl Messages {
     }
 }
 
-pub struct Room {
-    pub id: i64,
-    pub description: String,
-}
-
+// Resources
 pub struct RoomMetadata {
     pub rooms_by_id: HashMap<i64, Entity>,
     pub players_by_room: HashMap<Entity, HashSet<Entity>>,
@@ -48,12 +78,6 @@ pub struct Configuration {
     pub shutdown: bool,
     pub spawn_room: i64,
 }
-
-pub struct WantsToSay {
-    message: String,
-}
-
-pub struct WantsToLook {}
 
 pub struct GameWorld {
     world: World,
@@ -149,7 +173,16 @@ impl GameWorld {
             Action::Look => {
                 self.world.entity_mut(player).insert(WantsToLook {});
             }
-            Action::Say(message) => {
+            Action::CreateRoom { direction } => {
+                // create new room
+
+                if let Some(direction) = direction {
+                    // link room
+                }
+
+                // teleport player to new room
+            }
+            Action::Say { message } => {
                 self.world.entity_mut(player).insert(WantsToSay { message });
             }
             Action::Shutdown => {
