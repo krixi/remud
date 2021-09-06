@@ -15,6 +15,9 @@ use tokio_util::codec::Framed;
 
 use crate::engine::ControlMessage;
 
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct ClientId(usize);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -34,15 +37,18 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| panic!("Cannot bind to {:?}", bind_address));
     tracing::info!("Listening on {}", bind_address);
 
-    let mut client_id = 1;
+    let mut next_client_id = 1;
 
     loop {
         tokio::select! {
             Ok((socket, addr)) = listener.accept() => {
+                let client_id = ClientId(next_client_id);
+                next_client_id += 1;
+
                 let engine_tx = engine_tx.clone();
 
                 tokio::spawn(async move {
-                    tracing::info!("New client ({}): {:?}", client_id, addr);
+                    tracing::info!("New client ({:?}): {:?}", client_id, addr);
                     let engine_tx = engine_tx;
                     let (client_tx, client_rx) = mpsc::channel(16);
                     let message = ClientMessage::Connect(client_id, client_tx);
@@ -55,8 +61,6 @@ async fn main() -> anyhow::Result<()> {
                     let message = ClientMessage::Disconnect(client_id);
                     engine_tx.send(message).await.ok();
                 });
-
-                client_id += 1;
             }
             message = control_rx.recv() => {
                 match message {
@@ -81,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn process(
-    client_id: usize,
+    client_id: ClientId,
     socket: TcpStream,
     tx: mpsc::Sender<ClientMessage>,
     mut rx: mpsc::Receiver<EngineMessage>,
@@ -113,7 +117,7 @@ async fn process(
                                         break
                                     }
                                 },
-                                Err(e) => tracing::warn!("Engine returned non-ASCII string: \"{}\"", e),
+                                Err(e) => tracing::error!("Engine returned non-ASCII string: \"{}\"", e),
                             }
                         }
                     }

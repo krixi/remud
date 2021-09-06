@@ -2,7 +2,7 @@ pub mod db;
 pub mod macros;
 pub mod world;
 
-use std::collections::HashMap;
+mod clients;
 
 use bevy_ecs::prelude::*;
 use lazy_static::lazy_static;
@@ -12,7 +12,12 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
-use self::world::{Action, GameWorld};
+use crate::{engine::clients::ClientState, ClientId};
+
+use self::{
+    clients::Clients,
+    world::{Action, GameWorld},
+};
 
 pub enum ControlMessage {
     Shutdown,
@@ -20,10 +25,10 @@ pub enum ControlMessage {
 
 #[derive(Debug)]
 pub enum ClientMessage {
-    Connect(usize, mpsc::Sender<EngineMessage>),
-    Disconnect(usize),
-    Ready(usize),
-    Input(usize, String),
+    Connect(ClientId, mpsc::Sender<EngineMessage>),
+    Disconnect(ClientId),
+    Ready(ClientId),
+    Input(ClientId, String),
 }
 
 #[derive(Debug)]
@@ -31,18 +36,10 @@ pub enum EngineMessage {
     Output(String),
 }
 
-pub enum ClientState {
-    LoginName,
-    LoginPassword { name: String },
-    InGame { player: Entity },
-}
-
 pub struct Engine {
     engine_rx: mpsc::Receiver<ClientMessage>,
     control_tx: mpsc::Sender<ControlMessage>,
-    client_txs: HashMap<usize, mpsc::Sender<EngineMessage>>,
-    client_states: HashMap<usize, ClientState>,
-    player_clients: HashMap<Entity, usize>,
+    clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
 }
@@ -58,9 +55,7 @@ impl Engine {
         Engine {
             engine_rx,
             control_tx,
-            client_txs: HashMap::new(),
-            client_states: HashMap::new(),
-            player_clients: HashMap::new(),
+            clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
         }
@@ -74,12 +69,12 @@ impl Engine {
                         self.game_world.run()
                     });
 
-                    for (player, messages) in self.game_world.messages() {
-                        if let Some(client) = self.player_clients.get(&player) {
-                            for message in messages {
-                                self.send(*client, message).await;
-                            }
-                            self.send(*client, "> ".to_string()).await;
+                    for (player, mut messages) in self.game_world.messages() {
+                        if let Some(client) = self.clients.by_player(player) {
+                            messages.push("> ".to_string());
+                            client.send_batch(messages).await;
+                        } else {
+                            tracing::error!("Attempting to send messages to player without client: {:?}", player);
                         }
                     }
 
@@ -100,84 +95,80 @@ impl Engine {
 
     async fn process(&mut self, message: ClientMessage) {
         match message {
-            ClientMessage::Connect(client, client_tx) => {
-                self.client_txs.insert(client, client_tx);
-                self.client_states.insert(client, ClientState::LoginName);
-                tracing::info!("Client {} connected", client);
+            ClientMessage::Connect(client_id, tx) => {
+                tracing::info!("{:?} connected", client_id);
+
+                self.clients.add(client_id, tx);
             }
-            ClientMessage::Disconnect(client) => {
-                if let Some(ClientState::InGame { player }) = self.client_states.get(&client) {
-                    self.game_world.despawn_player(*player);
+            ClientMessage::Disconnect(client_id) => {
+                tracing::info!("{:?} disconnected", client_id);
+
+                if let Some(player) = self
+                    .clients
+                    .get(client_id)
+                    .and_then(|client| client.get_player())
+                {
+                    self.game_world.despawn_player(player);
                 }
 
-                self.client_txs.remove(&client);
-                self.client_states.remove(&client);
-
-                tracing::info!("Client {} disconnected", client);
+                self.clients.remove(client_id);
             }
-            ClientMessage::Ready(client) => {
+            ClientMessage::Ready(client_id) => {
+                tracing::info!("{:?} ready", client_id);
+
                 let message = String::from("Welcome to the world.\r\n\r\nName?\r\n> ");
-                self.send(client, message).await;
-                tracing::info!("Client {} ready", client)
+                if let Some(client) = self.clients.get(client_id) {
+                    client.send(message).await;
+                } else {
+                    tracing::error!("Received message from unknown client: {:?}", message);
+                }
             }
-            ClientMessage::Input(client, mut input) => {
-                tracing::info!("Client {} sent {:?}", client, input);
-                if let Some(client_state) = self.client_states.get(&client) {
-                    match client_state {
-                        ClientState::LoginName => {
-                            if !name_valid(input.trim()) {
-                                self.send(
-                                    client,
-                                    String::from("That name is invalid.\r\n\r\nName?\r\n> "),
-                                )
-                                .await;
-                            } else {
-                                self.send(client, String::from("Password?\r\n> ")).await;
+            ClientMessage::Input(client_id, mut input) => {
+                let mut new_player = None;
 
-                                self.client_states.insert(
-                                    client,
-                                    ClientState::LoginPassword {
-                                        name: input.trim().to_string(),
-                                    },
-                                );
+                if let Some(client) = self.clients.get_mut(client_id) {
+                    tracing::info!("{:?} sent {:?}", client_id, input);
+                    match client.get_state() {
+                        ClientState::LoginName => {
+                            let name = input.trim();
+                            if !name_valid(name) {
+                                client
+                                    .send(String::from("That name is invalid.\r\n\r\nName?\r\n> "))
+                                    .await;
+                            } else {
+                                client.send(String::from("Password?\r\n> ")).await;
+                                client.set_state(ClientState::LoginPassword {
+                                    name: name.to_string(),
+                                });
                             }
                         }
                         ClientState::LoginPassword { name } => {
                             let player = self.game_world.spawn_player(name.clone());
-
-                            self.player_clients.insert(player, client);
-
-                            self.client_states
-                                .insert(client, ClientState::InGame { player });
+                            new_player = Some(player);
+                            client.set_state(ClientState::InGame { player });
                         }
                         ClientState::InGame { player } => {
-                            let player = *player;
-
                             if input == "look" {
-                                self.game_world.player_action(player, Action::Look);
+                                self.game_world.player_action(*player, Action::Look);
                             } else if input.starts_with("say ") {
                                 let message = input.split_off(4);
-                                self.game_world.player_action(player, Action::Say(message));
+                                self.game_world.player_action(*player, Action::Say(message));
                             } else if input == "shutdown" {
-                                self.game_world.player_action(player, Action::Shutdown);
+                                self.game_world.player_action(*player, Action::Shutdown);
                             } else {
-                                self.send(
-                                    client,
-                                    String::from("I don't know what that means.\r\n> "),
-                                )
-                                .await;
+                                client
+                                    .send(String::from("I don't know what that means.\r\n> "))
+                                    .await;
                             }
                         }
                     }
+                } else {
+                    tracing::error!("Received message from unknown client ({:?})", client_id);
                 }
-            }
-        }
-    }
 
-    async fn send(&self, client: usize, string: String) {
-        if let Some(tx) = self.client_txs.get(&client) {
-            if tx.send(EngineMessage::Output(string)).await.is_err() {
-                return;
+                if let Some(player) = new_player {
+                    self.clients.set_player(client_id, player);
+                }
             }
         }
     }
