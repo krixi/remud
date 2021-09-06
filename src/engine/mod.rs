@@ -1,15 +1,17 @@
 pub mod db;
 pub mod world;
 
-use crate::engine::world::{Action, GameWorld};
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::HashMap;
 use tokio::{
     sync::mpsc,
     time::{interval, Duration, Interval},
 };
+
+use self::world::{Action, GameWorld};
 
 pub enum ControlMessage {
     Shutdown,
@@ -103,8 +105,13 @@ impl Engine {
                 tracing::info!("Client {} connected", client);
             }
             ClientMessage::Disconnect(client) => {
+                if let Some(ClientState::InGame { player }) = self.client_states.get(&client) {
+                    self.game_world.despawn_player(*player);
+                }
+
                 self.client_txs.remove(&client);
                 self.client_states.remove(&client);
+
                 tracing::info!("Client {} disconnected", client);
             }
             ClientMessage::Ready(client) => {

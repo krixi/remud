@@ -1,5 +1,6 @@
 mod engine;
 mod telnet;
+mod text;
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};

@@ -1,7 +1,4 @@
-- add list of players in room to look command
-- add location -> players data
 - extract Location component
 - consolidate client data into a struct in the engine
-- figure out how to automatically prune disconnected clients from engine client data store
 - add room command for changing room properties and creating new rooms
 - allow players to move between rooms

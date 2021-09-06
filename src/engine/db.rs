@@ -1,8 +1,15 @@
-use super::world::{Configuration, Room, RoomMetadata};
+use std::{borrow::Cow, collections::HashMap, str::FromStr};
+
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
+use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
-use std::{borrow::Cow, collections::HashMap, str::FromStr};
+
+use super::world::{Configuration, Room, RoomMetadata};
+
+lazy_static! {
+    static ref DB_NOT_FOUND_CODE: &'static str = "14";
+}
 
 pub async fn open(db: &str) -> anyhow::Result<SqlitePool> {
     let uri = format!("sqlite://{}", db);
@@ -13,8 +20,7 @@ pub async fn open(db: &str) -> anyhow::Result<SqlitePool> {
         },
         Err(e) => {
             if let sqlx::Error::Database(de) = e {
-                // Could not open database file
-                if de.code() == Some(Cow::Borrowed("14")) {
+                if de.code() == Some(Cow::Borrowed(&DB_NOT_FOUND_CODE)) {
                     tracing::warn!("World database {} not found, creating new instance.", uri);
                     let options = SqliteConnectOptions::from_str(&uri)
                         .unwrap()
@@ -76,6 +82,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     let metadata = RoomMetadata {
         rooms_by_id,
         highest_id,
+        players_by_room: HashMap::new(),
     };
     world.insert_resource(metadata);
 

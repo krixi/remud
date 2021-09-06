@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
+
+use crate::text::word_list;
 
 pub struct Player {
     name: String,
@@ -39,6 +41,7 @@ pub struct Room {
 
 pub struct RoomMetadata {
     pub rooms_by_id: HashMap<i64, Entity>,
+    pub players_by_room: HashMap<Entity, HashSet<Entity>>,
     pub highest_id: i64,
 }
 
@@ -61,12 +64,11 @@ pub struct GameWorld {
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
-        let void_room = Room {
+        let room = Room {
             id: 0,
             description: "A dark void extends infinitely in all directions.".to_string(),
         };
-
-        let void_room = world.spawn().insert(void_room).id();
+        let void_room = world.spawn().insert(room).id();
 
         let mut schedule = Schedule::default();
 
@@ -94,23 +96,53 @@ impl GameWorld {
     }
 
     pub fn spawn_player(&mut self, name: String) -> Entity {
-        let configuration = self.world.get_resource::<Configuration>().unwrap();
-        let room_metadata = self.world.get_resource::<RoomMetadata>().unwrap();
+        let (player, room) = {
+            let room = {
+                let configuration = self.world.get_resource::<Configuration>().unwrap();
+                let room_metadata = self.world.get_resource::<RoomMetadata>().unwrap();
 
-        let spawn_room = room_metadata
-            .rooms_by_id
-            .get(&configuration.spawn_room)
-            .unwrap_or(&self.void_room);
+                *room_metadata
+                    .rooms_by_id
+                    .get(&configuration.spawn_room)
+                    .unwrap_or(&self.void_room)
+            };
 
-        let player = Player::new(name, *spawn_room);
-        let player_entity = self
+            let player = Player::new(name, room);
+            let player_entity = self
+                .world
+                .spawn()
+                .insert(player)
+                .insert(WantsToLook {})
+                .id();
+
+            (player_entity, room)
+        };
+
+        let mut room_metadata = self.world.get_resource_mut::<RoomMetadata>().unwrap();
+
+        room_metadata
+            .players_by_room
+            .entry(room)
+            .or_default()
+            .insert(player);
+
+        player
+    }
+
+    pub fn despawn_player(&mut self, player_entity: Entity) {
+        let location = self
             .world
-            .spawn()
-            .insert(player)
-            .insert(WantsToLook {})
-            .id();
+            .get::<Player>(player_entity)
+            .map(|player| player.location);
 
-        player_entity
+        self.world.entity_mut(player_entity).despawn();
+
+        if let Some(location) = location {
+            let mut room_metadata = self.world.get_resource_mut::<RoomMetadata>().unwrap();
+            if let Some(players_by_room) = room_metadata.players_by_room.get_mut(&location) {
+                players_by_room.remove(&player_entity);
+            }
+        }
     }
 
     pub fn player_action(&mut self, player: Entity, action: Action) {
@@ -149,28 +181,29 @@ impl GameWorld {
 
 fn say_system(
     mut commands: Commands,
+    room_data: Res<RoomMetadata>,
     players_saying: Query<(Entity, &Player, &WantsToSay)>,
-    players: Query<(Entity, &Player)>,
     mut messages: Query<&mut Messages>,
 ) {
     for (player_saying_entity, player_saying, wants_to_say) in players_saying.iter() {
         let location = player_saying.location;
 
-        for (player_entity, player) in players.iter() {
-            if player_entity == player_saying_entity {
-                continue;
-            }
+        if let Some(present_players) = room_data.players_by_room.get(&location) {
+            for present_player_entity in present_players.iter() {
+                if *present_player_entity == player_saying_entity {
+                    continue;
+                }
 
-            if player.location == location {
                 let message = format!(
                     "{} says \"{}\"\r\n",
                     player_saying.name, wants_to_say.message
                 );
-                match messages.get_mut(player_entity) {
+
+                match messages.get_mut(*present_player_entity) {
                     Ok(mut messages) => messages.queue.push(message),
                     Err(_) => {
                         commands
-                            .entity(player_entity)
+                            .entity(*present_player_entity)
                             .insert(Messages::new_with(message));
                     }
                 }
@@ -183,13 +216,40 @@ fn say_system(
 
 fn look_system(
     mut commands: Commands,
+    room_data: Res<RoomMetadata>,
     players_looking: Query<(Entity, &Player), With<WantsToLook>>,
+    players: Query<&Player>,
     rooms: Query<&Room>,
     mut messages: Query<&mut Messages>,
 ) {
     for (player_entity, player) in players_looking.iter() {
         if let Ok(room) = rooms.get(player.location) {
-            let message = format!("{}\r\n", room.description);
+            let mut message = format!("{}\r\n", room.description);
+
+            if let Some(present_players) = room_data.players_by_room.get(&player.location) {
+                let mut present_player_names = present_players
+                    .iter()
+                    .filter(|player| **player != player_entity)
+                    .filter_map(|player| players.get(*player).ok())
+                    .map(|player| player.name.clone())
+                    .collect_vec();
+
+                if !present_player_names.is_empty() {
+                    present_player_names.sort();
+
+                    let singular = present_player_names.len() == 1;
+
+                    let mut player_list = word_list(present_player_names);
+                    if singular {
+                        player_list.push_str(" is here.");
+                    } else {
+                        player_list.push_str(" are here.");
+                    };
+                    message.push_str(player_list.as_str());
+                    message.push_str("\r\n");
+                }
+            }
+
             match messages.get_mut(player_entity) {
                 Ok(mut messages) => messages.queue.push(message),
                 Err(_) => {
