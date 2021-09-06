@@ -19,3 +19,4 @@ ascii = "1.0"
 regex = "1.5"
 sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "sqlite"] }
 itertools = "0.10.1"
+anyhow = "1.0.43"

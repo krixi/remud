@@ -1,4 +1,5 @@
-mod world;
+pub mod db;
+pub mod world;
 
 use crate::engine::world::{Action, GameWorld};
 use bevy_ecs::prelude::*;
@@ -47,8 +48,9 @@ impl Engine {
     pub fn new(
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
+        world: World,
     ) -> Self {
-        let game_world = GameWorld::new();
+        let game_world = GameWorld::new(world);
 
         Engine {
             engine_rx,

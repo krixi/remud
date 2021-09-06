@@ -3,7 +3,7 @@ mod telnet;
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
-use engine::{ClientMessage, Engine, EngineMessage};
+use engine::{db, ClientMessage, Engine, EngineMessage};
 use futures::{SinkExt, StreamExt};
 use telnet::{Codec, Frame, Telnet};
 use tokio::{
@@ -15,19 +15,22 @@ use tokio_util::codec::Framed;
 use crate::engine::ControlMessage;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    let pool = db::open("world.db").await?;
+    let world = db::load_world(&pool).await?;
 
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let mut engine = Engine::new(engine_rx, control_tx);
+    let mut engine = Engine::new(engine_rx, control_tx, world);
     tokio::spawn(async move { engine.run().await });
 
     let bind_address = "127.0.0.1:2004";
     let listener = TcpListener::bind(bind_address)
         .await
-        .unwrap_or_else(|_| panic!("able to bind to {:?}", bind_address));
+        .unwrap_or_else(|_| panic!("Cannot bind to {:?}", bind_address));
     tracing::info!("Listening on {}", bind_address);
 
     let mut client_id = 1;
@@ -72,6 +75,8 @@ async fn main() {
             }
         }
     }
+
+    Ok(())
 }
 
 async fn process(

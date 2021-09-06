@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -31,12 +33,18 @@ impl Messages {
 }
 
 pub struct Room {
-    description: String,
+    pub id: i64,
+    pub description: String,
+}
+
+pub struct RoomMetadata {
+    pub rooms_by_id: HashMap<i64, Entity>,
+    pub highest_id: i64,
 }
 
 pub struct Configuration {
-    shutdown: bool,
-    spawn_room: Entity,
+    pub shutdown: bool,
+    pub spawn_room: i64,
 }
 
 pub struct WantsToSay {
@@ -51,20 +59,7 @@ pub struct GameWorld {
 }
 
 impl GameWorld {
-    pub fn new() -> Self {
-        let mut world = World::new();
-
-        let room = Room {
-            description: String::from("A dull white light permeates this shapeless space."),
-        };
-
-        let spawn_room = world.spawn().insert(room).id();
-
-        world.insert_resource(Configuration {
-            shutdown: false,
-            spawn_room,
-        });
-
+    pub fn new(world: World) -> Self {
         let mut schedule = Schedule::default();
 
         let mut update = SystemStage::parallel();
@@ -88,8 +83,16 @@ impl GameWorld {
 
     pub fn spawn_player(&mut self, name: String) -> Entity {
         let configuration = self.world.get_resource::<Configuration>().unwrap();
+        let room_metadata = self.world.get_resource::<RoomMetadata>().unwrap();
 
-        let player = Player::new(name, configuration.spawn_room);
+        let spawn_room = room_metadata
+            .rooms_by_id
+            .get(&configuration.spawn_room)
+            .unwrap_or_else(|| {
+                panic!("spawn room with ID {} must exist", configuration.spawn_room)
+            });
+
+        let player = Player::new(name, *spawn_room);
         let player_entity = self
             .world
             .spawn()
