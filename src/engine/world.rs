@@ -3,17 +3,14 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::text::word_list;
+use crate::{queue_message, text::word_list};
 
 pub struct Player {
     name: String,
-    location: Entity,
 }
 
-impl Player {
-    pub fn new(name: String, location: Entity) -> Self {
-        Player { name, location }
-    }
+pub struct Location {
+    room: Entity,
 }
 
 pub enum Action {
@@ -107,11 +104,11 @@ impl GameWorld {
                     .unwrap_or(&self.void_room)
             };
 
-            let player = Player::new(name, room);
             let player_entity = self
                 .world
                 .spawn()
-                .insert(player)
+                .insert(Player { name })
+                .insert(Location { room })
                 .insert(WantsToLook {})
                 .id();
 
@@ -132,8 +129,8 @@ impl GameWorld {
     pub fn despawn_player(&mut self, player_entity: Entity) {
         let location = self
             .world
-            .get::<Player>(player_entity)
-            .map(|player| player.location);
+            .get::<Location>(player_entity)
+            .map(|location| location.room);
 
         self.world.entity_mut(player_entity).despawn();
 
@@ -182,54 +179,45 @@ impl GameWorld {
 fn say_system(
     mut commands: Commands,
     room_data: Res<RoomMetadata>,
-    players_saying: Query<(Entity, &Player, &WantsToSay)>,
+    saying_players: Query<(Entity, &Player, &Location, &WantsToSay)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for (player_saying_entity, player_saying, wants_to_say) in players_saying.iter() {
-        let location = player_saying.location;
-
-        if let Some(present_players) = room_data.players_by_room.get(&location) {
+    for (saying_entity, saying_player, saying_location, wants_to_say) in saying_players.iter() {
+        if let Some(present_players) = room_data.players_by_room.get(&saying_location.room) {
             for present_player_entity in present_players.iter() {
-                if *present_player_entity == player_saying_entity {
+                if *present_player_entity == saying_entity {
                     continue;
                 }
 
                 let message = format!(
                     "{} says \"{}\"\r\n",
-                    player_saying.name, wants_to_say.message
+                    saying_player.name, wants_to_say.message
                 );
 
-                match messages.get_mut(*present_player_entity) {
-                    Ok(mut messages) => messages.queue.push(message),
-                    Err(_) => {
-                        commands
-                            .entity(*present_player_entity)
-                            .insert(Messages::new_with(message));
-                    }
-                }
+                queue_message!(commands, messages, *present_player_entity, message);
             }
         }
 
-        commands.entity(player_saying_entity).remove::<WantsToSay>();
+        commands.entity(saying_entity).remove::<WantsToSay>();
     }
 }
 
 fn look_system(
     mut commands: Commands,
     room_data: Res<RoomMetadata>,
-    players_looking: Query<(Entity, &Player), With<WantsToLook>>,
+    looking_players: Query<(Entity, &Location), (With<Player>, With<WantsToLook>)>,
     players: Query<&Player>,
     rooms: Query<&Room>,
     mut messages: Query<&mut Messages>,
 ) {
-    for (player_entity, player) in players_looking.iter() {
-        if let Ok(room) = rooms.get(player.location) {
+    for (looking_entity, looking_location) in looking_players.iter() {
+        if let Ok(room) = rooms.get(looking_location.room) {
             let mut message = format!("{}\r\n", room.description);
 
-            if let Some(present_players) = room_data.players_by_room.get(&player.location) {
+            if let Some(present_players) = room_data.players_by_room.get(&looking_location.room) {
                 let mut present_player_names = present_players
                     .iter()
-                    .filter(|player| **player != player_entity)
+                    .filter(|player| **player != looking_entity)
                     .filter_map(|player| players.get(*player).ok())
                     .map(|player| player.name.clone())
                     .collect_vec();
@@ -250,15 +238,8 @@ fn look_system(
                 }
             }
 
-            match messages.get_mut(player_entity) {
-                Ok(mut messages) => messages.queue.push(message),
-                Err(_) => {
-                    commands
-                        .entity(player_entity)
-                        .insert(Messages::new_with(message));
-                }
-            }
+            queue_message!(commands, messages, looking_entity, message);
         }
-        commands.entity(player_entity).remove::<WantsToLook>();
+        commands.entity(looking_entity).remove::<WantsToLook>();
     }
 }

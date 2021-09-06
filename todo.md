@@ -1,4 +1,3 @@
-- extract Location component
 - consolidate client data into a struct in the engine
 - add room command for changing room properties and creating new rooms
 - allow players to move between rooms
