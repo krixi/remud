@@ -1,10 +1,11 @@
-use bitflags::bitflags;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use lazy_static::lazy_static;
 use std::{
     collections::{HashMap, HashSet},
     convert::TryFrom,
 };
+
+use bitflags::bitflags;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use lazy_static::lazy_static;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Debug, Copy, Clone)]

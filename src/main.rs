@@ -4,16 +4,17 @@ mod text;
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
-use engine::{db, ClientMessage, Engine, EngineMessage};
 use futures::{SinkExt, StreamExt};
-use telnet::{Codec, Frame, Telnet};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc,
 };
 use tokio_util::codec::Framed;
 
-use crate::engine::{db::Db, ControlMessage};
+use crate::{
+    engine::{db::Db, ClientMessage, ControlMessage, Engine, EngineMessage},
+    telnet::{Codec, Frame, Telnet},
+};
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ClientId(usize);
@@ -28,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let mut engine = Engine::new(engine_rx, control_tx, world);
+    let mut engine = Engine::new(engine_rx, control_tx, world, db);
     tokio::spawn(async move { engine.run().await });
 
     let bind_address = "127.0.0.1:2004";

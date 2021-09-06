@@ -15,6 +15,7 @@ use tokio::{
 use crate::{
     engine::{
         client::{ClientState, Clients},
+        db::Db,
         world::{Action, GameWorld},
     },
     ClientId,
@@ -43,6 +44,7 @@ pub struct Engine {
     clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
+    db: Db,
 }
 
 impl Engine {
@@ -50,6 +52,7 @@ impl Engine {
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
         world: World,
+        db: Db,
     ) -> Self {
         let game_world = GameWorld::new(world);
 
@@ -59,6 +62,7 @@ impl Engine {
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
+            db,
         }
     }
 
