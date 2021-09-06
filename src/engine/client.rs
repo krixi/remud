@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::ClientId;
-
-use super::EngineMessage;
+use crate::{engine::EngineMessage, ClientId};
 
 pub enum ClientState {
     LoginName,

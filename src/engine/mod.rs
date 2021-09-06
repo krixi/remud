@@ -2,7 +2,7 @@ pub mod db;
 pub mod macros;
 pub mod world;
 
-mod clients;
+mod client;
 
 use bevy_ecs::prelude::*;
 use lazy_static::lazy_static;
@@ -12,11 +12,12 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
-use crate::{engine::clients::ClientState, ClientId};
-
-use self::{
-    clients::Clients,
-    world::{Action, GameWorld},
+use crate::{
+    engine::{
+        client::{ClientState, Clients},
+        world::{Action, GameWorld},
+    },
+    ClientId,
 };
 
 pub enum ControlMessage {

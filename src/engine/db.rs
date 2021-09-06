@@ -5,46 +5,52 @@ use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use super::world::{Configuration, Room, RoomMetadata};
+use crate::engine::world::{Configuration, Room, RoomMetadata};
 
 lazy_static! {
     static ref DB_NOT_FOUND_CODE: &'static str = "14";
 }
 
-pub async fn open(db: &str) -> anyhow::Result<SqlitePool> {
-    let uri = format!("sqlite://{}", db);
-    match SqlitePool::connect(&uri).await {
-        Ok(pool) => match sqlx::migrate!("./migrations").run(&pool).await {
-            Ok(_) => Ok(pool),
-            Err(e) => Err(e.into()),
-        },
-        Err(e) => {
-            if let sqlx::Error::Database(de) = e {
-                if de.code() == Some(Cow::Borrowed(&DB_NOT_FOUND_CODE)) {
-                    tracing::warn!("World database {} not found, creating new instance.", uri);
-                    let options = SqliteConnectOptions::from_str(&uri)
-                        .unwrap()
-                        .create_if_missing(true);
-                    let pool = SqlitePool::connect_with(options).await?;
-                    sqlx::migrate!("./migrations").run(&pool).await?;
-                    Ok(pool)
+pub struct Db {
+    pool: SqlitePool,
+}
+
+impl Db {
+    pub async fn new(db: &str) -> anyhow::Result<Self> {
+        let uri = format!("sqlite://{}", db);
+        match SqlitePool::connect(&uri).await {
+            Ok(pool) => match sqlx::migrate!("./migrations").run(&pool).await {
+                Ok(_) => Ok(Db { pool }),
+                Err(e) => Err(e.into()),
+            },
+            Err(e) => {
+                if let sqlx::Error::Database(de) = e {
+                    if de.code() == Some(Cow::Borrowed(&DB_NOT_FOUND_CODE)) {
+                        tracing::warn!("World database {} not found, creating new instance.", uri);
+                        let options = SqliteConnectOptions::from_str(&uri)
+                            .unwrap()
+                            .create_if_missing(true);
+                        let pool = SqlitePool::connect_with(options).await?;
+                        sqlx::migrate!("./migrations").run(&pool).await?;
+                        Ok(Db { pool })
+                    } else {
+                        Err(de.into())
+                    }
                 } else {
-                    Err(de.into())
+                    Err(e.into())
                 }
-            } else {
-                Err(e.into())
             }
         }
     }
-}
 
-pub async fn load_world(pool: &SqlitePool) -> anyhow::Result<World> {
-    let mut world = World::new();
+    pub async fn load_world(&self) -> anyhow::Result<World> {
+        let mut world = World::new();
 
-    load_configuration(pool, &mut world).await?;
-    load_rooms(pool, &mut world).await?;
+        load_configuration(&self.pool, &mut world).await?;
+        load_rooms(&self.pool, &mut world).await?;
 
-    Ok(world)
+        Ok(world)
+    }
 }
 
 async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
