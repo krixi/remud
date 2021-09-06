@@ -14,7 +14,7 @@ use tokio::{
 
 use crate::{
     engine::{
-        action::Action,
+        action::parse_action,
         client::{ClientState, Clients},
         db::Db,
         world::GameWorld,
@@ -154,7 +154,7 @@ impl Engine {
                             new_player = Some(player);
                             client.set_state(ClientState::InGame { player });
                         }
-                        ClientState::InGame { player } => match Action::parse(&input) {
+                        ClientState::InGame { player } => match parse_action(&input) {
                             Ok(action) => self.game_world.player_action(*player, action),
                             Err(message) => client.send(format!("{}\r\n> ", message)).await,
                         },

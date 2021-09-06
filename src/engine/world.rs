@@ -8,8 +8,9 @@ use std::{
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::{engine::action::Action, queue_message, text::word_list};
+use crate::{engine::action::DynAction, queue_message, text::word_list};
 
+#[derive(Clone, Copy, Debug)]
 pub enum Direction {
     North,
     East,
@@ -39,12 +40,6 @@ impl FromStr for Direction {
 pub struct Player {
     name: String,
 }
-
-pub struct WantsToSay {
-    message: String,
-}
-
-pub struct WantsToLook {}
 
 pub struct Location {
     room: Entity,
@@ -168,28 +163,8 @@ impl GameWorld {
         }
     }
 
-    pub fn player_action(&mut self, player: Entity, action: Action) {
-        match action {
-            Action::Look => {
-                self.world.entity_mut(player).insert(WantsToLook {});
-            }
-            Action::CreateRoom { direction } => {
-                // create new room
-
-                if let Some(direction) = direction {
-                    // link room
-                }
-
-                // teleport player to new room
-            }
-            Action::Say { message } => {
-                self.world.entity_mut(player).insert(WantsToSay { message });
-            }
-            Action::Shutdown => {
-                let mut configuration = self.world.get_resource_mut::<Configuration>().unwrap();
-                configuration.shutdown = true;
-            }
-        }
+    pub fn player_action(&mut self, player: Entity, action: DynAction) {
+        action.enact(player, &mut self.world);
     }
 
     pub fn messages(&mut self) -> Vec<(Entity, Vec<String>)> {
@@ -209,6 +184,10 @@ impl GameWorld {
 
         outgoing
     }
+}
+
+pub struct WantsToSay {
+    pub message: String,
 }
 
 fn say_system(
@@ -236,6 +215,8 @@ fn say_system(
         commands.entity(saying_entity).remove::<WantsToSay>();
     }
 }
+
+pub struct WantsToLook {}
 
 fn look_system(
     mut commands: Commands,
