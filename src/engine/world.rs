@@ -56,10 +56,18 @@ pub struct WantsToLook {}
 pub struct GameWorld {
     world: World,
     schedule: Schedule,
+    void_room: Entity,
 }
 
 impl GameWorld {
-    pub fn new(world: World) -> Self {
+    pub fn new(mut world: World) -> Self {
+        let void_room = Room {
+            id: 0,
+            description: "A dark void extends infinitely in all directions.".to_string(),
+        };
+
+        let void_room = world.spawn().insert(void_room).id();
+
         let mut schedule = Schedule::default();
 
         let mut update = SystemStage::parallel();
@@ -67,7 +75,11 @@ impl GameWorld {
         update.add_system(look_system.system());
         schedule.add_stage("update", update);
 
-        GameWorld { world, schedule }
+        GameWorld {
+            world,
+            schedule,
+            void_room,
+        }
     }
 
     pub fn run(&mut self) {
@@ -88,9 +100,7 @@ impl GameWorld {
         let spawn_room = room_metadata
             .rooms_by_id
             .get(&configuration.spawn_room)
-            .unwrap_or_else(|| {
-                panic!("spawn room with ID {} must exist", configuration.spawn_room)
-            });
+            .unwrap_or(&self.void_room);
 
         let player = Player::new(name, *spawn_room);
         let player_entity = self
