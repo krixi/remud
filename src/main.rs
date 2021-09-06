@@ -12,7 +12,7 @@ use tokio::{
 use tokio_util::codec::Framed;
 
 use crate::{
-    engine::{db::Db, ClientMessage, ControlMessage, Engine, EngineMessage},
+    engine::{ClientMessage, ControlMessage, Engine, EngineMessage},
     telnet::{Codec, Frame, Telnet},
 };
 
@@ -23,13 +23,10 @@ pub struct ClientId(usize);
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let db = Db::new("world.db").await?;
-    let world = db.load_world().await?;
-
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let mut engine = Engine::new(engine_rx, control_tx, world, db);
+    let mut engine = Engine::new(engine_rx, control_tx).await?;
     tokio::spawn(async move { engine.run().await });
 
     let bind_address = "127.0.0.1:2004";

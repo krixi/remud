@@ -1,10 +1,10 @@
-pub mod db;
-pub mod macros;
-pub mod world;
+mod db;
+mod macros;
+mod world;
 
+mod action;
 mod client;
 
-use bevy_ecs::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use tokio::{
@@ -48,22 +48,23 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(
+    pub async fn new(
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
-        world: World,
-        db: Db,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        let db = Db::new("world.db").await?;
+        let world = db.load_world().await?;
+
         let game_world = GameWorld::new(world);
 
-        Engine {
+        Ok(Engine {
             engine_rx,
             control_tx,
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
             db,
-        }
+        })
     }
 
     pub async fn run(&mut self) {
