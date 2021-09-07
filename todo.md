@@ -1,3 +1,5 @@
-- consolidate client data into a struct in the engine
-- add room command for changing room properties and creating new rooms
-- allow players to move between rooms
+- add room subcommand for changing description
+- add room subcommand for linking rooms
+- add RoomId type
+- store exits in database
+- persist changes to rooms

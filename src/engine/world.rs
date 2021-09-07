@@ -10,7 +10,7 @@ use itertools::Itertools;
 
 use crate::{engine::action::DynAction, queue_message, text::word_list};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
     North,
     East,
@@ -18,6 +18,41 @@ pub enum Direction {
     West,
     Up,
     Down,
+}
+
+impl Direction {
+    pub fn pretty_from(&self) -> &str {
+        match self {
+            Direction::North => "from the north",
+            Direction::East => "from the east",
+            Direction::South => "from the south",
+            Direction::West => "from the west",
+            Direction::Up => "from above",
+            Direction::Down => "from below",
+        }
+    }
+
+    pub fn pretty_to(&self) -> &str {
+        match self {
+            Direction::North => "to the north",
+            Direction::East => "to the east",
+            Direction::South => "to the south",
+            Direction::West => "to the west",
+            Direction::Up => "above",
+            Direction::Down => "below",
+        }
+    }
+
+    pub fn opposite(&self) -> Direction {
+        match self {
+            Direction::North => Direction::South,
+            Direction::East => Direction::West,
+            Direction::South => Direction::North,
+            Direction::West => Direction::East,
+            Direction::Up => Direction::Down,
+            Direction::Down => Direction::Up,
+        }
+    }
 }
 
 impl FromStr for Direction {
@@ -38,24 +73,25 @@ impl FromStr for Direction {
 
 // Components
 pub struct Player {
-    name: String,
+    pub name: String,
 }
 
 pub struct Location {
-    room: Entity,
+    pub room: Entity,
 }
 
 pub struct Room {
     pub id: i64,
     pub description: String,
+    pub exits: HashMap<Direction, Entity>,
 }
 
 pub struct Messages {
-    queue: Vec<String>,
+    pub queue: Vec<String>,
 }
 
 impl Messages {
-    fn new_with(message: String) -> Self {
+    pub fn new_with(message: String) -> Self {
         Messages {
             queue: vec![message],
         }
@@ -66,7 +102,30 @@ impl Messages {
 pub struct RoomMetadata {
     pub rooms_by_id: HashMap<i64, Entity>,
     pub players_by_room: HashMap<Entity, HashSet<Entity>>,
-    pub highest_id: i64,
+    highest_id: i64,
+}
+
+impl RoomMetadata {
+    pub fn new(rooms_by_id: HashMap<i64, Entity>, highest_id: i64) -> Self {
+        RoomMetadata {
+            rooms_by_id,
+            players_by_room: HashMap::new(),
+            highest_id,
+        }
+    }
+
+    pub fn player_moved(&mut self, player: Entity, from: Entity, to: Entity) {
+        if let Some(list) = self.players_by_room.get_mut(&from) {
+            list.remove(&player);
+        }
+
+        self.players_by_room.entry(to).or_default().insert(player);
+    }
+
+    pub fn next_id(&mut self) -> i64 {
+        self.highest_id += 1;
+        self.highest_id
+    }
 }
 
 pub struct Configuration {
@@ -85,14 +144,17 @@ impl GameWorld {
         let room = Room {
             id: 0,
             description: "A dark void extends infinitely in all directions.".to_string(),
+            exits: HashMap::new(),
         };
         let void_room = world.spawn().insert(room).id();
 
         let mut schedule = Schedule::default();
 
         let mut update = SystemStage::parallel();
-        update.add_system(say_system.system());
         update.add_system(look_system.system());
+        update.add_system(move_system.system());
+        update.add_system(say_system.system());
+        update.add_system(teleport_system.system());
         schedule.add_stage("update", update);
 
         GameWorld {
@@ -186,36 +248,6 @@ impl GameWorld {
     }
 }
 
-pub struct WantsToSay {
-    pub message: String,
-}
-
-fn say_system(
-    mut commands: Commands,
-    room_data: Res<RoomMetadata>,
-    saying_players: Query<(Entity, &Player, &Location, &WantsToSay)>,
-    mut messages: Query<&mut Messages>,
-) {
-    for (saying_entity, saying_player, saying_location, wants_to_say) in saying_players.iter() {
-        if let Some(present_players) = room_data.players_by_room.get(&saying_location.room) {
-            for present_player_entity in present_players.iter() {
-                if *present_player_entity == saying_entity {
-                    continue;
-                }
-
-                let message = format!(
-                    "{} says \"{}\"\r\n",
-                    saying_player.name, wants_to_say.message
-                );
-
-                queue_message!(commands, messages, *present_player_entity, message);
-            }
-        }
-
-        commands.entity(saying_entity).remove::<WantsToSay>();
-    }
-}
-
 pub struct WantsToLook {}
 
 fn look_system(
@@ -257,5 +289,131 @@ fn look_system(
             queue_message!(commands, messages, looking_entity, message);
         }
         commands.entity(looking_entity).remove::<WantsToLook>();
+    }
+}
+
+pub struct WantsToMove {
+    pub direction: Direction,
+}
+
+fn move_system(
+    mut commands: Commands,
+    mut room_data: ResMut<RoomMetadata>,
+    mut moving_players: Query<(Entity, &Player, &WantsToMove, &mut Location)>,
+    rooms: Query<&Room>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (moving_player_entity, player, wants_to_move, mut location) in moving_players.iter_mut() {
+        let destination = if let Some(destination) = rooms
+            .get(location.room)
+            .ok()
+            .and_then(|room| room.exits.get(&wants_to_move.direction))
+        {
+            *destination
+        } else {
+            let message = "There is nothing in that direction.\r\n".to_string();
+            queue_message!(commands, messages, moving_player_entity, message);
+
+            commands
+                .entity(moving_player_entity)
+                .remove::<WantsToMove>();
+
+            continue;
+        };
+
+        room_data.player_moved(moving_player_entity, location.room, destination);
+        location.room = destination;
+
+        if let Some(present_players) = room_data.players_by_room.get(&destination) {
+            for present_player in present_players {
+                if *present_player == moving_player_entity {
+                    continue;
+                }
+
+                let message = format!(
+                    "{} enters {}.\r\n",
+                    player.name,
+                    wants_to_move.direction.opposite().pretty_from()
+                );
+                queue_message!(commands, messages, *present_player, message);
+            }
+        }
+
+        commands
+            .entity(moving_player_entity)
+            .insert(WantsToLook {})
+            .remove::<WantsToMove>();
+    }
+}
+
+pub struct WantsToSay {
+    pub message: String,
+}
+
+fn say_system(
+    mut commands: Commands,
+    room_data: Res<RoomMetadata>,
+    saying_players: Query<(Entity, &Player, &Location, &WantsToSay)>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (saying_entity, saying_player, saying_location, wants_to_say) in saying_players.iter() {
+        if let Some(present_players) = room_data.players_by_room.get(&saying_location.room) {
+            for present_player_entity in present_players.iter() {
+                if *present_player_entity == saying_entity {
+                    continue;
+                }
+
+                let message = format!(
+                    "{} says \"{}\"\r\n",
+                    saying_player.name, wants_to_say.message
+                );
+
+                queue_message!(commands, messages, *present_player_entity, message);
+            }
+        }
+
+        commands.entity(saying_entity).remove::<WantsToSay>();
+    }
+}
+
+pub struct WantsToTeleport {
+    pub room: Entity,
+}
+
+fn teleport_system(
+    mut commands: Commands,
+    mut room_data: ResMut<RoomMetadata>,
+    mut teleporting_players: Query<(Entity, &Player, &WantsToTeleport, &mut Location)>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (teleporting_player_entity, teleporting_player, wants_to_teleport, mut location) in
+        teleporting_players.iter_mut()
+    {
+        room_data.player_moved(
+            teleporting_player_entity,
+            location.room,
+            wants_to_teleport.room,
+        );
+
+        location.room = wants_to_teleport.room;
+
+        if let Some(present_players) = room_data.players_by_room.get(&location.room) {
+            for present_player in present_players {
+                if *present_player == teleporting_player_entity {
+                    continue;
+                }
+
+                let message = format!(
+                    "{} appears in a puff of smoke.\r\n",
+                    teleporting_player.name
+                );
+                queue_message!(commands, messages, *present_player, message);
+            }
+        }
+
+        commands
+            .entity(teleporting_player_entity)
+            .insert(WantsToLook {})
+            .remove::<WantsToTeleport>();
     }
 }

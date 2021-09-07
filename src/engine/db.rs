@@ -85,11 +85,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         rooms_by_id.insert(id, entity);
     }
 
-    let metadata = RoomMetadata {
-        rooms_by_id,
-        highest_id,
-        players_by_room: HashMap::new(),
-    };
+    let metadata = RoomMetadata::new(rooms_by_id, highest_id);
     world.insert_resource(metadata);
 
     Ok(())
@@ -106,6 +102,7 @@ impl From<RoomRow> for Room {
         Room {
             id: row.id,
             description: row.description,
+            exits: HashMap::new(),
         }
     }
 }
