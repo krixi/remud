@@ -106,7 +106,7 @@ impl Update for PersistRoomExits {
             .execute(pool)
             .await?;
 
-        for (direction, destination) in room.exits.iter() {
+        for (direction, destination) in &room.exits {
             let to_room = match world.entity(*destination).get::<Room>() {
                 Some(room) => room,
                 None => bail!(

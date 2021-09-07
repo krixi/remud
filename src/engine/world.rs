@@ -48,7 +48,7 @@ impl Direction {
         }
     }
 
-    pub fn opposite(&self) -> Direction {
+    pub fn opposite(self) -> Direction {
         match self {
             Direction::North => Direction::South,
             Direction::East => Direction::West,
@@ -158,7 +158,7 @@ pub struct Updates {
 
 impl Updates {
     pub fn queue(&mut self, update: DynUpdate) {
-        self.updates.push(update)
+        self.updates.push(update);
     }
 }
 
@@ -205,8 +205,7 @@ impl GameWorld {
     pub fn should_shutdown(&self) -> bool {
         self.world
             .get_resource::<Configuration>()
-            .map(|configuration| configuration.shutdown)
-            .unwrap_or(true)
+            .map_or(true, |configuration| configuration.shutdown)
     }
 
     pub fn spawn_player(&mut self, name: String) -> Entity {

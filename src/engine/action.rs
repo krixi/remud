@@ -25,16 +25,15 @@ struct CreateRoom {
 
 impl Action for CreateRoom {
     fn enact(&mut self, player: Entity, world: &mut World) {
-        let current_room_entity = match world
+        let current_room_entity = if let Some(room) = world
             .entity(player)
             .get::<Location>()
             .map(|location| location.room)
         {
-            Some(room) => room,
-            None => {
-                tracing::error!("Unable to create room, player's current room cannot be found");
-                return;
-            }
+            room
+        } else {
+            tracing::error!("Unable to create room, player's current room cannot be found");
+            return;
         };
 
         // Confirm a room does not already exist in this direction
@@ -174,7 +173,7 @@ impl Action for UpdateRoom {
 
         if let Some(mut room) = world.entity_mut(room_entity).get_mut::<Room>() {
             if let Some(description) = self.description.take() {
-                room.description = description
+                room.description = description;
             }
         }
 
@@ -186,7 +185,7 @@ impl Action for UpdateRoom {
     }
 }
 
-pub fn parse_action(input: &str) -> Result<DynAction, String> {
+pub fn parse(input: &str) -> Result<DynAction, String> {
     let mut tokenizer = Tokenizer::new(input);
     if let Some(token) = tokenizer.next() {
         match token.to_lowercase().as_str() {

@@ -7,8 +7,8 @@ pub fn word_list(mut words: Vec<String>) -> String {
         words.join(" and ")
     } else {
         let last = words.pop().unwrap();
-        let list = words.join(", ");
-        format!("{}, and {}", list, last)
+        let joined = words.join(", ");
+        format!("{}, and {}", joined, last)
     }
 }
 

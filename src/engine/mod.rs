@@ -14,8 +14,8 @@ use tokio::{
 
 use crate::{
     engine::{
-        action::parse_action,
-        client::{ClientState, Clients},
+        action::parse,
+        client::{Client, ClientState, Clients},
         db::Db,
         world::GameWorld,
     },
@@ -73,7 +73,7 @@ impl Engine {
             tokio::select! {
                 _ = self.ticker.tick() => {
                     tokio::task::block_in_place(|| {
-                        self.game_world.run()
+                        self.game_world.run();
                     });
 
                     for (player, mut messages) in self.game_world.messages() {
@@ -117,11 +117,7 @@ impl Engine {
             ClientMessage::Disconnect(client_id) => {
                 tracing::info!("{:?} disconnected", client_id);
 
-                if let Some(player) = self
-                    .clients
-                    .get(client_id)
-                    .and_then(|client| client.get_player())
-                {
+                if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
                     self.game_world.despawn_player(player);
                 }
 
@@ -145,15 +141,15 @@ impl Engine {
                     match client.get_state() {
                         ClientState::LoginName => {
                             let name = input.trim();
-                            if !name_valid(name) {
-                                client
-                                    .send(String::from("That name is invalid.\r\n\r\nName?\r\n> "))
-                                    .await;
-                            } else {
+                            if name_valid(name) {
                                 client.send(String::from("Password?\r\n> ")).await;
                                 client.set_state(ClientState::LoginPassword {
                                     name: name.to_string(),
                                 });
+                            } else {
+                                client
+                                    .send(String::from("That name is invalid.\r\n\r\nName?\r\n> "))
+                                    .await;
                             }
                         }
                         ClientState::LoginPassword { name } => {
@@ -161,7 +157,7 @@ impl Engine {
                             new_player = Some(player);
                             client.set_state(ClientState::InGame { player });
                         }
-                        ClientState::InGame { player } => match parse_action(&input) {
+                        ClientState::InGame { player } => match parse(&input) {
                             Ok(action) => self.game_world.player_action(*player, action),
                             Err(message) => client.send(format!("{}\r\n> ", message)).await,
                         },

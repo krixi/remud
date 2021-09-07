@@ -49,11 +49,11 @@ pub enum OptionCode {
 }
 
 impl OptionCode {
-    fn byte(&self) -> u8 {
+    fn byte(self) -> u8 {
         match self {
             OptionCode::TerminalType => 24,
             OptionCode::Naws => 31,
-            OptionCode::Unknown(option) => *option,
+            OptionCode::Unknown(option) => option,
         }
     }
 }
@@ -130,17 +130,14 @@ impl Decoder for Codec {
                     WILL | WONT | DO | DONT => {
                         // Negotiations resemble IAC <NEGOTIATION_COMMAND> <OPTION CODE>
                         if src.len() > 2 {
-                            match Negotiate::try_from(src[1]) {
-                                Ok(negotiate) => {
-                                    let negotiation =
-                                        Frame::Negotiate(negotiate, OptionCode::from(src[2]));
-                                    src.advance(3);
-                                    Some(negotiation)
-                                }
-                                Err(_) => {
-                                    tracing::error!("Invalid negotiation received: {:?}", src);
-                                    None
-                                }
+                            if let Ok(negotiate) = Negotiate::try_from(src[1]) {
+                                let negotiation =
+                                    Frame::Negotiate(negotiate, OptionCode::from(src[2]));
+                                src.advance(3);
+                                Some(negotiation)
+                            } else {
+                                tracing::error!("Invalid negotiation received: {:?}", src);
+                                None
                             }
                         } else {
                             None
@@ -149,23 +146,16 @@ impl Decoder for Codec {
                     SB => {
                         // Subnegotations resemble IAC SB <OPTION CODE> <DATA> IAC SE
                         if src.len() > 4 {
-                            if let Some(suffix_pos) = src
-                                .as_ref()
+                            src.as_ref()
                                 .windows(2)
                                 .position(|b| b[0] == IAC && b[1] == SE)
-                            {
-                                let mut data = src.split_to(suffix_pos);
-                                src.advance(2);
+                                .map(|suffix_pos| {
+                                    let mut data = src.split_to(suffix_pos);
+                                    src.advance(2);
 
-                                let prefix = data.split_to(3);
-                                let subnegotiation =
-                                    Frame::Subnegotiate(OptionCode::from(prefix[2]), data.freeze());
-                                Some(subnegotiation)
-                            } else {
-                                // suffix not yet found
-                                // TODO: throw an error if the buffer becomes too large (malformed subnegotiation)
-                                None
-                            }
+                                    let prefix = data.split_to(3);
+                                    Frame::Subnegotiate(OptionCode::from(prefix[2]), data.freeze())
+                                })
                         } else {
                             None
                         }
@@ -284,8 +274,7 @@ impl Telnet {
                         }
                     }
                 }
-                OptionCode::Naws => (),
-                OptionCode::Unknown(_) => (),
+                OptionCode::Naws | OptionCode::Unknown(_) => (),
             }
         }
         frames
@@ -304,7 +293,7 @@ impl Telnet {
                     frames.push(Frame::Subnegotiate(
                         OptionCode::TerminalType,
                         bytes.freeze(),
-                    ))
+                    ));
                 } else {
                     self.terminal_selection_state = TerminalSelectionState::Done(None);
                 }
@@ -386,14 +375,10 @@ impl Options {
     }
 
     fn negotiating_option(&self, option: OptionCode) -> bool {
-        if let Some(state) = self.state.get(&option) {
-            match state {
-                OptionState::No | OptionState::Yes => false,
-                OptionState::WantNo | OptionState::WantYes => true,
-            }
-        } else {
-            false
-        }
+        self.state.get(&option).map_or(false, |state| match state {
+            OptionState::No | OptionState::Yes => false,
+            OptionState::WantNo | OptionState::WantYes => true,
+        })
     }
 
     fn negotiating(&self) -> bool {
@@ -526,12 +511,7 @@ impl TerminalTypes {
     }
 
     fn checked_add_type(&mut self, ttype: Bytes) -> Option<Frame> {
-        if self
-            .types
-            .last()
-            .map(|last| last == &ttype)
-            .unwrap_or(false)
-        {
+        if self.types.last().map_or(false, |last| last == &ttype) {
             tracing::info!("TType List: {:?}", self.types);
         } else {
             self.types.push(ttype);
@@ -553,8 +533,7 @@ impl TerminalTypes {
         if self
             .types
             .last()
-            .map(|b| b.to_ascii_uppercase().starts_with(b"MTTS"))
-            .unwrap_or(false)
+            .map_or(false, |b| b.to_ascii_uppercase().starts_with(b"MTTS"))
         {
             let mut features = TerminalFeatures::empty();
 
@@ -588,8 +567,8 @@ impl TerminalTypes {
                 | TerminalFeatures::COLORS_256
                 | TerminalFeatures::MOUSE_TRACKING;
 
-            if supports_true_color(self.types[index].clone()) {
-                features |= TerminalFeatures::TRUE_COLOR
+            if supports_true_color(&self.types[index]) {
+                features |= TerminalFeatures::TRUE_COLOR;
             }
 
             return Some(TerminalType {
@@ -607,11 +586,11 @@ impl TerminalTypes {
         {
             let mut features = TerminalFeatures::ANSI | TerminalFeatures::VT100;
 
-            if supports_true_color(self.types[index].clone()) {
-                features = features | TerminalFeatures::TRUE_COLOR | TerminalFeatures::COLORS_256
+            if supports_true_color(&self.types[index]) {
+                features = features | TerminalFeatures::TRUE_COLOR | TerminalFeatures::COLORS_256;
             }
 
-            if supports_256_color(self.types[index].clone()) {
+            if supports_256_color(&self.types[index]) {
                 features |= TerminalFeatures::COLORS_256;
             }
 
@@ -630,11 +609,11 @@ impl TerminalTypes {
         {
             let mut features = TerminalFeatures::ANSI;
 
-            if supports_true_color(self.types[index].clone()) {
-                features = features | TerminalFeatures::TRUE_COLOR | TerminalFeatures::COLORS_256
+            if supports_true_color(&self.types[index]) {
+                features = features | TerminalFeatures::TRUE_COLOR | TerminalFeatures::COLORS_256;
             }
 
-            if supports_256_color(self.types[index].clone()) {
+            if supports_256_color(&self.types[index]) {
                 features |= TerminalFeatures::COLORS_256;
             }
 
@@ -658,10 +637,10 @@ struct TerminalType {
     pub features: TerminalFeatures,
 }
 
-fn supports_true_color(terminal_type: Bytes) -> bool {
+fn supports_true_color(terminal_type: &Bytes) -> bool {
     terminal_type.to_ascii_uppercase().ends_with(b"TRUECOLOR")
 }
 
-fn supports_256_color(terminal_type: Bytes) -> bool {
+fn supports_256_color(terminal_type: &Bytes) -> bool {
     terminal_type.to_ascii_uppercase().ends_with(b"256COLOR")
 }

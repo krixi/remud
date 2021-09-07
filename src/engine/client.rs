@@ -45,7 +45,7 @@ impl Client {
     }
 
     pub fn set_state(&mut self, new_state: ClientState) {
-        self.state = new_state
+        self.state = new_state;
     }
 }
 
@@ -68,14 +68,14 @@ impl Clients {
     }
 
     pub fn remove(&mut self, client: ClientId) {
-        let player = self
-            .clients
-            .get(&client)
-            .map(|client| client.get_state())
-            .and_then(|state| match state {
-                ClientState::InGame { player } => Some(*player),
-                _ => None,
-            });
+        let player =
+            self.clients
+                .get(&client)
+                .map(Client::get_state)
+                .and_then(|state| match state {
+                    ClientState::InGame { player } => Some(*player),
+                    _ => None,
+                });
 
         if let Some(player) = player {
             self.by_player.remove(&player);

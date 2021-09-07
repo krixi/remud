@@ -1,3 +1,5 @@
+// #![warn(clippy::pedantic)]
+
 mod engine;
 mod telnet;
 mod text;
@@ -27,7 +29,9 @@ async fn main() -> anyhow::Result<()> {
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
     let mut engine = Engine::new(engine_rx, control_tx).await?;
-    tokio::spawn(async move { engine.run().await });
+    tokio::spawn(async move {
+        engine.run().await;
+    });
 
     let bind_address = "127.0.0.1:2004";
     let listener = TcpListener::bind(bind_address)
@@ -63,11 +67,9 @@ async fn main() -> anyhow::Result<()> {
             message = control_rx.recv() => {
                 match message {
                     Some(message) => {
-                        match message {
-                            ControlMessage::Shutdown =>  {
-                                tracing::warn!("Engine shutdown, halting server.");
-                                break
-                            }
+                        if matches!(message, ControlMessage::Shutdown) {
+                            tracing::warn!("Engine shutdown, halting server.");
+                            break
                         }
                     },
                     None => {
@@ -177,16 +179,16 @@ async fn process(
                                 break
                             }
                         }
-                    } else if !telnet.configured() {
+                    } else if telnet.configured() {
+                        ready = true;
+                        if tx.send(ClientMessage::Ready(client_id)).await.is_err() {
+                            break
+                        }
+                    } else {
                         for frame in telnet.configure() {
                             if framed.send(frame).await.is_err() {
                                 break
                             }
-                        }
-                    } else {
-                        ready = true;
-                        if tx.send(ClientMessage::Ready(client_id)).await.is_err() {
-                            break
                         }
                     }
                 } else {
@@ -206,7 +208,7 @@ fn append_input(input: Bytes, buffer: &mut AsciiString) {
                     buffer.pop();
                 }
             } else {
-                buffer.push(char)
+                buffer.push(char);
             }
         }
     }
