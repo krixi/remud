@@ -1,9 +1,9 @@
-mod db;
-mod macros;
-mod world;
-
 mod action;
 mod client;
+mod db;
+mod macros;
+mod persistence;
+mod world;
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -83,6 +83,13 @@ impl Engine {
                         } else {
                             tracing::error!("Attempting to send messages to player without client: {:?}", player);
                         }
+                    }
+
+                    for update in self.game_world.updates() {
+                        match update.enact(self.db.get_pool(), self.game_world.get_world()).await {
+                            Ok(_) => (),
+                            Err(e) => tracing::error!("Failed to execute update: {}", e),
+                        };
                     }
 
                     if self.game_world.should_shutdown() {

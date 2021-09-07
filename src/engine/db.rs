@@ -5,7 +5,7 @@ use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use crate::engine::world::{Configuration, Room, RoomMetadata};
+use crate::engine::world::{Configuration, Direction, Room, RoomMetadata};
 
 lazy_static! {
     static ref DB_NOT_FOUND_CODE: &'static str = "14";
@@ -48,8 +48,13 @@ impl Db {
 
         load_configuration(&self.pool, &mut world).await?;
         load_rooms(&self.pool, &mut world).await?;
+        load_exits(&self.pool, &mut world).await?;
 
         Ok(world)
+    }
+
+    pub fn get_pool(&self) -> &SqlitePool {
+        &self.pool
     }
 }
 
@@ -76,6 +81,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     let mut rooms_by_id = HashMap::new();
 
     let mut results = sqlx::query_as::<_, RoomRow>("SELECT id, description FROM rooms").fetch(pool);
+
     while let Some(room) = results.try_next().await? {
         let id = room.id;
         if id > highest_id {
@@ -87,6 +93,31 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
 
     let metadata = RoomMetadata::new(rooms_by_id, highest_id);
     world.insert_resource(metadata);
+
+    Ok(())
+}
+
+async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+    let mut results =
+        sqlx::query_as::<_, ExitRow>("SELECT room_from, room_to, direction FROM exits").fetch(pool);
+
+    while let Some(exit) = results.try_next().await? {
+        let (from, to) = {
+            let by_id = &world.get_resource::<RoomMetadata>().unwrap().rooms_by_id;
+            let from = *by_id.get(&exit.room_from).unwrap();
+            let to = *by_id.get(&exit.room_to).unwrap();
+            (from, to)
+        };
+
+        let direction = Direction::from_str(exit.direction.as_str()).unwrap();
+
+        world
+            .entity_mut(from)
+            .get_mut::<Room>()
+            .unwrap()
+            .exits
+            .insert(direction, to);
+    }
 
     Ok(())
 }
@@ -105,4 +136,11 @@ impl From<RoomRow> for Room {
             exits: HashMap::new(),
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct ExitRow {
+    room_from: i64,
+    room_to: i64,
+    direction: String,
 }

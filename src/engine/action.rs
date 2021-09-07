@@ -3,9 +3,12 @@ use std::{collections::HashMap, str::FromStr};
 use bevy_ecs::prelude::*;
 
 use crate::{
-    engine::world::{
-        Configuration, Direction, Location, Messages, Room, RoomMetadata, WantsToLook, WantsToMove,
-        WantsToSay, WantsToTeleport,
+    engine::{
+        persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates},
+        world::{
+            Configuration, Direction, Location, Messages, Room, RoomMetadata, Updates, WantsToLook,
+            WantsToMove, WantsToSay, WantsToTeleport,
+        },
     },
     text::Tokenizer,
 };
@@ -20,27 +23,23 @@ struct CreateRoom {
     direction: Option<Direction>,
 }
 
-fn queue_message(world: &mut World, player: Entity, message: String) {
-    match world.entity_mut(player).get_mut::<Messages>() {
-        Some(mut messages) => messages.queue.push(message),
-        None => {
-            world.entity_mut(player).insert(Messages::new_with(message));
-        }
-    }
-}
-
 impl Action for CreateRoom {
     fn enact(&mut self, player: Entity, world: &mut World) {
-        let current_room_entity = world
+        let current_room_entity = match world
             .entity(player)
             .get::<Location>()
-            .map(|location| location.room);
+            .map(|location| location.room)
+        {
+            Some(room) => room,
+            None => {
+                tracing::error!("Unable to create room, player's current room cannot be found");
+                return;
+            }
+        };
 
         // Confirm a room does not already exist in this direction
         if let Some(direction) = self.direction {
-            if let Some(current_room) =
-                current_room_entity.and_then(|room| world.entity_mut(room).get_mut::<Room>())
-            {
+            if let Some(current_room) = world.entity_mut(current_room_entity).get_mut::<Room>() {
                 if current_room.exits.contains_key(&direction) {
                     let message = format!("A room already exists {}.\r\n", direction.pretty_to());
                     queue_message(world, player, message);
@@ -60,18 +59,15 @@ impl Action for CreateRoom {
 
         // Create links
         if let Some(direction) = self.direction {
-            if let Some(current_room_entity) = current_room_entity {
-                if let Some(mut new_room) = world.entity_mut(new_room_entity).get_mut::<Room>() {
-                    new_room
-                        .exits
-                        .insert(direction.opposite(), current_room_entity);
-                }
+            if let Some(mut new_room) = world.entity_mut(new_room_entity).get_mut::<Room>() {
+                new_room
+                    .exits
+                    .insert(direction.opposite(), current_room_entity);
+            }
 
-                if let Some(mut current_room) =
-                    world.entity_mut(current_room_entity).get_mut::<Room>()
-                {
-                    current_room.exits.insert(direction, new_room_entity);
-                }
+            if let Some(mut current_room) = world.entity_mut(current_room_entity).get_mut::<Room>()
+            {
+                current_room.exits.insert(direction, new_room_entity);
             }
         }
 
@@ -86,6 +82,12 @@ impl Action for CreateRoom {
         world.entity_mut(player).insert(WantsToTeleport {
             room: new_room_entity,
         });
+
+        // Queue update
+        let mut updates = world.get_resource_mut::<Updates>().unwrap();
+        updates.queue(PersistNewRoom::new(new_room_entity));
+        updates.queue(PersistRoomExits::new(new_room_entity));
+        updates.queue(PersistRoomExits::new(current_room_entity));
     }
 }
 
@@ -159,17 +161,28 @@ struct UpdateRoom {
 
 impl Action for UpdateRoom {
     fn enact(&mut self, player: Entity, world: &mut World) {
-        if let Some(room) = world
+        let room_entity = match world
             .entity(player)
             .get::<Location>()
             .map(|location| location.room)
         {
-            if let Some(mut room) = world.entity_mut(room).get_mut::<Room>() {
-                if let Some(description) = self.description.take() {
-                    room.description = description
-                }
+            Some(room) => room,
+            None => {
+                return;
+            }
+        };
+
+        if let Some(mut room) = world.entity_mut(room_entity).get_mut::<Room>() {
+            if let Some(description) = self.description.take() {
+                room.description = description
             }
         }
+
+        // Queue update
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(PersistRoomUpdates::new(room_entity));
     }
 }
 
@@ -252,5 +265,14 @@ fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
         }
     } else {
         Err("'room' requires a subcommand.".to_string())
+    }
+}
+
+fn queue_message(world: &mut World, player: Entity, message: String) {
+    match world.entity_mut(player).get_mut::<Messages>() {
+        Some(mut messages) => messages.queue.push(message),
+        None => {
+            world.entity_mut(player).insert(Messages::new_with(message));
+        }
     }
 }

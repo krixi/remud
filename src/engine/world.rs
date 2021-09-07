@@ -2,13 +2,18 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fmt,
     str::FromStr,
 };
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::{engine::action::DynAction, queue_message, text::word_list};
+use crate::{
+    engine::{action::DynAction, persistence::DynUpdate},
+    queue_message,
+    text::word_list,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -67,6 +72,19 @@ impl FromStr for Direction {
             "up" => Ok(Direction::Up),
             "down" => Ok(Direction::Down),
             _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Direction::North => write!(f, "north"),
+            Direction::East => write!(f, "east"),
+            Direction::South => write!(f, "south"),
+            Direction::West => write!(f, "west"),
+            Direction::Up => write!(f, "up"),
+            Direction::Down => write!(f, "down"),
         }
     }
 }
@@ -133,6 +151,17 @@ pub struct Configuration {
     pub spawn_room: i64,
 }
 
+#[derive(Default)]
+pub struct Updates {
+    updates: Vec<DynUpdate>,
+}
+
+impl Updates {
+    pub fn queue(&mut self, update: DynUpdate) {
+        self.updates.push(update)
+    }
+}
+
 pub struct GameWorld {
     world: World,
     schedule: Schedule,
@@ -141,6 +170,7 @@ pub struct GameWorld {
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
+        // Create emergency room
         let room = Room {
             id: 0,
             description: "A dark void extends infinitely in all directions.".to_string(),
@@ -148,6 +178,10 @@ impl GameWorld {
         };
         let void_room = world.spawn().insert(room).id();
 
+        // Add resources
+        world.insert_resource(Updates::default());
+
+        // Create schedule
         let mut schedule = Schedule::default();
 
         let mut update = SystemStage::parallel();
@@ -245,6 +279,19 @@ impl GameWorld {
         }
 
         outgoing
+    }
+
+    pub fn updates(&mut self) -> Vec<DynUpdate> {
+        let mut updates = self.world.get_resource_mut::<Updates>().unwrap();
+
+        let mut new_updates = Vec::new();
+        std::mem::swap(&mut updates.updates, &mut new_updates);
+
+        new_updates
+    }
+
+    pub fn get_world(&self) -> &World {
+        &self.world
     }
 }
 
@@ -405,12 +452,6 @@ fn teleport_system(
     for (teleporting_player_entity, teleporting_player, wants_to_teleport, mut location) in
         teleporting_players.iter_mut()
     {
-        room_data.player_moved(
-            teleporting_player_entity,
-            location.room,
-            wants_to_teleport.room,
-        );
-
         if let Some(present_players) = room_data.players_by_room.get(&location.room) {
             for present_player in present_players {
                 if *present_player == teleporting_player_entity {
@@ -424,6 +465,12 @@ fn teleport_system(
                 queue_message!(commands, messages, *present_player, message);
             }
         }
+
+        room_data.player_moved(
+            teleporting_player_entity,
+            location.room,
+            wants_to_teleport.room,
+        );
 
         location.room = wants_to_teleport.room;
 
