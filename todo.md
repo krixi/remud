@@ -1,4 +1,3 @@
-- add room subcommand for linking rooms
 - add RoomId type
 - look up reverse exit information, if any, to describe how players enter the room
 - add exits command to list exits from a room

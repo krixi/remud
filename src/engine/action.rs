@@ -70,6 +70,14 @@ impl Action for CreateRoom {
             }
         }
 
+        let mut message = format!("Created room {:?}", id);
+        if let Some(direction) = self.direction {
+            message.push_str(" to the ");
+            message.push_str(direction.to_string().as_str());
+        }
+        message.push_str(".\r\n");
+        queue_message(world, player, message);
+
         // Add reverse lookup
         world
             .get_resource_mut::<RoomMetadata>()
@@ -77,16 +85,13 @@ impl Action for CreateRoom {
             .rooms_by_id
             .insert(id, new_room_entity);
 
-        // Teleport player to new room
-        world.entity_mut(player).insert(WantsToTeleport {
-            room: new_room_entity,
-        });
-
         // Queue update
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(PersistNewRoom::new(new_room_entity));
-        updates.queue(PersistRoomExits::new(new_room_entity));
-        updates.queue(PersistRoomExits::new(current_room_entity));
+        if self.direction.is_some() {
+            updates.queue(PersistRoomExits::new(new_room_entity));
+            updates.queue(PersistRoomExits::new(current_room_entity));
+        }
     }
 }
 
@@ -154,6 +159,54 @@ impl Action for Teleport {
     }
 }
 
+struct UpdateExit {
+    direction: Direction,
+    destination: i64,
+}
+
+impl Action for UpdateExit {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        let from_room = match world
+            .entity(player)
+            .get::<Location>()
+            .map(|location| location.room)
+        {
+            Some(room) => room,
+            None => {
+                return;
+            }
+        };
+
+        let destination = if let Some(destination) = world
+            .get_resource::<RoomMetadata>()
+            .unwrap()
+            .rooms_by_id
+            .get(&self.destination)
+        {
+            *destination
+        } else {
+            return;
+        };
+
+        if let Some(mut room) = world.entity_mut(from_room).get_mut::<Room>() {
+            room.exits.insert(self.direction, destination);
+        }
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(PersistRoomExits::new(from_room));
+
+        if let Some(room) = world.entity(from_room).get::<Room>() {
+            let message = format!(
+                "Linked room {:?} {} to room {:?}.\r\n",
+                room.id, self.direction, self.destination
+            );
+            queue_message(world, player, message);
+        }
+    }
+}
+
 struct UpdateRoom {
     description: Option<String>,
 }
@@ -175,6 +228,9 @@ impl Action for UpdateRoom {
             if let Some(description) = self.description.take() {
                 room.description = description;
             }
+
+            let message = format!("Updated room {:?} description.\r\n", room.id);
+            queue_message(world, player, message);
         }
 
         // Queue update
@@ -259,6 +315,44 @@ fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                 Ok(Box::new(UpdateRoom {
                     description: Some(description.to_string()),
                 }))
+            }
+            "link" => {
+                if let Some(direction) = tokenizer.next() {
+                    if let Some(destination) = tokenizer.next() {
+                        let direction = match Direction::from_str(direction) {
+                            Ok(direction) => direction,
+                            Err(_) => {
+                                return Err(format!("'{}' is not a valid direction.", direction))
+                            }
+                        };
+
+                        let destination = match destination.parse::<i64>() {
+                            Ok(destination) => {
+                                if destination > 0 {
+                                    destination
+                                } else {
+                                    return Err(
+                                        "The destination room ID must be a positive integer."
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Err(_) => {
+                                return Err("The destination room ID must be a positive integer."
+                                    .to_string())
+                            }
+                        };
+
+                        Ok(Box::new(UpdateExit {
+                            direction,
+                            destination,
+                        }))
+                    } else {
+                        Err("A destination room ID is required.".to_string())
+                    }
+                } else {
+                    Err("A direction and destination room ID are required.".to_string())
+                }
             }
             s => Err(format!("'{}' is not a valid room subcommand.", s)),
         }
