@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 pub fn word_list(mut words: Vec<String>) -> String {
     if words.is_empty() {
         String::new()

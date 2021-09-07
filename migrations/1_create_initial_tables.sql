@@ -17,3 +17,10 @@ CREATE TABLE IF NOT EXISTS config
 INSERT INTO config (key, value)
 VALUES
   ("spawn_room", "1");
+
+CREATE TABLE IF NOT EXISTS exits
+(
+  room_from INTEGER NOT NULL REFERENCES rooms(id),
+  room_to   INTEGER NOT NULL REFERENCES rooms(id),
+  direction TEXT    NOT NULL
+)

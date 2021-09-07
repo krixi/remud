@@ -225,7 +225,7 @@ impl GameWorld {
         }
     }
 
-    pub fn player_action(&mut self, player: Entity, action: DynAction) {
+    pub fn player_action(&mut self, player: Entity, mut action: DynAction) {
         action.enact(player, &mut self.world);
     }
 

@@ -13,7 +13,7 @@ use crate::{
 pub type DynAction = Box<dyn Action + Send>;
 
 pub trait Action {
-    fn enact(&self, player: Entity, world: &mut World);
+    fn enact(&mut self, player: Entity, world: &mut World);
 }
 
 struct CreateRoom {
@@ -30,7 +30,7 @@ fn queue_message(world: &mut World, player: Entity, message: String) {
 }
 
 impl Action for CreateRoom {
-    fn enact(&self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) {
         let current_room_entity = world
             .entity(player)
             .get::<Location>()
@@ -92,7 +92,7 @@ impl Action for CreateRoom {
 struct Look {}
 
 impl Action for Look {
-    fn enact(&self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) {
         world.entity_mut(player).insert(WantsToLook {});
     }
 }
@@ -102,7 +102,7 @@ struct Move {
 }
 
 impl Action for Move {
-    fn enact(&self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) {
         world.entity_mut(player).insert(WantsToMove {
             direction: self.direction,
         });
@@ -114,17 +114,17 @@ struct Say {
 }
 
 impl Action for Say {
-    fn enact(&self, player: Entity, world: &mut World) {
-        world.entity_mut(player).insert(WantsToSay {
-            message: self.message.clone(),
-        });
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        let mut message = String::new();
+        std::mem::swap(&mut self.message, &mut message);
+        world.entity_mut(player).insert(WantsToSay { message });
     }
 }
 
 struct Shutdown {}
 
 impl Action for Shutdown {
-    fn enact(&self, _player: Entity, world: &mut World) {
+    fn enact(&mut self, _player: Entity, world: &mut World) {
         let mut configuration = world.get_resource_mut::<Configuration>().unwrap();
         configuration.shutdown = true;
     }
@@ -135,7 +135,7 @@ struct Teleport {
 }
 
 impl Action for Teleport {
-    fn enact(&self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) {
         let room = if let Some(room) = world
             .get_resource::<RoomMetadata>()
             .unwrap()
@@ -150,6 +150,26 @@ impl Action for Teleport {
         };
 
         world.entity_mut(player).insert(WantsToTeleport { room });
+    }
+}
+
+struct UpdateRoom {
+    description: Option<String>,
+}
+
+impl Action for UpdateRoom {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        if let Some(room) = world
+            .entity(player)
+            .get::<Location>()
+            .map(|location| location.room)
+        {
+            if let Some(mut room) = world.entity_mut(room).get_mut::<Room>() {
+                if let Some(description) = self.description.take() {
+                    room.description = description
+                }
+            }
+        }
     }
 }
 
@@ -205,7 +225,8 @@ pub fn parse_action(input: &str) -> Result<DynAction, String> {
 
 // Valid shapes:
 // room new - creates a new unlinked room
-// room new [Direction] - creates a room to the [Direction] of this one with a two way link
+// room new [direction] - creates a room to the [Direction] of this one with a two way link
+// room desc [description]
 fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
@@ -220,6 +241,12 @@ fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                 };
 
                 Ok(Box::new(CreateRoom { direction }))
+            }
+            "desc" => {
+                let description = tokenizer.rest();
+                Ok(Box::new(UpdateRoom {
+                    description: Some(description.to_string()),
+                }))
             }
             s => Err(format!("'{}' is not a valid room subcommand.", s)),
         }
