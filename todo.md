@@ -3,3 +3,4 @@
 - add RoomId type
 - store exits in database
 - persist changes to rooms
+- look up reverse exit information, if any, to describe how players enter the room

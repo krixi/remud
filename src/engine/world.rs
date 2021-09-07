@@ -322,6 +322,22 @@ fn move_system(
         };
 
         room_data.player_moved(moving_player_entity, location.room, destination);
+
+        if let Some(present_players) = room_data.players_by_room.get(&location.room) {
+            for present_player in present_players {
+                if *present_player == moving_player_entity {
+                    continue;
+                }
+
+                let message = format!(
+                    "{} leaves {}.\r\n",
+                    player.name,
+                    wants_to_move.direction.pretty_to()
+                );
+                queue_message!(commands, messages, *present_player, message);
+            }
+        }
+
         location.room = destination;
 
         if let Some(present_players) = room_data.players_by_room.get(&destination) {
@@ -394,6 +410,20 @@ fn teleport_system(
             location.room,
             wants_to_teleport.room,
         );
+
+        if let Some(present_players) = room_data.players_by_room.get(&location.room) {
+            for present_player in present_players {
+                if *present_player == teleporting_player_entity {
+                    continue;
+                }
+
+                let message = format!(
+                    "{} disappears in the blink of an eye.\r\n",
+                    teleporting_player.name
+                );
+                queue_message!(commands, messages, *present_player, message);
+            }
+        }
 
         location.room = wants_to_teleport.room;
 
