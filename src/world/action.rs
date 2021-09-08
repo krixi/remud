@@ -3,12 +3,11 @@ use std::{collections::HashMap, str::FromStr};
 use bevy_ecs::prelude::*;
 
 use crate::{
-    engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates},
+    engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates, Updates},
     text::Tokenizer,
     world::{
         types::room::{Direction, Room, RoomId, Rooms},
-        Configuration, Location, Messages, Updates, WantsToLook, WantsToMove, WantsToSay,
-        WantsToTeleport,
+        Configuration, Location, Messages, WantsToLook, WantsToMove, WantsToSay, WantsToTeleport,
     },
 };
 
@@ -71,8 +70,7 @@ impl Action for CreateRoom {
 
         let mut message = format!("Created room {:?}", id);
         if let Some(direction) = self.direction {
-            message.push_str(" to the ");
-            message.push_str(direction.as_str());
+            message.push_str(direction.as_to_str());
         }
         message.push_str(".\r\n");
         queue_message(world, player, message);

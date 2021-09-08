@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::TryFrom,
+    io, str,
 };
 
 use bitflags::bitflags;
@@ -109,7 +110,7 @@ pub struct Codec;
 
 impl Decoder for Codec {
     type Item = Frame;
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.is_empty() {
@@ -183,7 +184,7 @@ impl Decoder for Codec {
 }
 
 impl Encoder<Frame> for Codec {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn encode(&mut self, frame: Frame, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
         tracing::debug!("<- {:?}", frame);
@@ -540,7 +541,7 @@ impl TerminalTypes {
             let name = self.types.last().expect("last TType exists").clone();
             let mut mtts_flags = name.clone();
             mtts_flags.advance(5);
-            if let Ok(flag_string) = std::str::from_utf8(&mtts_flags) {
+            if let Ok(flag_string) = str::from_utf8(&mtts_flags) {
                 if let Ok(int_flags) = flag_string.parse::<u16>() {
                     if let Some(flags) = TerminalFeatures::from_bits(int_flags) {
                         features = flags;

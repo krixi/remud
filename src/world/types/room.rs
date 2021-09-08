@@ -1,7 +1,7 @@
 use std::{
     collections::{hash_set, HashMap, HashSet},
     convert::TryFrom,
-    fmt,
+    error, fmt,
     str::FromStr,
 };
 
@@ -51,7 +51,7 @@ impl fmt::Display for RoomIdParseError {
         write!(f, "Room IDs must be a non-negative integers.")
     }
 }
-impl std::error::Error for RoomIdParseError {}
+impl error::Error for RoomIdParseError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {

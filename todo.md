@@ -1,4 +1,7 @@
-- add RoomId type
 - look up reverse exit information, if any, to describe how players enter the room
 - add exits command to list exits from a room
 - add help command
+- add command to create objects with keywords, short desc, and long desc
+- allow players to look at objects and see long desc via "look at keyword(s)"
+- allow objects to be seen via short desc when looking in a room
+- persist objects to database

@@ -1,3 +1,5 @@
+use std::mem;
+
 use anyhow::bail;
 use async_trait::async_trait;
 use bevy_ecs::prelude::*;
@@ -6,6 +8,23 @@ use sqlx::SqlitePool;
 use crate::world::types::room::Room;
 
 pub type DynUpdate = Box<dyn Update + Send + Sync>;
+
+#[derive(Default)]
+pub struct Updates {
+    updates: Vec<DynUpdate>,
+}
+
+impl Updates {
+    pub fn queue(&mut self, update: DynUpdate) {
+        self.updates.push(update);
+    }
+
+    pub fn take(&mut self) -> Vec<DynUpdate> {
+        let mut updates = Vec::new();
+        mem::swap(&mut self.updates, &mut updates);
+        updates
+    }
+}
 
 #[async_trait]
 pub trait Update {

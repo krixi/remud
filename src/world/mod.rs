@@ -9,7 +9,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::DynUpdate,
+    engine::persistence::{DynUpdate, Updates},
     queue_message,
     text::word_list,
     world::{
@@ -43,17 +43,6 @@ impl Messages {
 pub struct Configuration {
     pub shutdown: bool,
     pub spawn_room: RoomId,
-}
-
-#[derive(Default)]
-pub struct Updates {
-    updates: Vec<DynUpdate>,
-}
-
-impl Updates {
-    pub fn queue(&mut self, update: DynUpdate) {
-        self.updates.push(update);
-    }
 }
 
 pub struct GameWorld {
@@ -113,7 +102,7 @@ impl GameWorld {
                     .unwrap_or(self.void_room)
             };
 
-            let player_entity = self
+            let player = self
                 .world
                 .spawn()
                 .insert(Player { name })
@@ -121,7 +110,7 @@ impl GameWorld {
                 .insert(WantsToLook {})
                 .id();
 
-            (player_entity, room)
+            (player, room)
         };
 
         let mut rooms = self.world.get_resource_mut::<Rooms>().unwrap();
@@ -168,12 +157,7 @@ impl GameWorld {
     }
 
     pub fn updates(&mut self) -> Vec<DynUpdate> {
-        let mut updates = self.world.get_resource_mut::<Updates>().unwrap();
-
-        let mut new_updates = Vec::new();
-        std::mem::swap(&mut updates.updates, &mut new_updates);
-
-        new_updates
+        self.world.get_resource_mut::<Updates>().unwrap().take()
     }
 
     pub fn get_world(&self) -> &World {
@@ -345,7 +329,7 @@ fn teleport_system(
             .filter(|player| player != &teleporting_entity)
             .for_each(|present_player| {
                 let message = format!(
-                    "{} appears in a puff of smoke.\r\n",
+                    "{} appears in a flash of light.\r\n",
                     teleporting_player.name
                 );
                 queue_message!(commands, messages, present_player, message);
