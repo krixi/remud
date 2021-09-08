@@ -6,8 +6,8 @@ use crate::{
     engine::{
         persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates},
         world::{
-            Configuration, Direction, Location, Messages, Room, RoomMetadata, Updates, WantsToLook,
-            WantsToMove, WantsToSay, WantsToTeleport,
+            Configuration, Direction, Location, Messages, Room, RoomId, RoomMetadata, Updates,
+            WantsToLook, WantsToMove, WantsToSay, WantsToTeleport,
         },
     },
     text::Tokenizer,
@@ -137,7 +137,7 @@ impl Action for Shutdown {
 }
 
 struct Teleport {
-    room_id: i64,
+    room_id: RoomId,
 }
 
 impl Action for Teleport {
@@ -161,7 +161,7 @@ impl Action for Teleport {
 
 struct UpdateExit {
     direction: Direction,
-    destination: i64,
+    destination: RoomId,
 }
 
 impl Action for UpdateExit {
@@ -265,14 +265,9 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             })),
             "teleport" => {
                 if let Some(destination) = tokenizer.next() {
-                    if let Ok(room_id) = destination.parse::<i64>() {
-                        if room_id > 0 {
-                            Ok(Box::new(Teleport { room_id }))
-                        } else {
-                            Err("Room IDs must be positive.".to_string())
-                        }
-                    } else {
-                        Err("Room IDs must be positive integers.".to_string())
+                    match destination.parse::<RoomId>() {
+                        Ok(room_id) => Ok(Box::new(Teleport { room_id })),
+                        Err(e) => Err(e.to_string()),
                     }
                 } else {
                     Err("Teleport to where?".to_string())
@@ -294,7 +289,8 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
 // Valid shapes:
 // room new - creates a new unlinked room
 // room new [direction] - creates a room to the [Direction] of this one with a two way link
-// room desc [description]
+// room desc [description] - sets the description of a room
+// room link [direction] [room ID] - links the current room to another in a given direction (one way)
 fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
@@ -326,21 +322,9 @@ fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                             }
                         };
 
-                        let destination = match destination.parse::<i64>() {
-                            Ok(destination) => {
-                                if destination > 0 {
-                                    destination
-                                } else {
-                                    return Err(
-                                        "The destination room ID must be a positive integer."
-                                            .to_string(),
-                                    );
-                                }
-                            }
-                            Err(_) => {
-                                return Err("The destination room ID must be a positive integer."
-                                    .to_string())
-                            }
+                        let destination = match destination.parse::<RoomId>() {
+                            Ok(destination) => destination,
+                            Err(e) => return Err(e.to_string()),
                         };
 
                         Ok(Box::new(UpdateExit {

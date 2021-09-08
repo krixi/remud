@@ -1,11 +1,11 @@
-use std::{borrow::Cow, collections::HashMap, str::FromStr};
+use std::{borrow::Cow, collections::HashMap, convert::TryFrom, str::FromStr};
 
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use crate::engine::world::{Configuration, Direction, Room, RoomMetadata};
+use crate::engine::world::{Configuration, Direction, Room, RoomId, RoomMetadata};
 
 lazy_static! {
     static ref DB_NOT_FOUND_CODE: &'static str = "14";
@@ -64,7 +64,7 @@ async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Res
         .await?;
 
     let spawn_room_str: String = config_row.get("value");
-    let spawn_room = spawn_room_str.parse::<i64>()?;
+    let spawn_room = RoomId::try_from(spawn_room_str.parse::<i64>()?)?;
 
     let configuration = Configuration {
         shutdown: false,
@@ -87,8 +87,8 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         if id > highest_id {
             highest_id = id;
         }
-        let entity = world.spawn().insert(Room::from(room)).id();
-        rooms_by_id.insert(id, entity);
+        let entity = world.spawn().insert(Room::try_from(room)?).id();
+        rooms_by_id.insert(RoomId::try_from(id)?, entity);
     }
 
     let metadata = RoomMetadata::new(rooms_by_id, highest_id);
@@ -104,8 +104,8 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     while let Some(exit) = results.try_next().await? {
         let (from, to) = {
             let by_id = &world.get_resource::<RoomMetadata>().unwrap().rooms_by_id;
-            let from = *by_id.get(&exit.room_from).unwrap();
-            let to = *by_id.get(&exit.room_to).unwrap();
+            let from = *by_id.get(&RoomId::try_from(exit.room_from)?).unwrap();
+            let to = *by_id.get(&RoomId::try_from(exit.room_to)?).unwrap();
             (from, to)
         };
 
@@ -128,13 +128,15 @@ struct RoomRow {
     description: String,
 }
 
-impl From<RoomRow> for Room {
-    fn from(row: RoomRow) -> Self {
-        Room {
-            id: row.id,
-            description: row.description,
+impl TryFrom<RoomRow> for Room {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RoomRow) -> Result<Self, Self::Error> {
+        Ok(Room {
+            id: RoomId::try_from(value.id)?,
+            description: value.description,
             exits: HashMap::new(),
-        }
+        })
     }
 }
 

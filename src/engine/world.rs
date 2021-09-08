@@ -2,6 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryFrom,
     fmt,
     str::FromStr,
 };
@@ -14,6 +15,46 @@ use crate::{
     queue_message,
     text::word_list,
 };
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct RoomId(i64);
+
+impl TryFrom<i64> for RoomId {
+    type Error = RoomIdParseError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value >= 0 {
+            Ok(RoomId(value))
+        } else {
+            Err(RoomIdParseError {})
+        }
+    }
+}
+
+impl FromStr for RoomId {
+    type Err = RoomIdParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let int = s.parse::<i64>().map_err(|_| RoomIdParseError {})?;
+        RoomId::try_from(int)
+    }
+}
+
+impl fmt::Display for RoomId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+#[derive(Debug)]
+pub struct RoomIdParseError {}
+impl fmt::Display for RoomIdParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Room ID must be a positive integer.")
+    }
+}
+impl std::error::Error for RoomIdParseError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -99,7 +140,7 @@ pub struct Location {
 }
 
 pub struct Room {
-    pub id: i64,
+    pub id: RoomId,
     pub description: String,
     pub exits: HashMap<Direction, Entity>,
 }
@@ -118,13 +159,13 @@ impl Messages {
 
 // Resources
 pub struct RoomMetadata {
-    pub rooms_by_id: HashMap<i64, Entity>,
+    pub rooms_by_id: HashMap<RoomId, Entity>,
     pub players_by_room: HashMap<Entity, HashSet<Entity>>,
     highest_id: i64,
 }
 
 impl RoomMetadata {
-    pub fn new(rooms_by_id: HashMap<i64, Entity>, highest_id: i64) -> Self {
+    pub fn new(rooms_by_id: HashMap<RoomId, Entity>, highest_id: i64) -> Self {
         RoomMetadata {
             rooms_by_id,
             players_by_room: HashMap::new(),
@@ -140,15 +181,15 @@ impl RoomMetadata {
         self.players_by_room.entry(to).or_default().insert(player);
     }
 
-    pub fn next_id(&mut self) -> i64 {
+    pub fn next_id(&mut self) -> RoomId {
         self.highest_id += 1;
-        self.highest_id
+        RoomId(self.highest_id)
     }
 }
 
 pub struct Configuration {
     pub shutdown: bool,
-    pub spawn_room: i64,
+    pub spawn_room: RoomId,
 }
 
 #[derive(Default)]
@@ -172,7 +213,7 @@ impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Create emergency room
         let room = Room {
-            id: 0,
+            id: RoomId(0),
             description: "A dark void extends infinitely in all directions.".to_string(),
             exits: HashMap::new(),
         };
