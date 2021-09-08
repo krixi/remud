@@ -6,7 +6,7 @@ macro_rules! queue_message {
             Err(_) => {
                 $commands
                     .entity($entity)
-                    .insert(crate::engine::world::Messages::new_with($message));
+                    .insert(crate::world::Messages::new_with($message));
             }
         }
     };
@@ -16,7 +16,7 @@ macro_rules! queue_message {
             Err(_) => {
                 $commands
                     .entity(*$entity)
-                    .insert(crate::engine::world::Messages::new_with($message));
+                    .insert(crate::world::Messages::new_with($message));
             }
         }
     };

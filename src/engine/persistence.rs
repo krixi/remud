@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
-use crate::engine::world::Room;
+use crate::world::types::room::Room;
 
 pub type DynUpdate = Box<dyn Update + Send + Sync>;
 
@@ -120,7 +120,7 @@ impl Update for PersistRoomExits {
             sqlx::query("INSERT INTO exits (room_from, room_to, direction) VALUES (?, ?, ?)")
                 .bind(room.id)
                 .bind(to_room.id)
-                .bind(direction.to_string())
+                .bind(direction.as_str())
                 .execute(pool)
                 .await?;
         }

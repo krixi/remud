@@ -3,6 +3,7 @@
 mod engine;
 mod telnet;
 mod text;
+mod world;
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};

@@ -5,7 +5,10 @@ use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use crate::engine::world::{Configuration, Direction, Room, RoomId, RoomMetadata};
+use crate::world::{
+    types::room::{Direction, Room, RoomId, Rooms},
+    Configuration,
+};
 
 lazy_static! {
     static ref DB_NOT_FOUND_CODE: &'static str = "14";
@@ -91,7 +94,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         rooms_by_id.insert(RoomId::try_from(id)?, entity);
     }
 
-    let metadata = RoomMetadata::new(rooms_by_id, highest_id);
+    let metadata = Rooms::new(rooms_by_id, highest_id);
     world.insert_resource(metadata);
 
     Ok(())
@@ -103,9 +106,9 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
 
     while let Some(exit) = results.try_next().await? {
         let (from, to) = {
-            let by_id = &world.get_resource::<RoomMetadata>().unwrap().rooms_by_id;
-            let from = *by_id.get(&RoomId::try_from(exit.room_from)?).unwrap();
-            let to = *by_id.get(&RoomId::try_from(exit.room_to)?).unwrap();
+            let rooms = &world.get_resource::<Rooms>().unwrap();
+            let from = rooms.get_room(RoomId::try_from(exit.room_from)?).unwrap();
+            let to = rooms.get_room(RoomId::try_from(exit.room_to)?).unwrap();
             (from, to)
         };
 

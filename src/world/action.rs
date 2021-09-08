@@ -3,14 +3,13 @@ use std::{collections::HashMap, str::FromStr};
 use bevy_ecs::prelude::*;
 
 use crate::{
-    engine::{
-        persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates},
-        world::{
-            Configuration, Direction, Location, Messages, Room, RoomId, RoomMetadata, Updates,
-            WantsToLook, WantsToMove, WantsToSay, WantsToTeleport,
-        },
-    },
+    engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates},
     text::Tokenizer,
+    world::{
+        types::room::{Direction, Room, RoomId, Rooms},
+        Configuration, Location, Messages, Updates, WantsToLook, WantsToMove, WantsToSay,
+        WantsToTeleport,
+    },
 };
 
 pub type DynAction = Box<dyn Action + Send>;
@@ -40,7 +39,7 @@ impl Action for CreateRoom {
         if let Some(direction) = self.direction {
             if let Some(current_room) = world.entity_mut(current_room_entity).get_mut::<Room>() {
                 if current_room.exits.contains_key(&direction) {
-                    let message = format!("A room already exists {}.\r\n", direction.pretty_to());
+                    let message = format!("A room already exists {}.\r\n", direction.as_to_str());
                     queue_message(world, player, message);
                     return;
                 }
@@ -48,7 +47,7 @@ impl Action for CreateRoom {
         }
 
         // Create new room
-        let id = world.get_resource_mut::<RoomMetadata>().unwrap().next_id();
+        let id = world.get_resource_mut::<Rooms>().unwrap().next_id();
         let room = Room {
             id,
             description: "An empty room.".to_string(),
@@ -73,17 +72,16 @@ impl Action for CreateRoom {
         let mut message = format!("Created room {:?}", id);
         if let Some(direction) = self.direction {
             message.push_str(" to the ");
-            message.push_str(direction.to_string().as_str());
+            message.push_str(direction.as_str());
         }
         message.push_str(".\r\n");
         queue_message(world, player, message);
 
         // Add reverse lookup
         world
-            .get_resource_mut::<RoomMetadata>()
+            .get_resource_mut::<Rooms>()
             .unwrap()
-            .rooms_by_id
-            .insert(id, new_room_entity);
+            .add_room(id, new_room_entity);
 
         // Queue update
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
@@ -143,12 +141,11 @@ struct Teleport {
 impl Action for Teleport {
     fn enact(&mut self, player: Entity, world: &mut World) {
         let room = if let Some(room) = world
-            .get_resource::<RoomMetadata>()
+            .get_resource::<Rooms>()
             .unwrap()
-            .rooms_by_id
-            .get(&self.room_id)
+            .get_room(self.room_id)
         {
-            *room
+            room
         } else {
             let message = format!("Room {} doesn't exist.\r\n", self.room_id);
             queue_message(world, player, message);
@@ -178,12 +175,11 @@ impl Action for UpdateExit {
         };
 
         let destination = if let Some(destination) = world
-            .get_resource::<RoomMetadata>()
+            .get_resource::<Rooms>()
             .unwrap()
-            .rooms_by_id
-            .get(&self.destination)
+            .get_room(self.destination)
         {
-            *destination
+            destination
         } else {
             return;
         };
