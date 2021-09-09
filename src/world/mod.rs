@@ -160,6 +160,11 @@ impl GameWorld {
         let mut outgoing = Vec::new();
 
         for player in players_with_messages {
+            if let Some(messages) = self.world.entity(player).get::<Messages>() {
+                if messages.queue.is_empty() {
+                    continue;
+                }
+            }
             if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
                 if !messages.queue.is_empty() {
                     if !messages.received_input {
