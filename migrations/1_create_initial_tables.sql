@@ -20,7 +20,15 @@ VALUES
 
 CREATE TABLE IF NOT EXISTS exits
 (
-  room_from INTEGER NOT NULL REFERENCES rooms(id),
-  room_to   INTEGER NOT NULL REFERENCES rooms(id),
-  direction TEXT    NOT NULL
-)
+  room_from INTEGER NOT NULL,
+  room_to   INTEGER NOT NULL,
+  direction TEXT    NOT NULL,
+  FOREIGN KEY (room_from)
+    REFERENCES rooms (id)
+      ON UPDATE NO ACTION
+      ON DELETE CASCADE,
+  FOREIGN KEY (room_to)
+    REFERENCES rooms (id)
+      ON UPDATE NO ACTION
+      ON DELETE CASCADE
+);

@@ -249,17 +249,24 @@ fn move_system(
                 queue_message!(commands, messages, present_player, message);
             });
 
+        let direction_from = rooms_query.get(destination).ok().and_then(|destination| {
+            destination
+                .exits
+                .iter()
+                .find(|(_, from_room)| **from_room == location.room)
+                .map(|(direction, _)| direction)
+                .copied()
+        });
+
         location.room = destination;
 
         rooms
             .players_in(destination)
             .filter(|player| player != &moving_entity)
             .for_each(|present_player| {
-                let message = format!(
-                    "{} enters {}.\r\n",
-                    player.name,
-                    wants_to_move.direction.opposite().as_from_str()
-                );
+                let message = direction_from
+                    .map(|from| format!("{} enters {}.\r\n", player.name, from.as_from_str()))
+                    .unwrap_or_else(|| format!("{} appears.\r\n", player.name));
                 queue_message!(commands, messages, present_player, message);
             });
 

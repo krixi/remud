@@ -21,7 +21,7 @@ pub struct Db {
 impl Db {
     pub async fn new(db: &str) -> anyhow::Result<Self> {
         let uri = format!("sqlite://{}", db);
-        match SqlitePool::connect(&uri).await {
+        let db = match SqlitePool::connect(&uri).await {
             Ok(pool) => match sqlx::migrate!("./migrations").run(&pool).await {
                 Ok(_) => Ok(Db { pool }),
                 Err(e) => Err(e.into()),
@@ -43,7 +43,13 @@ impl Db {
                     Err(e.into())
                 }
             }
+        };
+
+        if let Ok(db) = &db {
+            db.vacuum().await?;
         }
+
+        db
     }
 
     pub async fn load_world(&self) -> anyhow::Result<World> {
@@ -58,6 +64,11 @@ impl Db {
 
     pub fn get_pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    pub async fn vacuum(&self) -> anyhow::Result<()> {
+        sqlx::query("VACUUM").execute(&self.pool).await?;
+        Ok(())
     }
 }
 

@@ -68,8 +68,9 @@ impl Action for CreateRoom {
             }
         }
 
-        let mut message = format!("Created room {:?}", id);
+        let mut message = format!("Created room {}", id);
         if let Some(direction) = self.direction {
+            message.push(' ');
             message.push_str(direction.as_to_str());
         }
         message.push_str(".\r\n");
@@ -193,7 +194,7 @@ impl Action for UpdateExit {
 
         if let Some(room) = world.entity(from_room).get::<Room>() {
             let message = format!(
-                "Linked room {:?} {} to room {:?}.\r\n",
+                "Linked room {} {} to room {}.\r\n",
                 room.id, self.direction, self.destination
             );
             queue_message(world, player, message);
@@ -223,7 +224,7 @@ impl Action for UpdateRoom {
                 room.description = description;
             }
 
-            let message = format!("Updated room {:?} description.\r\n", room.id);
+            let message = format!("Updated room {} description.\r\n", room.id);
             queue_message(world, player, message);
         }
 

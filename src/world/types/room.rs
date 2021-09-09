@@ -81,8 +81,8 @@ impl Direction {
             Direction::East => "to the east",
             Direction::South => "to the south",
             Direction::West => "to the west",
-            Direction::Up => "above",
-            Direction::Down => "below",
+            Direction::Up => "up",
+            Direction::Down => "down",
         }
     }
 
