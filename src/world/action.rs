@@ -7,8 +7,8 @@ use crate::{
     text::Tokenizer,
     world::{
         types::room::{Direction, Room, RoomId, Rooms},
-        Configuration, Location, Messages, WantsExits, WantsToLook, WantsToMove, WantsToSay,
-        WantsToTeleport,
+        Configuration, Location, LoggedIn, LoggedOut, Messages, Player, WantsExits, WantsToLook,
+        WantsToMove, WantsToSay, WantsToTeleport,
     },
 };
 
@@ -98,6 +98,29 @@ struct Exits {}
 impl Action for Exits {
     fn enact(&mut self, player: Entity, world: &mut World) {
         world.entity_mut(player).insert(WantsExits {});
+    }
+}
+
+pub struct Login {}
+
+impl Action for Login {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        world.entity_mut(player).insert(LoggedIn {});
+    }
+}
+
+pub struct Logout {}
+
+impl Action for Logout {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        if let Some(room) = world.get::<Location>(player).map(|location| location.room) {
+            if let Some(name) = world
+                .get::<Player>(player)
+                .map(|player| player.name.clone())
+            {
+                world.entity_mut(room).insert(LoggedOut { name });
+            }
+        }
     }
 }
 
@@ -246,6 +269,12 @@ impl Action for UpdateRoom {
 }
 
 pub fn parse(input: &str) -> Result<DynAction, String> {
+    if input.starts_with('\'') {
+        return Ok(Box::new(Say {
+            message: input[1..].to_string(),
+        }));
+    }
+
     let mut tokenizer = Tokenizer::new(input);
     if let Some(token) = tokenizer.next() {
         match token.to_lowercase().as_str() {
@@ -352,7 +381,7 @@ fn parse_room(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 
 fn queue_message(world: &mut World, player: Entity, message: String) {
     match world.entity_mut(player).get_mut::<Messages>() {
-        Some(mut messages) => messages.queue.push(message),
+        Some(mut messages) => messages.queue(message),
         None => {
             world.entity_mut(player).insert(Messages::new_with(message));
         }

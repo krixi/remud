@@ -3,7 +3,10 @@
 pub mod action;
 pub mod types;
 
-use std::{collections::HashMap, convert::TryFrom};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::TryFrom,
+};
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
@@ -13,7 +16,7 @@ use crate::{
     queue_message,
     text::word_list,
     world::{
-        action::DynAction,
+        action::{DynAction, Login, Logout},
         types::room::{Direction, Room, RoomId, Rooms},
     },
 };
@@ -28,14 +31,23 @@ pub struct Location {
 }
 
 pub struct Messages {
-    pub queue: Vec<String>,
+    pub received_input: bool,
+    pub queue: VecDeque<String>,
 }
 
 impl Messages {
     pub fn new_with(message: String) -> Self {
+        let mut queue = VecDeque::new();
+        queue.push_back(message);
+
         Messages {
-            queue: vec![message],
+            received_input: false,
+            queue,
         }
+    }
+
+    pub fn queue(&mut self, message: String) {
+        self.queue.push_back(message);
     }
 }
 
@@ -69,6 +81,8 @@ impl GameWorld {
 
         let mut update = SystemStage::parallel();
         update.add_system(exits_system.system());
+        update.add_system(login_system.system());
+        update.add_system(logout_system.system());
         update.add_system(look_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
@@ -118,10 +132,14 @@ impl GameWorld {
 
         rooms.add_player(player, room);
 
+        self.player_action(player, Box::new(Login {}));
+
         player
     }
 
     pub fn despawn_player(&mut self, player: Entity) {
+        self.player_action(player, Box::new(Logout {}));
+
         let location = self
             .world
             .get::<Location>(player)
@@ -136,10 +154,19 @@ impl GameWorld {
     }
 
     pub fn player_action(&mut self, player: Entity, mut action: DynAction) {
+        match self.world.entity_mut(player).get_mut::<Messages>() {
+            Some(mut messages) => messages.received_input = true,
+            None => {
+                self.world.entity_mut(player).insert(Messages {
+                    received_input: true,
+                    queue: VecDeque::new(),
+                });
+            }
+        }
         action.enact(player, &mut self.world);
     }
 
-    pub fn messages(&mut self) -> Vec<(Entity, Vec<String>)> {
+    pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
         let players_with_messages = self
             .world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
@@ -149,8 +176,13 @@ impl GameWorld {
         let mut outgoing = Vec::new();
 
         for player in players_with_messages {
-            if let Some(messages) = self.world.entity_mut(player).remove::<Messages>() {
-                outgoing.push((player, messages.queue));
+            if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
+                if messages.queue.len() > 0 || messages.received_input {
+                    if !messages.received_input {
+                        messages.queue.push_front("\r\n".to_string());
+                    }
+                    outgoing.push((player, messages.queue));
+                }
             }
         }
 
@@ -163,6 +195,46 @@ impl GameWorld {
 
     pub fn get_world(&self) -> &World {
         &self.world
+    }
+}
+
+pub struct LoggedIn {}
+
+fn login_system(
+    mut commands: Commands,
+    rooms: Res<Rooms>,
+    login_query: Query<(Entity, &Player, &Location), With<LoggedIn>>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (login_entity, login_player, login_location) in login_query.iter() {
+        rooms
+            .players_in(login_location.room)
+            .filter(|player| *player != login_entity)
+            .for_each(|present_player| {
+                let message = format!("{} arrives.\r\n", login_player.name);
+                queue_message!(commands, messages, present_player, message);
+            });
+
+        commands.entity(login_entity).remove::<LoggedIn>();
+    }
+}
+
+pub struct LoggedOut {
+    name: String,
+}
+fn logout_system(
+    mut commands: Commands,
+    rooms: Res<Rooms>,
+    login_query: Query<(Entity, &LoggedOut), With<Room>>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (logout_entity, logged_out) in login_query.iter() {
+        rooms.players_in(logout_entity).for_each(|present_player| {
+            let message = format!("{} leaves.\r\n", logged_out.name);
+            queue_message!(commands, messages, present_player, message);
+        });
+
+        commands.entity(logout_entity).remove::<LoggedOut>();
     }
 }
 
@@ -301,7 +373,7 @@ fn move_system(
             .filter(|player| player != &moving_entity)
             .for_each(|present_player| {
                 let message = direction_from
-                    .map(|from| format!("{} enters {}.\r\n", player.name, from.as_from_str()))
+                    .map(|from| format!("{} arrives {}.\r\n", player.name, from.as_from_str()))
                     .unwrap_or_else(|| format!("{} appears.\r\n", player.name));
                 queue_message!(commands, messages, present_player, message);
             });

@@ -1,3 +1,11 @@
+- add message command to send private messages to other players
+
+  > message <player\> <contents\>
+
+- add who command to list online players
+
+  > who
+
 - allow looking into adjacent rooms
 
   > look <direction\>
@@ -9,6 +17,10 @@
 - add emote command
 
   > me <emote\>
+
+- add unlink command to remove room links
+
+  > room unlink <direction\>
 
 - add command to create objects
 

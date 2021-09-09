@@ -34,6 +34,7 @@ pub enum ClientMessage {
 #[derive(Debug)]
 pub enum EngineMessage {
     Output(String),
+    EndOutput,
 }
 
 pub struct Engine {
@@ -75,7 +76,7 @@ impl Engine {
 
                     for (player, mut messages) in self.game_world.messages() {
                         if let Some(client) = self.clients.by_player(player) {
-                            messages.push("> ".to_string());
+                            messages.push_back("> ".to_string());
                             client.send_batch(messages).await;
                         } else {
                             tracing::error!("Attempting to send messages to player without client: {:?}", player);

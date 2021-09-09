@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
         engine.run().await;
     });
 
-    let bind_address = "127.0.0.1:2004";
+    let bind_address = "0.0.0.0:2004";
     let listener = TcpListener::bind(bind_address)
         .await
         .unwrap_or_else(|_| panic!("Cannot bind to {:?}", bind_address));
@@ -119,6 +119,11 @@ async fn process(
                                     }
                                 },
                                 Err(e) => tracing::error!("Engine returned non-ASCII string: \"{}\"", e),
+                            }
+                        }
+                        EngineMessage::EndOutput => {
+                            if framed.send(Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))).await.is_err() {
+                                break
                             }
                         }
                     }
