@@ -269,10 +269,8 @@ impl Action for UpdateRoom {
 }
 
 pub fn parse(input: &str) -> Result<DynAction, String> {
-    if input.starts_with('\'') {
-        return Ok(Box::new(Say {
-            message: input[1..].to_string(),
-        }));
+    if let Some(message) = input.strip_prefix('\'').map(|str| str.to_string()) {
+        return Ok(Box::new(Say { message }));
     }
 
     let mut tokenizer = Tokenizer::new(input);

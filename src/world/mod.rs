@@ -177,7 +177,7 @@ impl GameWorld {
 
         for player in players_with_messages {
             if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
-                if messages.queue.len() > 0 || messages.received_input {
+                if !messages.queue.is_empty() || messages.received_input {
                     if !messages.received_input {
                         messages.queue.push_front("\r\n".to_string());
                     }
@@ -257,13 +257,11 @@ fn exits_system(
                 .collect_vec();
 
             let message = if exits.is_empty() {
-                format!("This room has no obvious exits.\r\n")
+                "This room has no obvious exits.\r\n".to_string()
+            } else if exits.len() == 1 {
+                format!("There is an exit {}.\r\n", word_list(exits))
             } else {
-                if exits.len() == 1 {
-                    format!("There is an exit {}.\r\n", word_list(exits))
-                } else {
-                    format!("There are exits {}.\r\n", word_list(exits))
-                }
+                format!("There are exits {}.\r\n", word_list(exits))
             };
 
             queue_message!(commands, messages, exits_entity, message);

@@ -326,12 +326,12 @@ impl Telnet {
             && matches! {self.terminal_selection_state, TerminalSelectionState::Done(_)}
     }
 
-    pub fn features(&self) -> Option<TerminalFeatures> {
-        if let TerminalSelectionState::Done(Some(terminal_type)) = &self.terminal_selection_state {
-            return Some(terminal_type.features);
-        }
-        None
-    }
+    // pub fn features(&self) -> Option<TerminalFeatures> {
+    //     if let TerminalSelectionState::Done(Some(terminal_type)) = &self.terminal_selection_state {
+    //         return Some(terminal_type.features);
+    //     }
+    //     None
+    // }
 }
 
 const IAC: u8 = 255;
