@@ -1,15 +1,3 @@
-- add message command to send private messages to other players
-
-  > message <player\> <contents\>
-
-- add who command to list online players
-
-  > who
-
-- allow looking into adjacent rooms
-
-  > look <direction\>
-
 - add help command
 
   > help \[topic\]

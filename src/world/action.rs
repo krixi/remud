@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, mem, str::FromStr};
 
 use bevy_ecs::prelude::*;
 
@@ -6,9 +6,13 @@ use crate::{
     engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates, Updates},
     text::Tokenizer,
     world::{
-        types::room::{Direction, Room, RoomId, Rooms},
-        Configuration, Location, LoggedIn, LoggedOut, Messages, Player, WantsExits, WantsToLook,
-        WantsToMove, WantsToSay, WantsToTeleport,
+        types::{
+            players::{Messages, Player, Players},
+            room::{Direction, Room, RoomId, Rooms},
+            Configuration, Location,
+        },
+        LoggedIn, LoggedOut, WantsExits, WantsToLook, WantsToMove, WantsToSay, WantsToSendMessage,
+        WantsToTeleport, WantsWhoInfo,
     },
 };
 
@@ -124,11 +128,15 @@ impl Action for Logout {
     }
 }
 
-struct Look {}
+struct Look {
+    direction: Option<Direction>,
+}
 
 impl Action for Look {
     fn enact(&mut self, player: Entity, world: &mut World) {
-        world.entity_mut(player).insert(WantsToLook {});
+        world.entity_mut(player).insert(WantsToLook {
+            direction: self.direction,
+        });
     }
 }
 
@@ -153,6 +161,33 @@ impl Action for Say {
         let mut message = String::new();
         std::mem::swap(&mut self.message, &mut message);
         world.entity_mut(player).insert(WantsToSay { message });
+    }
+}
+
+struct SendMessage {
+    player: String,
+    message: String,
+}
+
+impl Action for SendMessage {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        if let Some(recipient) = world
+            .get_resource::<Players>()
+            .unwrap()
+            .by_name(self.player.as_str())
+        {
+            let mut message = String::new();
+            mem::swap(&mut self.message, &mut message);
+            world
+                .entity_mut(player)
+                .insert(WantsToSendMessage { recipient, message });
+        } else {
+            let message = format!(
+                "Your term beeps in irritation: \"User {} not found.\"\r\n",
+                self.player
+            );
+            queue_message(world, player, message)
+        }
     }
 }
 
@@ -268,6 +303,14 @@ impl Action for UpdateRoom {
     }
 }
 
+struct Who {}
+
+impl Action for Who {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        world.entity_mut(player).insert(WantsWhoInfo {});
+    }
+}
+
 pub fn parse(input: &str) -> Result<DynAction, String> {
     if let Some(message) = input.strip_prefix('\'').map(|str| str.to_string()) {
         return Ok(Box::new(Say { message }));
@@ -283,7 +326,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
                 direction: Direction::East,
             })),
             "exits" => Ok(Box::new(Exits {})),
-            "look" => Ok(Box::new(Look {})),
+            "look" => parse_look(tokenizer),
             "north" => Ok(Box::new(Move {
                 direction: Direction::North,
             })),
@@ -291,30 +334,60 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "say" => Ok(Box::new(Say {
                 message: tokenizer.rest().to_string(),
             })),
+            "send" => parse_send(tokenizer),
             "shutdown" => Ok(Box::new(Shutdown {})),
             "south" => Ok(Box::new(Move {
                 direction: Direction::South,
             })),
-            "teleport" => {
-                if let Some(destination) = tokenizer.next() {
-                    match destination.parse::<RoomId>() {
-                        Ok(room_id) => Ok(Box::new(Teleport { room_id })),
-                        Err(e) => Err(e.to_string()),
-                    }
-                } else {
-                    Err("Teleport to where?".to_string())
-                }
-            }
+            "teleport" => parse_teleport(tokenizer),
             "up" => Ok(Box::new(Move {
                 direction: Direction::Up,
             })),
             "west" => Ok(Box::new(Move {
                 direction: Direction::West,
             })),
+            "who" => Ok(Box::new(Who {})),
             _ => Err("I don't know what that means.".to_string()),
         }
     } else {
         Err("Go on, then.".to_string())
+    }
+}
+
+fn parse_look(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+    match tokenizer.next() {
+        Some(direction) => {
+            if let Ok(direction) = Direction::from_str(direction) {
+                Ok(Box::new(Look {
+                    direction: Some(direction),
+                }))
+            } else {
+                Err(format!("I don't know how to look {}.", direction))
+            }
+        }
+        None => Ok(Box::new(Look { direction: None })),
+    }
+}
+
+fn parse_send(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if let Some(player) = tokenizer.next() {
+        Ok(Box::new(SendMessage {
+            player: player.to_string(),
+            message: tokenizer.rest().to_string(),
+        }))
+    } else {
+        Err("Send to whom?".to_string())
+    }
+}
+
+fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if let Some(destination) = tokenizer.next() {
+        match destination.parse::<RoomId>() {
+            Ok(room_id) => Ok(Box::new(Teleport { room_id })),
+            Err(e) => Err(e.to_string()),
+        }
+    } else {
+        Err("Teleport to where?".to_string())
     }
 }
 

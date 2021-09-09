@@ -31,9 +31,9 @@ impl Client {
         }
     }
 
-    pub async fn send_batch(&self, messages: VecDeque<String>) {
+    pub async fn send_batch(&self, tick: u64, messages: VecDeque<String>) {
         for message in messages {
-            tracing::info!("{:?} received {:?}.", self.id, message);
+            tracing::info!("{}> {:?} received {:?}.", tick, self.id, message);
             if self.tx.send(EngineMessage::Output(message)).await.is_err() {
                 tracing::error!("Failed to send message to client {:?}", self.id);
                 break;

@@ -17,45 +17,13 @@ use crate::{
     text::word_list,
     world::{
         action::{DynAction, Login, Logout},
-        types::room::{Direction, Room, RoomId, Rooms},
+        types::{
+            players::{Messages, Player, Players},
+            room::{Direction, Room, RoomId, Rooms},
+            Configuration, Location,
+        },
     },
 };
-
-// Components
-pub struct Player {
-    pub name: String,
-}
-
-pub struct Location {
-    pub room: Entity,
-}
-
-pub struct Messages {
-    pub received_input: bool,
-    pub queue: VecDeque<String>,
-}
-
-impl Messages {
-    pub fn new_with(message: String) -> Self {
-        let mut queue = VecDeque::new();
-        queue.push_back(message);
-
-        Messages {
-            received_input: false,
-            queue,
-        }
-    }
-
-    pub fn queue(&mut self, message: String) {
-        self.queue.push_back(message);
-    }
-}
-
-// Resources
-pub struct Configuration {
-    pub shutdown: bool,
-    pub spawn_room: RoomId,
-}
 
 pub struct GameWorld {
     world: World,
@@ -75,6 +43,7 @@ impl GameWorld {
 
         // Add resources
         world.insert_resource(Updates::default());
+        world.insert_resource(Players::default());
 
         // Create schedule
         let mut schedule = Schedule::default();
@@ -86,7 +55,9 @@ impl GameWorld {
         update.add_system(look_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
+        update.add_system(send_message_system.system());
         update.add_system(teleport_system.system());
+        update.add_system(who_system.system());
         schedule.add_stage("update", update);
 
         GameWorld {
@@ -120,17 +91,17 @@ impl GameWorld {
             let player = self
                 .world
                 .spawn()
-                .insert(Player { name })
+                .insert(Player { name: name.clone() })
                 .insert(Location { room })
-                .insert(WantsToLook {})
+                .insert(WantsToLook::default())
                 .id();
 
             (player, room)
         };
 
-        let mut rooms = self.world.get_resource_mut::<Rooms>().unwrap();
+        let mut players = self.world.get_resource_mut::<Players>().unwrap();
 
-        rooms.add_player(player, room);
+        players.spawn(player, name, room);
 
         self.player_action(player, Box::new(Login {}));
 
@@ -145,12 +116,25 @@ impl GameWorld {
             .get::<Location>(player)
             .map(|location| location.room);
 
-        self.world.entity_mut(player).despawn();
-
         if let Some(location) = location {
-            let mut rooms = self.world.get_resource_mut::<Rooms>().unwrap();
-            rooms.remove_player(player, location);
-        }
+            let name = if let Some(name) = self
+                .world
+                .get::<Player>(player)
+                .map(|player| player.name.clone())
+            {
+                name
+            } else {
+                tracing::error!("Unable to despawn player {:?} at {:?}", player, location);
+                return;
+            };
+
+            self.world.entity_mut(player).despawn();
+
+            let mut players = self.world.get_resource_mut::<Players>().unwrap();
+            players.despawn(player, &name, location);
+        } else {
+            tracing::error!("Unable to despawn player {:?}", player);
+        };
     }
 
     pub fn player_action(&mut self, player: Entity, mut action: DynAction) {
@@ -202,13 +186,13 @@ pub struct LoggedIn {}
 
 fn login_system(
     mut commands: Commands,
-    rooms: Res<Rooms>,
+    players: Res<Players>,
     login_query: Query<(Entity, &Player, &Location), With<LoggedIn>>,
     mut messages: Query<&mut Messages>,
 ) {
     for (login_entity, login_player, login_location) in login_query.iter() {
-        rooms
-            .players_in(login_location.room)
+        players
+            .by_room(login_location.room)
             .filter(|player| *player != login_entity)
             .for_each(|present_player| {
                 let message = format!("{} arrives.\r\n", login_player.name);
@@ -224,12 +208,12 @@ pub struct LoggedOut {
 }
 fn logout_system(
     mut commands: Commands,
-    rooms: Res<Rooms>,
+    players: Res<Players>,
     login_query: Query<(Entity, &LoggedOut), With<Room>>,
     mut messages: Query<&mut Messages>,
 ) {
     for (logout_entity, logged_out) in login_query.iter() {
-        rooms.players_in(logout_entity).for_each(|present_player| {
+        players.by_room(logout_entity).for_each(|present_player| {
             let message = format!("{} leaves.\r\n", logged_out.name);
             queue_message!(commands, messages, present_player, message);
         });
@@ -271,22 +255,41 @@ fn exits_system(
     }
 }
 
-pub struct WantsToLook {}
+#[derive(Default)]
+pub struct WantsToLook {
+    direction: Option<Direction>,
+}
 
 fn look_system(
     mut commands: Commands,
-    rooms: Res<Rooms>,
-    looking_query: Query<(Entity, &Location), (With<Player>, With<WantsToLook>)>,
+    players: Res<Players>,
+    looking_query: Query<(Entity, &Location, &WantsToLook), With<Player>>,
     players_query: Query<&Player>,
     rooms_query: Query<&Room>,
     mut messages: Query<&mut Messages>,
 ) {
-    for (looking_entity, looking_location) in looking_query.iter() {
-        if let Ok(room) = rooms_query.get(looking_location.room) {
+    for (looking_entity, looking_location, wants_to_look) in looking_query.iter() {
+        let looking_room = if let Some(direction) = wants_to_look.direction {
+            if let Ok(room) = rooms_query.get(looking_location.room) {
+                if let Some(looking_room) = room.exits.get(&direction) {
+                    *looking_room
+                } else {
+                    let message = format!("There is no room {}.\r\n", direction.as_to_str());
+                    queue_message!(commands, messages, looking_entity, message);
+                    return;
+                }
+            } else {
+                return;
+            }
+        } else {
+            looking_location.room
+        };
+
+        if let Ok(room) = rooms_query.get(looking_room) {
             let mut message = format!("{}\r\n", room.description);
 
-            let mut present_names = rooms
-                .players_in(looking_location.room)
+            let mut present_names = players
+                .by_room(looking_room)
                 .filter(|player| player != &looking_entity)
                 .filter_map(|player| players_query.get(player).ok())
                 .map(|player| player.name.clone())
@@ -320,7 +323,7 @@ pub struct WantsToMove {
 
 fn move_system(
     mut commands: Commands,
-    mut rooms: ResMut<Rooms>,
+    mut players: ResMut<Players>,
     mut moving_query: Query<(Entity, &Player, &WantsToMove, &mut Location)>,
     rooms_query: Query<&Room>,
     mut messages: Query<&mut Messages>,
@@ -341,10 +344,10 @@ fn move_system(
             continue;
         };
 
-        rooms.move_player(moving_entity, location.room, destination);
+        players.change_room(moving_entity, location.room, destination);
 
-        rooms
-            .players_in(location.room)
+        players
+            .by_room(location.room)
             .filter(|player| player != &moving_entity)
             .for_each(|present_player| {
                 let message = format!(
@@ -366,8 +369,8 @@ fn move_system(
 
         location.room = destination;
 
-        rooms
-            .players_in(destination)
+        players
+            .by_room(destination)
             .filter(|player| player != &moving_entity)
             .for_each(|present_player| {
                 let message = direction_from
@@ -378,7 +381,7 @@ fn move_system(
 
         commands
             .entity(moving_entity)
-            .insert(WantsToLook {})
+            .insert(WantsToLook::default())
             .remove::<WantsToMove>();
     }
 }
@@ -389,13 +392,13 @@ pub struct WantsToSay {
 
 fn say_system(
     mut commands: Commands,
-    rooms: Res<Rooms>,
+    players: Res<Players>,
     saying_query: Query<(Entity, &Player, &Location, &WantsToSay)>,
     mut messages: Query<&mut Messages>,
 ) {
     for (saying_entity, saying_player, saying_location, wants_to_say) in saying_query.iter() {
-        rooms
-            .players_in(saying_location.room)
+        players
+            .by_room(saying_location.room)
             .filter(|player| player != &saying_entity)
             .for_each(|present_player| {
                 let message = format!(
@@ -409,21 +412,43 @@ fn say_system(
     }
 }
 
+pub struct WantsToSendMessage {
+    pub recipient: Entity,
+    pub message: String,
+}
+
+fn send_message_system(
+    mut commands: Commands,
+    send_query: Query<(Entity, &Player, &WantsToSendMessage)>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (send_entity, send_player, send_message) in send_query.iter() {
+        let message = format!(
+            "{} sends \"{}\".\r\n",
+            send_player.name, send_message.message
+        );
+
+        queue_message!(commands, messages, send_message.recipient, message);
+
+        commands.entity(send_entity).remove::<WantsToSendMessage>();
+    }
+}
+
 pub struct WantsToTeleport {
     pub room: Entity,
 }
 
 fn teleport_system(
     mut commands: Commands,
-    mut rooms: ResMut<Rooms>,
+    mut players: ResMut<Players>,
     mut teleporting_query: Query<(Entity, &Player, &WantsToTeleport, &mut Location)>,
     mut messages: Query<&mut Messages>,
 ) {
     for (teleporting_entity, teleporting_player, wants_to_teleport, mut location) in
         teleporting_query.iter_mut()
     {
-        rooms
-            .players_in(location.room)
+        players
+            .by_room(location.room)
             .filter(|player| player != &teleporting_entity)
             .for_each(|present_player| {
                 let message = format!(
@@ -433,12 +458,12 @@ fn teleport_system(
                 queue_message!(commands, messages, present_player, message);
             });
 
-        rooms.move_player(teleporting_entity, location.room, wants_to_teleport.room);
+        players.change_room(teleporting_entity, location.room, wants_to_teleport.room);
 
         location.room = wants_to_teleport.room;
 
-        rooms
-            .players_in(location.room)
+        players
+            .by_room(location.room)
             .filter(|player| player != &teleporting_entity)
             .for_each(|present_player| {
                 let message = format!(
@@ -450,7 +475,29 @@ fn teleport_system(
 
         commands
             .entity(teleporting_entity)
-            .insert(WantsToLook {})
+            .insert(WantsToLook::default())
             .remove::<WantsToTeleport>();
+    }
+}
+
+pub struct WantsWhoInfo {}
+
+fn who_system(
+    mut commands: Commands,
+    who_query: Query<Entity, With<WantsWhoInfo>>,
+    players_query: Query<&Player>,
+    mut messages: Query<&mut Messages>,
+) {
+    for who_entity in who_query.iter() {
+        let players = players_query
+            .iter()
+            .map(|player| format!("  {}", player.name))
+            .sorted()
+            .join("\r\n");
+
+        let message = format!("Online Players:\r\n{}\r\n", players);
+        queue_message!(commands, messages, who_entity, message);
+
+        commands.entity(who_entity).remove::<WantsWhoInfo>();
     }
 }

@@ -5,8 +5,8 @@ use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use crate::world::{
-    types::room::{Direction, Room, RoomId, Rooms},
+use crate::world::types::{
+    room::{Direction, Room, RoomId, Rooms},
     Configuration,
 };
 

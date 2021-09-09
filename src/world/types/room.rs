@@ -1,9 +1,4 @@
-use std::{
-    collections::{hash_set, HashMap, HashSet},
-    convert::TryFrom,
-    error, fmt,
-    str::FromStr,
-};
+use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
 
@@ -140,74 +135,25 @@ impl fmt::Display for Direction {
 
 // Resource used as index for room/player lookups
 pub struct Rooms {
-    rooms_by_id: HashMap<RoomId, Entity>,
-    players_by_room: HashMap<Entity, HashSet<Entity>>,
+    by_id: HashMap<RoomId, Entity>,
     highest_id: i64,
 }
 
 impl Rooms {
-    pub fn new(rooms_by_id: HashMap<RoomId, Entity>, highest_id: i64) -> Self {
-        Rooms {
-            rooms_by_id,
-            players_by_room: HashMap::new(),
-            highest_id,
-        }
-    }
-
-    pub fn players_in(&self, room: Entity) -> PlayersByRoom {
-        if let Some(players) = self.players_by_room.get(&room) {
-            PlayersByRoom {
-                iter: Some(players.iter()),
-            }
-        } else {
-            PlayersByRoom { iter: None }
-        }
-    }
-
-    pub fn add_player(&mut self, player: Entity, room: Entity) {
-        self.players_by_room.entry(room).or_default().insert(player);
-    }
-
-    pub fn remove_player(&mut self, player: Entity, room: Entity) {
-        self.players_by_room.entry(room).and_modify(|players| {
-            players.remove(&player);
-        });
-    }
-
-    pub fn move_player(&mut self, player: Entity, from: Entity, to: Entity) {
-        if let Some(list) = self.players_by_room.get_mut(&from) {
-            list.remove(&player);
-        }
-
-        self.players_by_room.entry(to).or_default().insert(player);
+    pub fn new(by_id: HashMap<RoomId, Entity>, highest_id: i64) -> Self {
+        Rooms { by_id, highest_id }
     }
 
     pub fn add_room(&mut self, id: RoomId, room: Entity) {
-        self.rooms_by_id.insert(id, room);
+        self.by_id.insert(id, room);
     }
 
     pub fn get_room(&self, id: RoomId) -> Option<Entity> {
-        self.rooms_by_id.get(&id).copied()
+        self.by_id.get(&id).copied()
     }
 
     pub fn next_id(&mut self) -> RoomId {
         self.highest_id += 1;
         RoomId(self.highest_id)
-    }
-}
-
-pub struct PlayersByRoom<'a> {
-    iter: Option<hash_set::Iter<'a, Entity>>,
-}
-
-impl<'a> Iterator for PlayersByRoom<'a> {
-    type Item = Entity;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(iter) = &mut self.iter {
-            iter.next().copied()
-        } else {
-            None
-        }
     }
 }

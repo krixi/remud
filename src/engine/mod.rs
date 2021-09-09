@@ -44,6 +44,7 @@ pub struct Engine {
     ticker: Interval,
     game_world: GameWorld,
     db: Db,
+    tick: u64,
 }
 
 impl Engine {
@@ -63,6 +64,7 @@ impl Engine {
             ticker: interval(Duration::from_millis(15)),
             game_world,
             db,
+            tick: 0,
         })
     }
 
@@ -77,7 +79,7 @@ impl Engine {
                     for (player, mut messages) in self.game_world.messages() {
                         if let Some(client) = self.clients.by_player(player) {
                             messages.push_back("> ".to_string());
-                            client.send_batch(messages).await;
+                            client.send_batch(self.tick, messages).await;
                         } else {
                             tracing::error!("Attempting to send messages to player without client: {:?}", player);
                         }
@@ -93,6 +95,8 @@ impl Engine {
                     if self.game_world.should_shutdown() {
                         break
                     }
+
+                    self.tick += 1
                 }
                 maybe_message = self.engine_rx.recv() => {
                     if let Some(message) = maybe_message {
@@ -108,12 +112,12 @@ impl Engine {
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client_id, tx) => {
-                tracing::info!("{:?} connected", client_id);
+                tracing::info!("{}> {:?} connected", self.tick, client_id);
 
                 self.clients.add(client_id, tx);
             }
             ClientMessage::Disconnect(client_id) => {
-                tracing::info!("{:?} disconnected", client_id);
+                tracing::info!("{}> {:?} disconnected", self.tick, client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
                     self.game_world.despawn_player(player);
@@ -122,7 +126,7 @@ impl Engine {
                 self.clients.remove(client_id);
             }
             ClientMessage::Ready(client_id) => {
-                tracing::info!("{:?} ready", client_id);
+                tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from("Welcome to the world.\r\n\r\nName?\r\n> ");
                 if let Some(client) = self.clients.get(client_id) {
@@ -135,7 +139,7 @@ impl Engine {
                 let mut new_player = None;
 
                 if let Some(client) = self.clients.get_mut(client_id) {
-                    tracing::info!("{:?} sent {:?}", client_id, input);
+                    tracing::info!("{}> {:?} sent {:?}", self.tick, client_id, input);
                     match client.get_state() {
                         ClientState::LoginName => {
                             let name = input.trim();
