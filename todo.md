@@ -14,8 +14,6 @@
 
   > look at <keyword(s)\>
 
-- allow objects to be seen via short desc when looking in a room
-
 - persist objects to database
 
 - add object flags commands

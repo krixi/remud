@@ -15,7 +15,7 @@ use crate::{
     world::{
         action::{DynAction, Login, Logout},
         types::{
-            object::Objects,
+            object::{Object, Objects},
             players::{Messages, Player, Players},
             room::{Direction, Room, RoomId, Rooms},
             Configuration, Location,
@@ -267,6 +267,7 @@ fn look_system(
     looking_query: Query<(Entity, &Location, &WantsToLook), With<Player>>,
     players_query: Query<&Player>,
     rooms_query: Query<&Room>,
+    objects_query: Query<&Object>,
     mut messages: Query<&mut Messages>,
 ) {
     for (looking_entity, looking_location, wants_to_look) in looking_query.iter() {
@@ -288,6 +289,14 @@ fn look_system(
 
         if let Ok(room) = rooms_query.get(looking_room) {
             let mut message = format!("{}\r\n", room.description);
+
+            room.objects
+                .iter()
+                .filter_map(|object| objects_query.get(*object).ok())
+                .for_each(|object| {
+                    message.push_str(object.short.as_str());
+                    message.push_str("\r\n");
+                });
 
             let mut present_names = players
                 .by_room(looking_room)
