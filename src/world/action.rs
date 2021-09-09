@@ -7,7 +7,8 @@ use crate::{
     text::Tokenizer,
     world::{
         types::room::{Direction, Room, RoomId, Rooms},
-        Configuration, Location, Messages, WantsToLook, WantsToMove, WantsToSay, WantsToTeleport,
+        Configuration, Location, Messages, WantsExits, WantsToLook, WantsToMove, WantsToSay,
+        WantsToTeleport,
     },
 };
 
@@ -89,6 +90,14 @@ impl Action for CreateRoom {
             updates.queue(PersistRoomExits::new(new_room_entity));
             updates.queue(PersistRoomExits::new(current_room_entity));
         }
+    }
+}
+
+struct Exits {}
+
+impl Action for Exits {
+    fn enact(&mut self, player: Entity, world: &mut World) {
+        world.entity_mut(player).insert(WantsExits {});
     }
 }
 
@@ -246,6 +255,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "east" => Ok(Box::new(Move {
                 direction: Direction::East,
             })),
+            "exits" => Ok(Box::new(Exits {})),
             "look" => Ok(Box::new(Look {})),
             "north" => Ok(Box::new(Move {
                 direction: Direction::North,

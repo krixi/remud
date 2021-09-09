@@ -68,6 +68,7 @@ impl GameWorld {
         let mut schedule = Schedule::default();
 
         let mut update = SystemStage::parallel();
+        update.add_system(exits_system.system());
         update.add_system(look_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
@@ -162,6 +163,41 @@ impl GameWorld {
 
     pub fn get_world(&self) -> &World {
         &self.world
+    }
+}
+
+pub struct WantsExits {}
+
+fn exits_system(
+    mut commands: Commands,
+    exits_query: Query<(Entity, &Location), (With<Player>, With<WantsExits>)>,
+    rooms_query: Query<&Room>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (exits_entity, exits_location) in exits_query.iter() {
+        if let Ok(room) = rooms_query.get(exits_location.room) {
+            let exits = room
+                .exits
+                .keys()
+                .map(Direction::as_str)
+                .map(|str| str.to_string())
+                .sorted()
+                .collect_vec();
+
+            let message = if exits.is_empty() {
+                format!("This room has no obvious exits.\r\n")
+            } else {
+                if exits.len() == 1 {
+                    format!("There is an exit {}.\r\n", word_list(exits))
+                } else {
+                    format!("There are exits {}.\r\n", word_list(exits))
+                }
+            };
+
+            queue_message!(commands, messages, exits_entity, message);
+        }
+
+        commands.entity(exits_entity).remove::<WantsExits>();
     }
 }
 

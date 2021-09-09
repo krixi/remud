@@ -2,13 +2,13 @@
 
   > look <direction\>
 
-- add exits command to list exits from a room
-
-  > exits
-
 - add help command
 
   > help \[topic\]
+
+- add emote command
+
+  > me <emote\>
 
 - add command to create objects
 
@@ -29,10 +29,6 @@
 - allow objects to be seen via short desc when looking in a room
 
 - persist objects to database
-
-- add emote command
-
-  > me <emote\>
 
 - add object flags commands
 
