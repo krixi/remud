@@ -183,7 +183,7 @@ impl Action for SendMessage {
                 .insert(WantsToSendMessage { recipient, message });
         } else {
             let message = format!(
-                "Your term beeps in irritation: \"User {} not found.\"\r\n",
+                "Your term beeps in irritation: \"User '{}' not found.\"\r\n",
                 self.player
             );
             queue_message(world, player, message)

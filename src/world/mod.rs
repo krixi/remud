@@ -161,7 +161,7 @@ impl GameWorld {
 
         for player in players_with_messages {
             if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
-                if !messages.queue.is_empty() || messages.received_input {
+                if !messages.queue.is_empty() {
                     if !messages.received_input {
                         messages.queue.push_front("\r\n".to_string());
                     }
@@ -408,6 +408,9 @@ fn say_system(
                 queue_message!(commands, messages, present_player, message);
             });
 
+        let message = format!("You say \"{}\"\r\n", wants_to_say.message);
+        queue_message!(commands, messages, saying_entity, message);
+
         commands.entity(saying_entity).remove::<WantsToSay>();
     }
 }
@@ -420,15 +423,34 @@ pub struct WantsToSendMessage {
 fn send_message_system(
     mut commands: Commands,
     send_query: Query<(Entity, &Player, &WantsToSendMessage)>,
+    player_query: Query<&Player>,
     mut messages: Query<&mut Messages>,
 ) {
     for (send_entity, send_player, send_message) in send_query.iter() {
-        let message = format!(
+        if send_entity == send_message.recipient {
+            let message = "Your term trills: \"Invalid recipient: Self.\"\r\n".to_string();
+            queue_message!(commands, messages, send_entity, message);
+
+            commands.entity(send_entity).remove::<WantsToSendMessage>();
+            continue;
+        }
+
+        let sent_message = format!(
             "{} sends \"{}\".\r\n",
             send_player.name, send_message.message
         );
+        queue_message!(commands, messages, send_message.recipient, sent_message);
 
-        queue_message!(commands, messages, send_message.recipient, message);
+        if let Ok(name) = player_query
+            .get(send_message.recipient)
+            .map(|player| player.name.clone())
+        {
+            let message = format!(
+                "Your term chirps happily: \"Message sent to '{}'.\"\r\n",
+                name
+            );
+            queue_message!(commands, messages, send_entity, message);
+        }
 
         commands.entity(send_entity).remove::<WantsToSendMessage>();
     }
