@@ -10,18 +10,6 @@
 
   > room unlink <direction\>
 
-- add command to create objects
-
-  > object new
-
-- add item manipulation commands for object keywords, short desc, and long desc
-
-  > object <id\> keywords <keyword(s)\>
-
-  > object <id\> short <short description\>
-
-  > object <id\> long <long description\>
-
 - allow players to look at objects and see long desc via
 
   > look at <keyword(s)\>

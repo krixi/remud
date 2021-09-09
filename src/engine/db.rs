@@ -146,11 +146,7 @@ impl TryFrom<RoomRow> for Room {
     type Error = anyhow::Error;
 
     fn try_from(value: RoomRow) -> Result<Self, Self::Error> {
-        Ok(Room {
-            id: RoomId::try_from(value.id)?,
-            description: value.description,
-            exits: HashMap::new(),
-        })
+        Ok(Room::new(RoomId::try_from(value.id)?, value.description))
     }
 }
 

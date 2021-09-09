@@ -6,6 +6,18 @@ pub struct Room {
     pub id: RoomId,
     pub description: String,
     pub exits: HashMap<Direction, Entity>,
+    pub objects: Vec<Entity>,
+}
+
+impl Room {
+    pub fn new(id: RoomId, description: String) -> Self {
+        Room {
+            id,
+            description,
+            exits: HashMap::new(),
+            objects: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]

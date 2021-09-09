@@ -3,10 +3,7 @@
 pub mod action;
 pub mod types;
 
-use std::{
-    collections::{HashMap, VecDeque},
-    convert::TryFrom,
-};
+use std::{collections::VecDeque, convert::TryFrom};
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
@@ -18,6 +15,7 @@ use crate::{
     world::{
         action::{DynAction, Login, Logout},
         types::{
+            object::Objects,
             players::{Messages, Player, Players},
             room::{Direction, Room, RoomId, Rooms},
             Configuration, Location,
@@ -34,16 +32,16 @@ pub struct GameWorld {
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Create emergency room
-        let room = Room {
-            id: RoomId::try_from(0).unwrap(),
-            description: "A dark void extends infinitely in all directions.".to_string(),
-            exits: HashMap::new(),
-        };
+        let room = Room::new(
+            RoomId::try_from(0).unwrap(),
+            "A dark void extends infinitely in all directions.".to_string(),
+        );
         let void_room = world.spawn().insert(room).id();
 
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
+        world.insert_resource(Objects::new(0));
 
         // Create schedule
         let mut schedule = Schedule::default();
@@ -166,12 +164,10 @@ impl GameWorld {
                 }
             }
             if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
-                if !messages.queue.is_empty() {
-                    if !messages.received_input {
-                        messages.queue.push_front("\r\n".to_string());
-                    }
-                    outgoing.push((player, messages.queue));
+                if !messages.received_input {
+                    messages.queue.push_front("\r\n".to_string());
                 }
+                outgoing.push((player, messages.queue));
             }
         }
 
