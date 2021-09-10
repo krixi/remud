@@ -51,6 +51,7 @@ impl GameWorld {
         update.add_system(login_system.system());
         update.add_system(logout_system.system());
         update.add_system(look_system.system());
+        update.add_system(look_at_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
         update.add_system(send_message_system.system());
@@ -324,6 +325,51 @@ fn look_system(
         }
 
         commands.entity(looking_entity).remove::<WantsToLook>();
+    }
+}
+
+pub struct WantsToLookAt {
+    keywords: Vec<String>,
+}
+
+fn look_at_system(
+    mut commands: Commands,
+    look_at_query: Query<(Entity, &Location, &WantsToLookAt), With<Player>>,
+    rooms_query: Query<&Room>,
+    objects_query: Query<&Object>,
+    mut messages: Query<&mut Messages>,
+) {
+    for (looking_entity, looking_location, look_at) in look_at_query.iter() {
+        // get player room
+        let message = if let Ok(room) = rooms_query.get(looking_location.room) {
+            let description = room
+                .objects
+                .iter()
+                .filter_map(|object_entity| objects_query.get(*object_entity).ok())
+                .find(|object| {
+                    look_at
+                        .keywords
+                        .iter()
+                        .all(|keyword| object.keywords.contains(keyword))
+                })
+                .map(|object| object.long.as_str());
+
+            match description {
+                Some(description) => {
+                    format!("{}\r\n", description)
+                }
+                None => format!(
+                    "I didn't find anything {}.\r\n",
+                    word_list(look_at.keywords.clone())
+                ),
+            }
+        } else {
+            "The room you're in doesn't exist. How could this happen?".to_string()
+        };
+
+        queue_message!(commands, messages, looking_entity, message);
+
+        commands.entity(looking_entity).remove::<WantsToLookAt>();
     }
 }
 

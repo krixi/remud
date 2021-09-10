@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
-use crate::world::types::room::Room;
+use crate::world::types::{object::Object, room::Room};
 
 pub type DynUpdate = Box<dyn Update + Send + Sync>;
 
@@ -29,6 +29,41 @@ impl Updates {
 #[async_trait]
 pub trait Update {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()>;
+}
+
+pub struct PersistObjectUpdate {
+    object: Entity,
+}
+
+impl PersistObjectUpdate {
+    pub fn new(object: Entity) -> Box<Self> {
+        Box::new(PersistObjectUpdate { object })
+    }
+}
+
+pub struct PersistNewObject {
+    object: Entity,
+}
+
+impl PersistNewObject {
+    pub fn new(object: Entity) -> Box<Self> {
+        Box::new(PersistNewObject { object })
+    }
+}
+
+#[async_trait]
+impl Update for PersistNewObject {
+    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
+        let object = match world.get::<Object>(self.object) {
+            Some(object) => object,
+            None => bail!(
+                "Failed to persist new object, object does not exist: {:?}",
+                self.object
+            ),
+        };
+
+        Ok(())
+    }
 }
 
 pub struct PersistNewRoom {

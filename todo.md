@@ -10,9 +10,9 @@
 
   > room unlink <direction\>
 
-- allow players to look at objects and see long desc via
+- add ability to look at players
 
-  > look at <keyword(s)\>
+  > look at <player\>
 
 - persist objects to database
 

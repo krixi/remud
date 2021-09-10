@@ -13,8 +13,8 @@ use crate::{
             room::{Direction, Room, RoomId, Rooms},
             Configuration, Location,
         },
-        LoggedIn, LoggedOut, WantsExits, WantsToLook, WantsToMove, WantsToSay, WantsToSendMessage,
-        WantsToTeleport, WantsWhoInfo,
+        LoggedIn, LoggedOut, WantsExits, WantsToLook, WantsToLookAt, WantsToMove, WantsToSay,
+        WantsToSendMessage, WantsToTeleport, WantsWhoInfo,
     },
 };
 
@@ -161,14 +161,21 @@ impl Action for Logout {
 }
 
 struct Look {
+    at: Option<Vec<String>>,
     direction: Option<Direction>,
 }
 
 impl Action for Look {
     fn enact(&mut self, player: Entity, world: &mut World) {
-        world.entity_mut(player).insert(WantsToLook {
-            direction: self.direction,
-        });
+        if self.at.is_some() {
+            world.entity_mut(player).insert(WantsToLookAt {
+                keywords: self.at.take().unwrap(),
+            });
+        } else {
+            world.entity_mut(player).insert(WantsToLook {
+                direction: self.direction,
+            });
+        }
     }
 }
 
@@ -424,16 +431,31 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
 
 fn parse_look(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     match tokenizer.next() {
-        Some(direction) => {
-            if let Ok(direction) = Direction::from_str(direction) {
+        Some(token) => {
+            if token == "at" {
+                let keywords = tokenizer
+                    .rest()
+                    .split_whitespace()
+                    .map(|keyword| keyword.to_string())
+                    .collect_vec();
+
                 Ok(Box::new(Look {
+                    at: Some(keywords),
+                    direction: None,
+                }))
+            } else if let Ok(direction) = Direction::from_str(token) {
+                Ok(Box::new(Look {
+                    at: None,
                     direction: Some(direction),
                 }))
             } else {
-                Err(format!("I don't know how to look {}.", direction))
+                Err(format!("I don't know how to look {}.", token))
             }
         }
-        None => Ok(Box::new(Look { direction: None })),
+        None => Ok(Box::new(Look {
+            at: None,
+            direction: None,
+        })),
     }
 }
 
@@ -448,7 +470,7 @@ fn parse_object(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                             "keywords" => {
                                 let keywords = tokenizer
                                     .rest()
-                                    .split(",")
+                                    .split(',')
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
