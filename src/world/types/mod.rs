@@ -1,5 +1,5 @@
 pub mod object;
-pub mod players;
+pub mod player;
 pub mod room;
 
 use bevy_ecs::prelude::*;

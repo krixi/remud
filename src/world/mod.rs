@@ -16,7 +16,7 @@ use crate::{
         action::{DynAction, Login, Logout},
         types::{
             object::Object,
-            players::{Messages, Player, Players},
+            player::{Messages, Player, Players},
             room::{Direction, Room, RoomId, Rooms},
             Configuration, Location,
         },
