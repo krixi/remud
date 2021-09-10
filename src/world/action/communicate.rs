@@ -1,15 +1,25 @@
-use std::mem;
-
+use anyhow::bail;
 use bevy_ecs::prelude::*;
+use itertools::Itertools;
 
 use crate::{
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
-        types::player::Players,
-        WantsToSay, WantsToSendMessage,
+        types::{
+            player::{Player, Players},
+            Location,
+        },
     },
 };
+
+pub fn parse_say(tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if tokenizer.rest().is_empty() {
+        Err("Say what?".to_string())
+    } else {
+        Ok(Say::new(tokenizer.rest().to_string()))
+    }
+}
 
 pub struct Say {
     message: String,
@@ -22,47 +32,107 @@ impl Say {
 }
 
 impl Action for Say {
-    fn enact(&mut self, player: Entity, world: &mut World) {
-        let mut message = String::new();
-        std::mem::swap(&mut self.message, &mut message);
-        world.entity_mut(player).insert(WantsToSay { message });
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room = match world.get::<Location>(player).map(|location| location.room) {
+            Some(room) => room,
+            None => bail!("Player {:?} not located in a room.", player),
+        };
+
+        let name = match world
+            .get::<Player>(player)
+            .map(|player| player.name.as_str())
+        {
+            Some(name) => name,
+            None => bail!("Player {:?} has no name.", player),
+        };
+
+        let present_players = world
+            .get_resource::<Players>()
+            .unwrap()
+            .by_room(room)
+            .filter(|present_player| *present_player != player)
+            .collect_vec();
+
+        let message = format!("{} says \"{}\"", name, self.message);
+        for present_player in present_players {
+            queue_message(world, present_player, message.clone());
+        }
+
+        let message = format!("You say \"{}\"", self.message);
+        queue_message(world, player, message);
+
+        Ok(())
     }
 }
 
 pub fn parse_send(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(player) = tokenizer.next() {
-        Ok(Box::new(SendMessage {
-            player: player.to_string(),
-            message: tokenizer.rest().to_string(),
-        }))
+        if tokenizer.rest().is_empty() {
+            Err(format!("Send what to {}?", player))
+        } else {
+            Ok(Box::new(SendMessage {
+                recipient: player.to_string(),
+                message: tokenizer.rest().to_string(),
+            }))
+        }
     } else {
         Err("Send to whom?".to_string())
     }
 }
 
 struct SendMessage {
-    player: String,
+    recipient: String,
     message: String,
 }
 
 impl Action for SendMessage {
-    fn enact(&mut self, player: Entity, world: &mut World) {
-        if let Some(recipient) = world
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let recipient = if let Some(recipient) = world
             .get_resource::<Players>()
             .unwrap()
-            .by_name(self.player.as_str())
+            .by_name(self.recipient.as_str())
         {
-            let mut message = String::new();
-            mem::swap(&mut self.message, &mut message);
-            world
-                .entity_mut(player)
-                .insert(WantsToSendMessage { recipient, message });
+            recipient
         } else {
             let message = format!(
-                "Your term beeps in irritation: \"User '{}' not found.\"\r\n",
-                self.player
+                "Your term beeps in irritation: \"User '{}' not found.\"",
+                self.recipient
             );
-            queue_message(world, player, message)
+            queue_message(world, player, message);
+            return Ok(());
+        };
+
+        if recipient == player {
+            let message = "Your term trills: \"Invalid recipient: Self.\"".to_string();
+            queue_message(world, player, message);
+            return Ok(());
         }
+
+        let sender = match world
+            .get::<Player>(player)
+            .map(|player| player.name.as_str())
+        {
+            Some(name) => name,
+            None => bail!("Player {:?} has no name.", player),
+        };
+
+        let message = format!("{} sends \"{}\".", sender, self.message);
+        queue_message(world, player, message);
+
+        let recipient_name = match world
+            .get::<Player>(recipient)
+            .map(|player| player.name.as_str())
+        {
+            Some(name) => name,
+            None => bail!("Recipient {:?} has no name.", player),
+        };
+
+        let sent_message = format!(
+            "Your term chirps happily: \"Message sent to '{}'.\"",
+            recipient_name
+        );
+        queue_message(world, player, sent_message);
+
+        Ok(())
     }
 }

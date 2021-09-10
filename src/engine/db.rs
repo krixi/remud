@@ -136,8 +136,7 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         let direction = Direction::from_str(exit.direction.as_str()).unwrap();
 
         world
-            .entity_mut(from)
-            .get_mut::<Room>()
+            .get_mut::<Room>(from)
             .unwrap()
             .exits
             .insert(direction, to);

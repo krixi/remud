@@ -5,6 +5,7 @@ mod observe;
 mod room;
 mod system;
 
+pub use observe::Look;
 pub use system::{Login, Logout};
 
 use bevy_ecs::prelude::*;
@@ -13,7 +14,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            communicate::{parse_send, Say},
+            communicate::{parse_say, parse_send, Say},
             movement::{parse_teleport, Move},
             observe::{parse_look, Exits, Who},
             system::Shutdown,
@@ -25,12 +26,16 @@ use crate::{
 pub type DynAction = Box<dyn Action + Send>;
 
 pub trait Action {
-    fn enact(&mut self, player: Entity, world: &mut World);
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()>;
 }
 
 pub fn parse(input: &str) -> Result<DynAction, String> {
     if let Some(message) = input.strip_prefix('\'').map(|str| str.to_string()) {
-        return Ok(Say::new(message));
+        if message.is_empty() {
+            return Err("Say what?".to_string());
+        } else {
+            return Ok(Say::new(message));
+        }
     }
 
     let mut tokenizer = Tokenizer::new(input);
@@ -43,7 +48,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "north" => Ok(Move::new(Direction::North)),
             "object" => object::parse(tokenizer),
             "room" => room::parse(tokenizer),
-            "say" => Ok(Say::new(tokenizer.rest().to_string())),
+            "say" => parse_say(tokenizer),
             "send" => parse_send(tokenizer),
             "shutdown" => Ok(Box::new(Shutdown {})),
             "south" => Ok(Move::new(Direction::South)),
@@ -58,8 +63,10 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
     }
 }
 
-fn queue_message(world: &mut World, player: Entity, message: String) {
-    match world.entity_mut(player).get_mut::<Messages>() {
+fn queue_message(world: &mut World, player: Entity, mut message: String) {
+    message.push_str("\r\n");
+
+    match world.get_mut::<Messages>(player) {
         Some(mut messages) => messages.queue(message),
         None => {
             world.entity_mut(player).insert(Messages::new_with(message));

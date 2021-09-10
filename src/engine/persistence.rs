@@ -31,46 +31,6 @@ pub trait Update {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()>;
 }
 
-pub struct PersistObjectRoom {
-    object: Entity,
-    room: Entity,
-}
-
-impl PersistObjectRoom {
-    pub fn new(object: Entity, room: Entity) -> Box<Self> {
-        Box::new(PersistObjectRoom { object, room })
-    }
-}
-
-#[async_trait]
-impl Update for PersistObjectRoom {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let object_id = match world.get::<Object>(self.object) {
-            Some(object) => object.id,
-            None => bail!(
-                "Failed to persist object room, object does not exist: {:?}",
-                self.object
-            ),
-        };
-
-        let room_id = match world.get::<Room>(self.room) {
-            Some(room) => room.id,
-            None => bail!(
-                "Failed to persist object room, room does not exist: {:?}",
-                self.room
-            ),
-        };
-
-        sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
-            .bind(room_id)
-            .bind(object_id)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
 pub struct PersistObjectUpdate {
     object: Entity,
 }
@@ -154,7 +114,7 @@ impl PersistNewRoom {
 #[async_trait]
 impl Update for PersistNewRoom {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let room = match world.entity(self.room).get::<Room>() {
+        let room = match world.get::<Room>(self.room) {
             Some(room) => room,
             None => {
                 bail!(
@@ -167,39 +127,6 @@ impl Update for PersistNewRoom {
         sqlx::query("INSERT INTO rooms (id, description) VALUES (?, ?)")
             .bind(room.id)
             .bind(&room.description)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct PersistRoomUpdates {
-    room: Entity,
-}
-
-impl PersistRoomUpdates {
-    pub fn new(room: Entity) -> Box<Self> {
-        Box::new(PersistRoomUpdates { room })
-    }
-}
-
-#[async_trait]
-impl Update for PersistRoomUpdates {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let room = match world.entity(self.room).get::<Room>() {
-            Some(room) => room,
-            None => {
-                bail!(
-                    "Failed to persist room update, room does not exist: {:?}",
-                    self.room
-                );
-            }
-        };
-
-        sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
-            .bind(&room.description)
-            .bind(room.id)
             .execute(pool)
             .await?;
 
@@ -220,7 +147,7 @@ impl PersistRoomExits {
 #[async_trait]
 impl Update for PersistRoomExits {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let room = match world.entity(self.room).get::<Room>() {
+        let room = match world.get::<Room>(self.room) {
             Some(room) => room,
             None => {
                 bail!(
@@ -236,7 +163,7 @@ impl Update for PersistRoomExits {
             .await?;
 
         for (direction, destination) in &room.exits {
-            let to_room = match world.entity(*destination).get::<Room>() {
+            let to_room = match world.get::<Room>(*destination) {
                 Some(room) => room,
                 None => bail!(
                     "Failed to retrieve destination room during exit update: {:?} -> {:?} ({:?})",
@@ -253,6 +180,79 @@ impl Update for PersistRoomExits {
                 .execute(pool)
                 .await?;
         }
+
+        Ok(())
+    }
+}
+
+pub struct PersistRoomObject {
+    object: Entity,
+    room: Entity,
+}
+
+impl PersistRoomObject {
+    pub fn new(object: Entity, room: Entity) -> Box<Self> {
+        Box::new(PersistRoomObject { object, room })
+    }
+}
+
+#[async_trait]
+impl Update for PersistRoomObject {
+    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
+        let object_id = match world.get::<Object>(self.object) {
+            Some(object) => object.id,
+            None => bail!(
+                "Failed to persist object room, object does not exist: {:?}",
+                self.object
+            ),
+        };
+
+        let room_id = match world.get::<Room>(self.room) {
+            Some(room) => room.id,
+            None => bail!(
+                "Failed to persist object room, room does not exist: {:?}",
+                self.room
+            ),
+        };
+
+        sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
+            .bind(room_id)
+            .bind(object_id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct PersistRoomUpdates {
+    room: Entity,
+}
+
+impl PersistRoomUpdates {
+    pub fn new(room: Entity) -> Box<Self> {
+        Box::new(PersistRoomUpdates { room })
+    }
+}
+
+#[async_trait]
+impl Update for PersistRoomUpdates {
+    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
+        let room = match world.get::<Room>(self.room) {
+            Some(room) => room,
+            None => {
+                bail!(
+                    "Failed to persist room update, room does not exist: {:?}",
+                    self.room
+                );
+            }
+        };
+
+        sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
+            .bind(&room.description)
+            .bind(room.id)
+            .execute(pool)
+            .await?;
 
         Ok(())
     }

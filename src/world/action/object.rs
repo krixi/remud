@@ -1,10 +1,11 @@
 use std::str::FromStr;
 
+use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{PersistNewObject, PersistObjectRoom, PersistObjectUpdate, Updates},
+    engine::persistence::{PersistNewObject, PersistObjectUpdate, PersistRoomObject, Updates},
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
@@ -25,52 +26,69 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                     if let Some(token) = tokenizer.next() {
                         match token {
                             "keywords" => {
-                                let keywords = tokenizer
-                                    .rest()
-                                    .split(',')
-                                    .map(|keyword| keyword.trim().to_string())
-                                    .collect_vec();
+                                if tokenizer.rest().is_empty() {
+                                    Err("Enter a comma separated list of keywords.".to_string())
+                                } else {
+                                    let keywords = tokenizer
+                                        .rest()
+                                        .split(',')
+                                        .map(|keyword| keyword.trim().to_string())
+                                        .collect_vec();
 
-                                Ok(Box::new(UpdateObject {
-                                    id,
-                                    keywords: Some(keywords),
-                                    short: None,
-                                    long: None,
-                                }))
+                                    Ok(Box::new(UpdateObject {
+                                        id,
+                                        keywords: Some(keywords),
+                                        short: None,
+                                        long: None,
+                                    }))
+                                }
                             }
-                            "short" => Ok(Box::new(UpdateObject {
-                                id,
-                                keywords: None,
-                                short: Some(tokenizer.rest().to_string()),
-                                long: None,
-                            })),
-                            "long" => Ok(Box::new(UpdateObject {
-                                id,
-                                keywords: None,
-                                short: None,
-                                long: Some(tokenizer.rest().to_string()),
-                            })),
-                            _ => Err(format!("I don't know how to {} object {}.", token, id)),
+                            "short" => {
+                                if tokenizer.rest().is_empty() {
+                                    Err("Enter a short description.".to_string())
+                                } else {
+                                    Ok(Box::new(UpdateObject {
+                                        id,
+                                        keywords: None,
+                                        short: Some(tokenizer.rest().to_string()),
+                                        long: None,
+                                    }))
+                                }
+                            }
+                            "long" => {
+                                if tokenizer.rest().is_empty() {
+                                    Err("Enter a long description.".to_string())
+                                } else {
+                                    Ok(Box::new(UpdateObject {
+                                        id,
+                                        keywords: None,
+                                        short: None,
+                                        long: Some(tokenizer.rest().to_string()),
+                                    }))
+                                }
+                            }
+                            _ => Err("Enter a valid object subcommand: keywords, short, or long."
+                                .to_string()),
                         }
                     } else {
-                        Err("Provide a valid object subcommand or ID.".to_string())
+                        Err("Enter a valid object subcommand: keywords, short, or long."
+                            .to_string())
                     }
                 } else {
-                    Err(format!("I don't know how to {} an object.", token))
+                    Err("Enter a valid object ID or subcommand: new.".to_string())
                 }
             }
         }
     } else {
-        Err("What's all this about an object?".to_string())
+        Err("Enter a valid object ID or subcommand: new.".to_string())
     }
 }
 
 struct CreateObject {}
 
 impl Action for CreateObject {
-    fn enact(&mut self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let id = world.get_resource_mut::<Objects>().unwrap().next_id();
-
         let object_entity = world
             .spawn()
             .insert(Object {
@@ -81,34 +99,28 @@ impl Action for CreateObject {
             })
             .id();
 
-        // place the object in the room
-        let room_entity = if let Some(room_entity) =
-            world.get::<Location>(player).map(|location| location.room)
-        {
-            if let Some(mut room) = world.get_mut::<Room>(room_entity) {
-                room.objects.push(object_entity);
-                Some(room_entity)
-            } else {
-                None
-            }
-        } else {
-            None
+        let room_entity = match world.get::<Location>(player).map(|location| location.room) {
+            Some(room) => room,
+            None => bail!("Player {:?} has no Location."),
         };
+
+        if let Some(mut room) = world.get_mut::<Room>(room_entity) {
+            room.objects.push(object_entity);
+        }
 
         world
             .get_resource_mut::<Objects>()
             .unwrap()
             .add_object(id, object_entity);
 
-        // notify the player that the object was created
-        let message = format!("Created object {}\r\n", id);
+        let message = format!("Created object {}.", id);
         queue_message(world, player, message);
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(PersistNewObject::new(object_entity));
-        if let Some(room_entity) = room_entity {
-            updates.queue(PersistObjectRoom::new(object_entity, room_entity));
-        }
+        updates.queue(PersistRoomObject::new(object_entity, room_entity));
+
+        Ok(())
     }
 }
 
@@ -120,14 +132,14 @@ struct UpdateObject {
 }
 
 impl Action for UpdateObject {
-    fn enact(&mut self, player: Entity, world: &mut World) {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let object_entity =
             if let Some(entity) = world.get_resource::<Objects>().unwrap().get_object(self.id) {
                 entity
             } else {
                 let message = format!("Object {} not found.", self.id);
                 queue_message(world, player, message);
-                return;
+                return Ok(());
             };
 
         if let Some(mut object) = world.get_mut::<Object>(object_entity) {
@@ -142,12 +154,14 @@ impl Action for UpdateObject {
             }
         }
 
-        let message = format!("Updated object {}\r\n", self.id);
+        let message = format!("Updated object {}.", self.id);
         queue_message(world, player, message);
 
         world
             .get_resource_mut::<Updates>()
             .unwrap()
             .queue(PersistObjectUpdate::new(object_entity));
+
+        Ok(())
     }
 }
