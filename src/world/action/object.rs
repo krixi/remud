@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::{
     engine::persistence::{
-        PersistNewObject, PersistRemoveObject, PersistRoomObject, PersistUpdateObject, Updates,
+        PersistNewObject, PersistObjectLocation, PersistRemoveObject, PersistUpdateObject, Updates,
     },
     text::Tokenizer,
     world::{
@@ -124,7 +124,7 @@ impl Action for CreateObject {
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(PersistNewObject::new(object_entity));
-        updates.queue(PersistRoomObject::new(object_entity, room_entity));
+        updates.queue(PersistObjectLocation::new(object_entity));
 
         Ok(())
     }
@@ -194,15 +194,7 @@ impl Action for RemoveObject {
         world.despawn(object_entity);
         match location {
             Location::Room(room) => match world.get_mut::<Room>(room) {
-                Some(mut room) => {
-                    if let Some(pos) = room
-                        .objects
-                        .iter()
-                        .position(|object| *object == object_entity)
-                    {
-                        room.objects.remove(pos);
-                    }
-                }
+                Some(mut room) => room.remove_object(object_entity),
                 None => bail!("Room {:?} does not have a Room.", room),
             },
         }

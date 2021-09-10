@@ -10,7 +10,7 @@ use crate::{
         action::{queue_message, Action, DynAction},
         types::{
             object::Object,
-            player::{Player, Players},
+            player::Player,
             room::{Direction, Room},
         },
     },
@@ -100,12 +100,11 @@ impl Look {
                         message.push_str(object.short.as_str());
                     });
 
-                let present_names = world
-                    .get_resource::<Players>()
-                    .unwrap()
-                    .by_room(look_target)
-                    .filter(|present_player| *present_player != player)
-                    .filter_map(|player| world.get::<Player>(player))
+                let present_names = room
+                    .players
+                    .iter()
+                    .filter(|present_player| **present_player != player)
+                    .filter_map(|player| world.get::<Player>(*player))
                     .map(|player| player.name.clone())
                     .sorted()
                     .collect_vec();

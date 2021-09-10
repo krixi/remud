@@ -5,6 +5,7 @@ pub mod types;
 
 use std::{collections::VecDeque, convert::TryFrom};
 
+use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -79,7 +80,7 @@ impl GameWorld {
             .map_or(true, |configuration| configuration.shutdown)
     }
 
-    pub fn spawn_player(&mut self, name: String) -> Entity {
+    pub fn spawn_player(&mut self, name: String) -> anyhow::Result<Entity> {
         let (player, room) = {
             let room = {
                 let configuration = self.world.get_resource::<Configuration>().unwrap();
@@ -108,39 +109,46 @@ impl GameWorld {
 
         let mut players = self.world.get_resource_mut::<Players>().unwrap();
 
-        players.spawn(player, name, room);
+        players.spawn(player, name);
+        match self.world.get_mut::<Room>(room) {
+            Some(mut room) => room.players.push(player),
+            None => bail!("Room {:?} does not have a Room.", room),
+        }
 
         self.player_action(player, Box::new(Login {}));
         self.player_action(player, Look::here());
 
-        player
+        Ok(player)
     }
 
-    // TODO: clean this up, maybe return an error?
-    pub fn despawn_player(&mut self, player: Entity) {
+    pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         self.player_action(player, Box::new(Logout {}));
 
-        let location = self.world.get::<Player>(player).map(|player| player.room);
-
-        if let Some(location) = location {
-            let name = if let Some(name) = self
-                .world
-                .get::<Player>(player)
-                .map(|player| player.name.clone())
-            {
-                name
-            } else {
-                tracing::error!("Unable to despawn player {:?} at {:?}", player, location);
-                return;
-            };
-
-            self.world.entity_mut(player).despawn();
-
-            let mut players = self.world.get_resource_mut::<Players>().unwrap();
-            players.despawn(player, &name, location);
-        } else {
-            tracing::error!("Unable to despawn player {:?}", player);
+        let room = match self.world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("Player {:?} does not have a Player", player),
         };
+
+        let name = if let Some(name) = self
+            .world
+            .get::<Player>(player)
+            .map(|player| player.name.clone())
+        {
+            name
+        } else {
+            bail!("Unable to despawn player {:?} at {:?}", player, room);
+        };
+
+        self.world.entity_mut(player).despawn();
+
+        let mut players = self.world.get_resource_mut::<Players>().unwrap();
+        players.despawn(&name);
+        match self.world.get_mut::<Room>(room) {
+            Some(mut room) => room.remove_player(player),
+            None => bail!("Room {:?} does not have a Room.", room),
+        }
+
+        Ok(())
     }
 
     pub fn player_action(&mut self, player: Entity, mut action: DynAction) {

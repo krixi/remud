@@ -7,6 +7,7 @@ pub struct Room {
     pub description: String,
     pub exits: HashMap<Direction, Entity>,
     pub objects: Vec<Entity>,
+    pub players: Vec<Entity>,
 }
 
 impl Room {
@@ -16,6 +17,19 @@ impl Room {
             description,
             exits: HashMap::new(),
             objects: Vec::new(),
+            players: Vec::new(),
+        }
+    }
+
+    pub fn remove_object(&mut self, object: Entity) {
+        if let Some(index) = self.objects.iter().position(|o| *o == object) {
+            self.objects.remove(index);
+        }
+    }
+
+    pub fn remove_player(&mut self, player: Entity) {
+        if let Some(index) = self.players.iter().position(|p| *p == player) {
+            self.players.remove(index);
         }
     }
 }

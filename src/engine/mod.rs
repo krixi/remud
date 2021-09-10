@@ -120,7 +120,9 @@ impl Engine {
                 tracing::info!("{}> {:?} disconnected", self.tick, client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
-                    self.game_world.despawn_player(player);
+                    if let Err(e) = self.game_world.despawn_player(player) {
+                        tracing::error!("Failed to despawn player: {}", e);
+                    }
                 }
 
                 self.clients.remove(client_id);
@@ -155,9 +157,19 @@ impl Engine {
                             }
                         }
                         ClientState::LoginPassword { name } => {
-                            let player = self.game_world.spawn_player(name.clone());
-                            new_player = Some(player);
-                            client.set_state(ClientState::InGame { player });
+                            match self.game_world.spawn_player(name.clone()) {
+                                Ok(player) => {
+                                    new_player = Some(player);
+                                    client.set_state(ClientState::InGame { player });
+                                }
+                                Err(e) => {
+                                    client.set_state(ClientState::LoginName);
+                                    client
+                                        .send(String::from("Failed to login.\r\n\r\nName?\r\n> "))
+                                        .await;
+                                    tracing::error!("Failed to spawn player: {}", e)
+                                }
+                            }
                         }
                         ClientState::InGame { player } => match parse(&input) {
                             Ok(action) => self.game_world.player_action(*player, action),

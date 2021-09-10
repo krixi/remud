@@ -6,14 +6,14 @@ use itertools::Itertools;
 
 use crate::{
     engine::persistence::{
-        PersistNewRoom, PersistRemoveRoom, PersistRoomExits, PersistRoomObject, PersistRoomUpdates,
-        Updates,
+        PersistNewRoom, PersistObjectLocation, PersistRemoveRoom, PersistRoomExits,
+        PersistRoomUpdates, Updates,
     },
     text::Tokenizer,
     world::{
         action::{movement::Teleport, queue_message, Action, DynAction},
         types::{
-            player::{Player, Players},
+            player::Player,
             room::{Direction, Room, RoomId, Rooms},
         },
         VOID_ROOM_ID,
@@ -249,32 +249,27 @@ impl Action for RemoveRoom {
             None => bail!("Player {:?} has no Location."),
         };
 
-        if world
-            .get::<Room>(room_entity)
-            .map(|room| room.id == *VOID_ROOM_ID)
-            .unwrap_or(false)
-        {
-            let message = "You cannot delete the void room.".to_string();
-            queue_message(world, player, message);
-            return Ok(());
-        }
+        let (room_id, present_players, present_objects) = match world.get::<Room>(room_entity) {
+            Some(room) => {
+                if room.id == *VOID_ROOM_ID {
+                    let message = "You cannot delete the void room.".to_string();
+                    queue_message(world, player, message);
+                    return Ok(());
+                }
+
+                let players = room.players.iter().cloned().collect_vec();
+                let objects = room.objects.iter().cloned().collect_vec();
+
+                (room.id, players, objects)
+            }
+            None => bail!("Room {:?} does not have a Room", room_entity),
+        };
 
         // Move all players and objects from this room to the void room.
-        let present_players = world
-            .get_resource::<Players>()
-            .unwrap()
-            .by_room(room_entity)
-            .collect_vec();
-
         let mut emergency_teleport = Teleport::new(*VOID_ROOM_ID);
         for present_player in present_players {
             emergency_teleport.enact(present_player, world)?;
         }
-
-        let (objects, room_id) = match world.get_mut::<Room>(room_entity) {
-            Some(mut room) => (room.objects.drain(..).collect_vec(), room.id),
-            None => bail!("Room {:?} does not have a Room.", room_entity),
-        };
 
         let void_room_entity = world
             .get_resource::<Rooms>()
@@ -283,7 +278,7 @@ impl Action for RemoveRoom {
             .unwrap();
         {
             let mut void_room = world.get_mut::<Room>(void_room_entity).unwrap();
-            for object in objects.iter() {
+            for object in present_objects.iter() {
                 void_room.objects.push(*object);
             }
         }
@@ -312,8 +307,8 @@ impl Action for RemoveRoom {
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(PersistRemoveRoom::new(room_id));
 
-        for object in objects {
-            updates.queue(PersistRoomObject::new(object, void_room_entity))
+        for object in present_objects {
+            updates.queue(PersistObjectLocation::new(object))
         }
 
         let message = format!("Room {} removed.", room_id);

@@ -4,10 +4,7 @@ use itertools::Itertools;
 
 use crate::world::{
     action::{queue_message, Action},
-    types::{
-        player::{Player, Players},
-        Configuration,
-    },
+    types::{player::Player, room::Room, Configuration},
 };
 
 pub struct Login {}
@@ -19,12 +16,15 @@ impl Action for Login {
             None => bail!("Player {:?} has no Player."),
         };
 
-        let present_players = world
-            .get_resource::<Players>()
-            .unwrap()
-            .by_room(room)
-            .filter(|present_player| *present_player != player)
-            .collect_vec();
+        let present_players = match world.get::<Room>(room) {
+            Some(room) => room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .cloned()
+                .collect_vec(),
+            None => bail!("Room {:?} does not have a Room", room),
+        };
 
         let message = { format!("{} arrives.", name) };
         for present_player in present_players {
@@ -44,12 +44,15 @@ impl Action for Logout {
             None => bail!("Player {:?} has no Player.", player),
         };
 
-        let present_players = world
-            .get_resource::<Players>()
-            .unwrap()
-            .by_room(room)
-            .filter(|present_player| *present_player != player)
-            .collect_vec();
+        let present_players = match world.get::<Room>(room) {
+            Some(room) => room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .cloned()
+                .collect_vec(),
+            None => bail!("Room {:?} does not have a Room", room),
+        };
 
         let message = format!("{} leaves.", name);
         for present_player in present_players {

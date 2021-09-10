@@ -6,7 +6,7 @@ use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 use crate::world::types::{
-    object::{Object, ObjectId},
+    object::{Location, Object, ObjectId},
     room::{Room, RoomId},
 };
 
@@ -188,41 +188,44 @@ impl Update for PersistRoomExits {
     }
 }
 
-pub struct PersistRoomObject {
+pub struct PersistObjectLocation {
     object: Entity,
-    room: Entity,
 }
 
-impl PersistRoomObject {
-    pub fn new(object: Entity, room: Entity) -> Box<Self> {
-        Box::new(PersistRoomObject { object, room })
+impl PersistObjectLocation {
+    pub fn new(object: Entity) -> Box<Self> {
+        Box::new(PersistObjectLocation { object })
     }
 }
 
 #[async_trait]
-impl Update for PersistRoomObject {
+impl Update for PersistObjectLocation {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let object_id = match world.get::<Object>(self.object) {
-            Some(object) => object.id,
+        let (object_id, location) = match world.get::<Object>(self.object) {
+            Some(object) => (object.id, object.location),
             None => bail!(
                 "Failed to persist object room, object does not exist: {:?}",
                 self.object
             ),
         };
 
-        let room_id = match world.get::<Room>(self.room) {
-            Some(room) => room.id,
-            None => bail!(
-                "Failed to persist object room, room does not exist: {:?}",
-                self.room
-            ),
-        };
+        match location {
+            Location::Room(room) => {
+                let room_id = match world.get::<Room>(room) {
+                    Some(room) => room.id,
+                    None => bail!(
+                        "Failed to persist object room, room does not exist: {:?}",
+                        room
+                    ),
+                };
 
-        sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
-            .bind(room_id)
-            .bind(object_id)
-            .execute(pool)
-            .await?;
+                sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
+                    .bind(room_id)
+                    .bind(object_id)
+                    .execute(pool)
+                    .await?;
+            }
+        }
 
         Ok(())
     }

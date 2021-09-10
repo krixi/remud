@@ -6,7 +6,10 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
-        types::player::{Player, Players},
+        types::{
+            player::{Player, Players},
+            room::Room,
+        },
     },
 };
 
@@ -30,17 +33,20 @@ impl Say {
 
 impl Action for Say {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, room) = match world.get::<Player>(player) {
+        let (name, room_entity) = match world.get::<Player>(player) {
             Some(player) => (player.name.as_str(), player.room),
             None => bail!("Player {:?} has no name.", player),
         };
 
-        let present_players = world
-            .get_resource::<Players>()
-            .unwrap()
-            .by_room(room)
-            .filter(|present_player| *present_player != player)
-            .collect_vec();
+        let present_players = match world.get::<Room>(room_entity) {
+            Some(room) => room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .cloned()
+                .collect_vec(),
+            None => bail!("Room {:?} has no Room.", room_entity),
+        };
 
         let message = format!("{} says \"{}\"", name, self.message);
         for present_player in present_players {
