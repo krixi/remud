@@ -4,6 +4,7 @@ use bevy_ecs::prelude::*;
 
 pub struct Player {
     pub name: String,
+    pub room: Entity,
 }
 
 pub struct Messages {

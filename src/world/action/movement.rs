@@ -9,7 +9,6 @@ use crate::{
         types::{
             player::{Player, Players},
             room::{Direction, Room, RoomId, Rooms},
-            Location,
         },
     },
 };
@@ -26,17 +25,9 @@ impl Move {
 
 impl Action for Move {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let name = match world
-            .get::<Player>(player)
-            .map(|player| player.name.clone())
-        {
-            Some(name) => name,
+        let (name, current_room) = match world.get::<Player>(player) {
+            Some(player) => (player.name.clone(), player.room),
             None => bail!("Player {:?} has no Player.", player),
-        };
-
-        let current_room = match world.get::<Location>(player).map(|location| location.room) {
-            Some(room) => room,
-            None => bail!("Player {:?} has no Location.", player,),
         };
 
         let destination = match world
@@ -44,12 +35,11 @@ impl Action for Move {
             .and_then(|room| room.exits.get(&self.direction))
         {
             Some(destination) => *destination,
-            None => bail!(
-                "Unable to resolve destination for player {:?} move {} from room {:?}",
-                player,
-                self.direction,
-                current_room
-            ),
+            None => {
+                let message = format!("There is no exit {}.", self.direction.as_to_str());
+                queue_message(world, player, message);
+                return Ok(());
+            }
         };
 
         let present_players = world
@@ -68,7 +58,7 @@ impl Action for Move {
             .get_resource_mut::<Players>()
             .unwrap()
             .change_room(player, current_room, destination);
-        world.get_mut::<Location>(player).unwrap().room = destination;
+        world.get_mut::<Player>(player).unwrap().room = destination;
 
         let from_direction = match world.get::<Room>(destination).map(|room| {
             room.exits
@@ -110,34 +100,29 @@ pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
-struct Teleport {
+pub struct Teleport {
     room_id: RoomId,
+}
+
+impl Teleport {
+    pub fn new(room_id: RoomId) -> Box<Self> {
+        Box::new(Teleport { room_id })
+    }
 }
 
 impl Action for Teleport {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let destination = if let Some(room) = world
-            .get_resource::<Rooms>()
-            .unwrap()
-            .get_room(self.room_id)
-        {
-            room
-        } else {
-            let message = format!("Room {} doesn't exist.", self.room_id);
-            queue_message(world, player, message);
-            return Ok(());
-        };
+        let destination =
+            if let Some(room) = world.get_resource::<Rooms>().unwrap().by_id(self.room_id) {
+                room
+            } else {
+                let message = format!("Room {} doesn't exist.", self.room_id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
 
-        let current_room = match world.get::<Location>(player).map(|location| location.room) {
-            Some(room) => room,
-            None => bail!("Player {:?} does not have a Location."),
-        };
-
-        let name = match world
-            .get::<Player>(player)
-            .map(|player| player.name.clone())
-        {
-            Some(name) => name,
+        let (name, current_room) = match world.get::<Player>(player) {
+            Some(player) => (player.name.clone(), player.room),
             None => bail!("Player {:?} does not have a Player."),
         };
 
@@ -157,7 +142,7 @@ impl Action for Teleport {
             .get_resource_mut::<Players>()
             .unwrap()
             .change_room(player, current_room, destination);
-        world.get_mut::<Location>(player).unwrap().room = destination;
+        world.get_mut::<Player>(player).unwrap().room = destination;
 
         let present_players = world
             .get_resource::<Players>()

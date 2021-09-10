@@ -5,9 +5,6 @@ mod observe;
 mod room;
 mod system;
 
-pub use observe::Look;
-pub use system::{Login, Logout};
-
 use bevy_ecs::prelude::*;
 
 use crate::{
@@ -22,6 +19,9 @@ use crate::{
         types::{player::Messages, room::Direction},
     },
 };
+
+pub use observe::Look;
+pub use system::{Login, Logout};
 
 pub type DynAction = Box<dyn Action + Send>;
 

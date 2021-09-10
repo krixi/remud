@@ -5,14 +5,16 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{PersistNewObject, PersistObjectUpdate, PersistRoomObject, Updates},
+    engine::persistence::{
+        PersistNewObject, PersistRemoveObject, PersistRoomObject, PersistUpdateObject, Updates,
+    },
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
         types::{
-            object::{Object, ObjectId, Objects},
+            object::{Location, Object, ObjectId, Objects},
+            player::Player,
             room::Room,
-            Location,
         },
     },
 };
@@ -67,12 +69,15 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                                     }))
                                 }
                             }
-                            _ => Err("Enter a valid object subcommand: keywords, short, or long."
+                            "remove" => Ok(Box::new(RemoveObject { id })),
+                            _ => Err("Enter a valid object subcommand: keywords, short, long, or remove."
                                 .to_string()),
                         }
                     } else {
-                        Err("Enter a valid object subcommand: keywords, short, or long."
-                            .to_string())
+                        Err(
+                            "Enter a valid object subcommand: keywords, short, long, or remove."
+                                .to_string(),
+                        )
                     }
                 } else {
                     Err("Enter a valid object ID or subcommand: new.".to_string())
@@ -88,21 +93,22 @@ struct CreateObject {}
 
 impl Action for CreateObject {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("Player {:?} has no Location."),
+        };
+
         let id = world.get_resource_mut::<Objects>().unwrap().next_id();
         let object_entity = world
             .spawn()
             .insert(Object {
                 id,
+                location: Location::Room(room_entity),
                 keywords: vec!["object".to_string()],
                 short: "An object.".to_string(),
                 long: "A nondescript object. Completely uninteresting.".to_string(),
             })
             .id();
-
-        let room_entity = match world.get::<Location>(player).map(|location| location.room) {
-            Some(room) => room,
-            None => bail!("Player {:?} has no Location."),
-        };
 
         if let Some(mut room) = world.get_mut::<Room>(room_entity) {
             room.objects.push(object_entity);
@@ -111,7 +117,7 @@ impl Action for CreateObject {
         world
             .get_resource_mut::<Objects>()
             .unwrap()
-            .add_object(id, object_entity);
+            .insert(id, object_entity);
 
         let message = format!("Created object {}.", id);
         queue_message(world, player, message);
@@ -134,7 +140,7 @@ struct UpdateObject {
 impl Action for UpdateObject {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let object_entity =
-            if let Some(entity) = world.get_resource::<Objects>().unwrap().get_object(self.id) {
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
                 entity
             } else {
                 let message = format!("Object {} not found.", self.id);
@@ -160,7 +166,52 @@ impl Action for UpdateObject {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(PersistObjectUpdate::new(object_entity));
+            .queue(PersistUpdateObject::new(object_entity));
+
+        Ok(())
+    }
+}
+
+struct RemoveObject {
+    id: ObjectId,
+}
+
+impl Action for RemoveObject {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let object_entity = match world.get_resource::<Objects>().unwrap().by_id(self.id) {
+            Some(entity) => entity,
+            None => bail!("Unable to find object by ID: {}", self.id),
+        };
+
+        let location = match world
+            .get::<Object>(object_entity)
+            .map(|object| object.location)
+        {
+            Some(location) => location,
+            None => bail!("Object {:?} does not have Object", object_entity),
+        };
+
+        world.despawn(object_entity);
+        match location {
+            Location::Room(room) => match world.get_mut::<Room>(room) {
+                Some(mut room) => {
+                    if let Some(pos) = room
+                        .objects
+                        .iter()
+                        .position(|object| *object == object_entity)
+                    {
+                        room.objects.remove(pos);
+                    }
+                }
+                None => bail!("Room {:?} does not have a Room.", room),
+            },
+        }
+
+        let mut updates = world.get_resource_mut::<Updates>().unwrap();
+        updates.queue(PersistRemoveObject::new(self.id));
+
+        let message = format!("Object {} removed.", self.id);
+        queue_message(world, player, message);
 
         Ok(())
     }

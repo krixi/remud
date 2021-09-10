@@ -2,6 +2,11 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::Entity;
 
+#[derive(Clone, Copy)]
+pub enum Location {
+    Room(Entity),
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct ObjectId(i64);
@@ -44,15 +49,23 @@ impl error::Error for ObjectIdParseError {}
 
 pub struct Object {
     pub id: ObjectId,
+    pub location: Location,
     pub keywords: Vec<String>,
     pub short: String,
     pub long: String,
 }
 
 impl Object {
-    pub fn new(id: ObjectId, keywords: Vec<String>, short: String, long: String) -> Self {
+    pub fn new(
+        id: ObjectId,
+        location: Location,
+        keywords: Vec<String>,
+        short: String,
+        long: String,
+    ) -> Self {
         Object {
             id,
+            location,
             keywords,
             short,
             long,
@@ -70,11 +83,11 @@ impl Objects {
         Objects { by_id, highest_id }
     }
 
-    pub fn add_object(&mut self, id: ObjectId, entity: Entity) {
+    pub fn insert(&mut self, id: ObjectId, entity: Entity) {
         self.by_id.insert(id, entity);
     }
 
-    pub fn get_object(&self, id: ObjectId) -> Option<Entity> {
+    pub fn by_id(&self, id: ObjectId) -> Option<Entity> {
         self.by_id.get(&id).cloned()
     }
 

@@ -7,37 +7,58 @@ use std::{collections::VecDeque, convert::TryFrom};
 
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 
 use crate::{
-    engine::persistence::{DynUpdate, Updates},
+    engine::persistence::{DynUpdate, PersistNewRoom, Updates},
     world::{
         action::{DynAction, Login, Logout, Look},
         types::{
             player::{Messages, Player, Players},
             room::{Room, RoomId, Rooms},
-            Configuration, Location,
+            Configuration,
         },
     },
 };
 
+lazy_static! {
+    pub static ref VOID_ROOM_ID: RoomId = RoomId::try_from(0).unwrap();
+}
+
 pub struct GameWorld {
     world: World,
     schedule: Schedule,
-    void_room: Entity,
 }
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
-        // Create emergency room
-        let room = Room::new(
-            RoomId::try_from(0).unwrap(),
-            "A dark void extends infinitely in all directions.".to_string(),
-        );
-        let void_room = world.spawn().insert(room).id();
-
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
+
+        if world
+            .get_resource::<Rooms>()
+            .unwrap()
+            .by_id(*VOID_ROOM_ID)
+            .is_none()
+        {
+            let room = Room::new(
+                *VOID_ROOM_ID,
+                "A dark void extends infinitely in all directions.".to_string(),
+            );
+            let void_room = world.spawn().insert(room).id();
+            world
+                .get_resource_mut::<Rooms>()
+                .unwrap()
+                .insert(*VOID_ROOM_ID, void_room);
+
+            world
+                .get_resource_mut::<Updates>()
+                .unwrap()
+                .queue(PersistNewRoom::new(void_room));
+
+            tracing::warn!("Void room was deleted and has been recreated.");
+        }
 
         // Create schedule
         let mut schedule = Schedule::default();
@@ -45,11 +66,7 @@ impl GameWorld {
         // Add fun systems
         schedule.add_stage("update", update);
 
-        GameWorld {
-            world,
-            schedule,
-            void_room,
-        }
+        GameWorld { world, schedule }
     }
 
     pub fn run(&mut self) {
@@ -68,16 +85,22 @@ impl GameWorld {
                 let configuration = self.world.get_resource::<Configuration>().unwrap();
                 let rooms = self.world.get_resource::<Rooms>().unwrap();
 
-                rooms
-                    .get_room(configuration.spawn_room)
-                    .unwrap_or(self.void_room)
+                rooms.by_id(configuration.spawn_room).unwrap_or_else(|| {
+                    self.world
+                        .get_resource::<Rooms>()
+                        .unwrap()
+                        .by_id(*VOID_ROOM_ID)
+                        .unwrap()
+                })
             };
 
             let player = self
                 .world
                 .spawn()
-                .insert(Player { name: name.clone() })
-                .insert(Location { room })
+                .insert(Player {
+                    name: name.clone(),
+                    room,
+                })
                 .id();
 
             (player, room)
@@ -93,13 +116,11 @@ impl GameWorld {
         player
     }
 
+    // TODO: clean this up, maybe return an error?
     pub fn despawn_player(&mut self, player: Entity) {
         self.player_action(player, Box::new(Logout {}));
 
-        let location = self
-            .world
-            .get::<Location>(player)
-            .map(|location| location.room);
+        let location = self.world.get::<Player>(player).map(|player| player.room);
 
         if let Some(location) = location {
             let name = if let Some(name) = self

@@ -5,7 +5,10 @@ use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
-use crate::world::types::{object::Object, room::Room};
+use crate::world::types::{
+    object::{Object, ObjectId},
+    room::{Room, RoomId},
+};
 
 pub type DynUpdate = Box<dyn Update + Send + Sync>;
 
@@ -31,18 +34,18 @@ pub trait Update {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()>;
 }
 
-pub struct PersistObjectUpdate {
+pub struct PersistUpdateObject {
     object: Entity,
 }
 
-impl PersistObjectUpdate {
+impl PersistUpdateObject {
     pub fn new(object: Entity) -> Box<Self> {
-        Box::new(PersistObjectUpdate { object })
+        Box::new(PersistUpdateObject { object })
     }
 }
 
 #[async_trait]
-impl Update for PersistObjectUpdate {
+impl Update for PersistUpdateObject {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let object = match world.get::<Object>(self.object) {
             Some(object) => object,
@@ -218,6 +221,50 @@ impl Update for PersistRoomObject {
         sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
             .bind(room_id)
             .bind(object_id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct PersistRemoveObject {
+    object_id: ObjectId,
+}
+
+impl PersistRemoveObject {
+    pub fn new(object_id: ObjectId) -> Box<Self> {
+        Box::new(PersistRemoveObject { object_id })
+    }
+}
+
+#[async_trait]
+impl Update for PersistRemoveObject {
+    async fn enact(&self, pool: &SqlitePool, _world: &World) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM objects WHERE id = ?")
+            .bind(self.object_id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct PersistRemoveRoom {
+    room_id: RoomId,
+}
+
+impl PersistRemoveRoom {
+    pub fn new(room_id: RoomId) -> Box<Self> {
+        Box::new(PersistRemoveRoom { room_id })
+    }
+}
+
+#[async_trait]
+impl Update for PersistRemoveRoom {
+    async fn enact(&self, pool: &SqlitePool, _world: &World) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM rooms WHERE id = ?")
+            .bind(self.room_id)
             .execute(pool)
             .await?;
 

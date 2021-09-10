@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    convert::{TryFrom, TryInto},
-    str::FromStr,
-};
+use std::{borrow::Cow, collections::HashMap, convert::TryFrom, str::FromStr};
 
 use anyhow::bail;
 use bevy_ecs::prelude::*;
@@ -13,7 +8,7 @@ use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::types::{
-    object::{Object, ObjectId, Objects},
+    object::{Location, Object, ObjectId, Objects},
     room::{Direction, Room, RoomId, Rooms},
     Configuration,
 };
@@ -66,8 +61,8 @@ impl Db {
         load_configuration(&self.pool, &mut world).await?;
         load_rooms(&self.pool, &mut world).await?;
         load_exits(&self.pool, &mut world).await?;
-        load_objects(&self.pool, &mut world).await?;
-        load_room_objects(&self.pool, &mut world).await?;
+        let room_objects = load_room_objects(&self.pool).await?;
+        load_objects(&self.pool, &mut world, room_objects).await?;
 
         Ok(world)
     }
@@ -128,8 +123,8 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     while let Some(exit) = results.try_next().await? {
         let (from, to) = {
             let rooms = &world.get_resource::<Rooms>().unwrap();
-            let from = rooms.get_room(RoomId::try_from(exit.room_from)?).unwrap();
-            let to = rooms.get_room(RoomId::try_from(exit.room_to)?).unwrap();
+            let from = rooms.by_id(RoomId::try_from(exit.room_from)?).unwrap();
+            let to = rooms.by_id(RoomId::try_from(exit.room_to)?).unwrap();
             (from, to)
         };
 
@@ -145,7 +140,11 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn load_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_objects(
+    pool: &SqlitePool,
+    world: &mut World,
+    room_objects: HashMap<i64, i64>,
+) -> anyhow::Result<()> {
     let mut results =
         sqlx::query_as::<_, ObjectRow>("SELECT id, keywords, short, long FROM objects").fetch(pool);
 
@@ -157,16 +156,41 @@ async fn load_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()
             highest_id = object.id;
         }
 
-        match Object::try_from(object) {
-            Ok(object) => {
-                let id = object.id;
+        let room_id = match room_objects.get(&object.id) {
+            Some(room) => *room,
+            None => bail!("Failed to find room for object {}", object.id),
+        };
 
-                let object_entity = world.spawn().insert(object).id();
+        let room_id = match RoomId::try_from(room_id) {
+            Ok(id) => id,
+            Err(_) => bail!("Failed to deserialize room ID: {}", room_id),
+        };
 
-                by_id.insert(id, object_entity);
-            }
-            Err(e) => bail!("Failed to hydrate Object with ObjectRow: {}", e),
+        let room_entity = match world.get_resource::<Rooms>().unwrap().by_id(room_id) {
+            Some(room) => room,
+            None => bail!("Failed to retrieve Room for room {}", room_id),
+        };
+
+        let id = match ObjectId::try_from(object.id) {
+            Ok(id) => id,
+            Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
+        };
+
+        let object = Object::new(
+            id,
+            Location::Room(room_entity),
+            object.keywords(),
+            object.short,
+            object.long,
+        );
+
+        let object_entity = world.spawn().insert(object).id();
+        match world.get_mut::<Room>(room_entity) {
+            Some(mut room) => room.objects.push(object_entity),
+            None => bail!("Failed to retrieve Room for room {:?}", room_entity),
         }
+
+        by_id.insert(id, object_entity);
     }
 
     world.insert_resource(Objects::new(highest_id, by_id));
@@ -174,38 +198,18 @@ async fn load_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()
     Ok(())
 }
 
-async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_room_objects(pool: &SqlitePool) -> anyhow::Result<HashMap<i64, i64>> {
     let mut results =
         sqlx::query_as::<_, RoomObjectRow>("SELECT room_id, object_id FROM room_objects")
             .fetch(pool);
 
+    let mut map = HashMap::new();
+
     while let Some(room_object) = results.try_next().await? {
-        let (room_id, object_id) = match room_object.try_into() {
-            Ok(pair) => pair,
-            Err(e) => bail!("Failed to deserialize room_objects row: {}", e),
-        };
-
-        let object = match world
-            .get_resource::<Objects>()
-            .unwrap()
-            .get_object(object_id)
-        {
-            Some(object) => object,
-            None => bail!("Failed to retrieve object by ID: {}", object_id),
-        };
-
-        match world
-            .get_resource::<Rooms>()
-            .unwrap()
-            .get_room(room_id)
-            .and_then(|room_entity| world.get_mut::<Room>(room_entity))
-        {
-            Some(mut room) => room.objects.push(object),
-            None => bail!("Failed to retrieve Room by ID: {}", room_id),
-        };
+        map.insert(room_object.object_id, room_object.room_id);
     }
 
-    Ok(())
+    Ok(map)
 }
 
 #[derive(sqlx::FromRow)]
@@ -232,18 +236,12 @@ struct ObjectRow {
     short: String,
 }
 
-impl TryFrom<ObjectRow> for Object {
-    type Error = anyhow::Error;
-
-    fn try_from(value: ObjectRow) -> Result<Self, Self::Error> {
-        let id = ObjectId::try_from(value.id)?;
-        let keywords = value
-            .keywords
+impl ObjectRow {
+    fn keywords(&self) -> Vec<String> {
+        self.keywords
             .split(',')
             .map(|keyword| keyword.to_string())
-            .collect_vec();
-
-        Ok(Object::new(id, keywords, value.short, value.long))
+            .collect_vec()
     }
 }
 

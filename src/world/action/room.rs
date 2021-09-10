@@ -2,16 +2,21 @@ use std::str::FromStr;
 
 use anyhow::bail;
 use bevy_ecs::prelude::*;
+use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates, Updates},
+    engine::persistence::{
+        PersistNewRoom, PersistRemoveRoom, PersistRoomExits, PersistRoomObject, PersistRoomUpdates,
+        Updates,
+    },
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction},
+        action::{movement::Teleport, queue_message, Action, DynAction},
         types::{
+            player::{Player, Players},
             room::{Direction, Room, RoomId, Rooms},
-            Location,
         },
+        VOID_ROOM_ID,
     },
 };
 
@@ -77,7 +82,8 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                     Err("A direction and destination room ID are required.".to_string())
                 }
             }
-            _ => Err("Enter a valid room subcommand: new, desc, link".to_string()),
+            "remove" => Ok(Box::new(RemoveRoom {})),
+            _ => Err("Enter a valid room subcommand: new, desc, link, remove".to_string()),
         }
     } else {
         Err("Enter a valid room subcommand: new, desc, link".to_string())
@@ -90,7 +96,7 @@ struct CreateRoom {
 
 impl Action for CreateRoom {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let current_room = match world.get::<Location>(player).map(|location| location.room) {
+        let current_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
             None => bail!("Player {:?} does not have a Location."),
         };
@@ -118,7 +124,7 @@ impl Action for CreateRoom {
         world
             .get_resource_mut::<Rooms>()
             .unwrap()
-            .add_room(id, new_room);
+            .insert(id, new_room);
 
         // Create links
         if let Some(direction) = self.direction {
@@ -165,7 +171,7 @@ impl Action for UpdateExit {
         let destination = match world
             .get_resource::<Rooms>()
             .unwrap()
-            .get_room(self.destination)
+            .by_id(self.destination)
         {
             Some(room) => room,
             None => {
@@ -175,7 +181,7 @@ impl Action for UpdateExit {
             }
         };
 
-        let from_room = match world.get::<Location>(player).map(|location| location.room) {
+        let from_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
             None => bail!("Player {:?} does not have a Location.", player),
         };
@@ -207,7 +213,7 @@ struct UpdateRoom {
 
 impl Action for UpdateRoom {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Location>(player).map(|location| location.room) {
+        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
             None => bail!("Player {:?} does not have a Location.", player),
         };
@@ -229,6 +235,89 @@ impl Action for UpdateRoom {
             .get_resource_mut::<Updates>()
             .unwrap()
             .queue(PersistRoomUpdates::new(room_entity));
+
+        Ok(())
+    }
+}
+
+struct RemoveRoom {}
+
+impl Action for RemoveRoom {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("Player {:?} has no Location."),
+        };
+
+        if world
+            .get::<Room>(room_entity)
+            .map(|room| room.id == *VOID_ROOM_ID)
+            .unwrap_or(false)
+        {
+            let message = "You cannot delete the void room.".to_string();
+            queue_message(world, player, message);
+            return Ok(());
+        }
+
+        // Move all players and objects from this room to the void room.
+        let present_players = world
+            .get_resource::<Players>()
+            .unwrap()
+            .by_room(room_entity)
+            .collect_vec();
+
+        let mut emergency_teleport = Teleport::new(*VOID_ROOM_ID);
+        for present_player in present_players {
+            emergency_teleport.enact(present_player, world)?;
+        }
+
+        let (objects, room_id) = match world.get_mut::<Room>(room_entity) {
+            Some(mut room) => (room.objects.drain(..).collect_vec(), room.id),
+            None => bail!("Room {:?} does not have a Room.", room_entity),
+        };
+
+        let void_room_entity = world
+            .get_resource::<Rooms>()
+            .unwrap()
+            .by_id(*VOID_ROOM_ID)
+            .unwrap();
+        {
+            let mut void_room = world.get_mut::<Room>(void_room_entity).unwrap();
+            for object in objects.iter() {
+                void_room.objects.push(*object);
+            }
+        }
+
+        // Remove the room
+        world.get_resource_mut::<Rooms>().unwrap().remove(room_id);
+        world.despawn(room_entity);
+
+        // Find and remove all exits to the room (FKs handle this in the DB)
+        world
+            .query::<(Entity, &mut Room)>()
+            .for_each_mut(world, |(room_entity, mut room)| {
+                let to_remove = room
+                    .exits
+                    .iter()
+                    .filter(|(_, entity)| **entity == room_entity)
+                    .map(|(direction, _)| *direction)
+                    .collect_vec();
+
+                for direction in to_remove {
+                    room.exits.remove(&direction);
+                }
+            });
+
+        // Persist the changes
+        let mut updates = world.get_resource_mut::<Updates>().unwrap();
+        updates.queue(PersistRemoveRoom::new(room_id));
+
+        for object in objects {
+            updates.queue(PersistRoomObject::new(object, void_room_entity))
+        }
+
+        let message = format!("Room {} removed.", room_id);
+        queue_message(world, player, message);
 
         Ok(())
     }

@@ -6,10 +6,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
-        types::{
-            player::{Player, Players},
-            Location,
-        },
+        types::player::{Player, Players},
     },
 };
 
@@ -33,16 +30,8 @@ impl Say {
 
 impl Action for Say {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room = match world.get::<Location>(player).map(|location| location.room) {
-            Some(room) => room,
-            None => bail!("Player {:?} not located in a room.", player),
-        };
-
-        let name = match world
-            .get::<Player>(player)
-            .map(|player| player.name.as_str())
-        {
-            Some(name) => name,
+        let (name, room) = match world.get::<Player>(player) {
+            Some(player) => (player.name.as_str(), player.room),
             None => bail!("Player {:?} has no name.", player),
         };
 

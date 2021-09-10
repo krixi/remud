@@ -12,7 +12,6 @@ use crate::{
             object::Object,
             player::{Player, Players},
             room::{Direction, Room},
-            Location,
         },
     },
 };
@@ -65,7 +64,7 @@ impl Look {
 
 impl Look {
     fn look_room(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let current_room = match world.get::<Location>(player).map(|location| location.room) {
+        let current_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
             None => bail!("Player {:?} does not have a Location."),
         };
@@ -88,7 +87,7 @@ impl Look {
 
         match world.get::<Room>(look_target) {
             Some(room) => {
-                let mut message = format!("{}", room.description);
+                let mut message = room.description.clone();
 
                 if !room.objects.is_empty() {
                     message.push_str("\r\n");
@@ -135,8 +134,8 @@ impl Look {
 
     fn look_object(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let description = world
-            .get::<Location>(player)
-            .map(|location| location.room)
+            .get::<Player>(player)
+            .map(|player| player.room)
             .and_then(|room| world.get::<Room>(room))
             .and_then(|room| {
                 room.objects
@@ -179,7 +178,7 @@ pub struct Exits {}
 
 impl Action for Exits {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room = match world.get::<Location>(player).map(|location| location.room) {
+        let room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
             None => bail!("Player {:?} does not have a Location."),
         };

@@ -156,12 +156,16 @@ impl Rooms {
         Rooms { by_id, highest_id }
     }
 
-    pub fn add_room(&mut self, id: RoomId, room: Entity) {
+    pub fn insert(&mut self, id: RoomId, room: Entity) {
         self.by_id.insert(id, room);
     }
 
-    pub fn get_room(&self, id: RoomId) -> Option<Entity> {
+    pub fn by_id(&self, id: RoomId) -> Option<Entity> {
         self.by_id.get(&id).copied()
+    }
+
+    pub fn remove(&mut self, id: RoomId) {
+        self.by_id.remove(&id);
     }
 
     pub fn next_id(&mut self) -> RoomId {
