@@ -14,8 +14,6 @@
 
   > look at <player\>
 
-- persist objects to database
-
 - add object flags commands
 
   > object <id\> set <flag\>
