@@ -4,7 +4,10 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{PersistNewRoom, PersistRoomExits, PersistRoomUpdates, Updates},
+    engine::persistence::{
+        PersistNewObject, PersistNewRoom, PersistObjectRoom, PersistObjectUpdate, PersistRoomExits,
+        PersistRoomUpdates, Updates,
+    },
     text::Tokenizer,
     world::{
         types::{
@@ -41,11 +44,18 @@ impl Action for CreateObject {
             .id();
 
         // place the object in the room
-        if let Some(room_entity) = world.get::<Location>(player).map(|location| location.room) {
+        let room_entity = if let Some(room_entity) =
+            world.get::<Location>(player).map(|location| location.room)
+        {
             if let Some(mut room) = world.get_mut::<Room>(room_entity) {
                 room.objects.push(object_entity);
+                Some(room_entity)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         world
             .get_resource_mut::<Objects>()
@@ -55,6 +65,12 @@ impl Action for CreateObject {
         // notify the player that the object was created
         let message = format!("Created object {}\r\n", id);
         queue_message(world, player, message);
+
+        let mut updates = world.get_resource_mut::<Updates>().unwrap();
+        updates.queue(PersistNewObject::new(object_entity));
+        if let Some(room_entity) = room_entity {
+            updates.queue(PersistObjectRoom::new(object_entity, room_entity));
+        }
     }
 }
 
@@ -318,7 +334,7 @@ struct UpdateObject {
 impl Action for UpdateObject {
     fn enact(&mut self, player: Entity, world: &mut World) {
         let object_entity =
-            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().get_object(self.id) {
                 entity
             } else {
                 let message = format!("Object {} not found.", self.id);
@@ -340,6 +356,11 @@ impl Action for UpdateObject {
 
         let message = format!("Updated object {}\r\n", self.id);
         queue_message(world, player, message);
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(PersistObjectUpdate::new(object_entity));
     }
 }
 

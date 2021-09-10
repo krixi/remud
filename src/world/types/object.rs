@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::TryFrom, fmt, str::FromStr};
+use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::Entity;
 
@@ -33,7 +33,14 @@ impl fmt::Display for ObjectId {
     }
 }
 
+#[derive(Debug)]
 pub struct ObjectIdParseError {}
+impl fmt::Display for ObjectIdParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Object IDs must be a non-negative integers.")
+    }
+}
+impl error::Error for ObjectIdParseError {}
 
 pub struct Object {
     pub id: ObjectId,
@@ -42,24 +49,32 @@ pub struct Object {
     pub long: String,
 }
 
+impl Object {
+    pub fn new(id: ObjectId, keywords: Vec<String>, short: String, long: String) -> Self {
+        Object {
+            id,
+            keywords,
+            short,
+            long,
+        }
+    }
+}
+
 pub struct Objects {
     by_id: HashMap<ObjectId, Entity>,
     highest_id: i64,
 }
 
 impl Objects {
-    pub fn new(highest_id: i64) -> Self {
-        Objects {
-            by_id: HashMap::new(),
-            highest_id,
-        }
+    pub fn new(highest_id: i64, by_id: HashMap<ObjectId, Entity>) -> Self {
+        Objects { by_id, highest_id }
     }
 
     pub fn add_object(&mut self, id: ObjectId, entity: Entity) {
         self.by_id.insert(id, entity);
     }
 
-    pub fn by_id(&self, id: ObjectId) -> Option<Entity> {
+    pub fn get_object(&self, id: ObjectId) -> Option<Entity> {
         self.by_id.get(&id).cloned()
     }
 

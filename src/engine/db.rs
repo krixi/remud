@@ -1,11 +1,19 @@
-use std::{borrow::Cow, collections::HashMap, convert::TryFrom, str::FromStr};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    str::FromStr,
+};
 
+use anyhow::bail;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::types::{
+    object::{Object, ObjectId, Objects},
     room::{Direction, Room, RoomId, Rooms},
     Configuration,
 };
@@ -58,6 +66,8 @@ impl Db {
         load_configuration(&self.pool, &mut world).await?;
         load_rooms(&self.pool, &mut world).await?;
         load_exits(&self.pool, &mut world).await?;
+        load_objects(&self.pool, &mut world).await?;
+        load_room_objects(&self.pool, &mut world).await?;
 
         Ok(world)
     }
@@ -105,8 +115,8 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         rooms_by_id.insert(RoomId::try_from(id)?, entity);
     }
 
-    let metadata = Rooms::new(rooms_by_id, highest_id);
-    world.insert_resource(metadata);
+    let rooms = Rooms::new(rooms_by_id, highest_id);
+    world.insert_resource(rooms);
 
     Ok(())
 }
@@ -134,6 +144,108 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+async fn load_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+    let mut results =
+        sqlx::query_as::<_, ObjectRow>("SELECT id, keywords, short, long FROM objects").fetch(pool);
+
+    let mut highest_id = 0;
+    let mut by_id = HashMap::new();
+
+    while let Some(object) = results.try_next().await? {
+        if object.id > highest_id {
+            highest_id = object.id;
+        }
+
+        match Object::try_from(object) {
+            Ok(object) => {
+                let id = object.id;
+
+                let object_entity = world.spawn().insert(object).id();
+
+                by_id.insert(id, object_entity);
+            }
+            Err(e) => bail!("Failed to hydrate Object with ObjectRow: {}", e),
+        }
+    }
+
+    world.insert_resource(Objects::new(highest_id, by_id));
+
+    Ok(())
+}
+
+async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+    let mut results =
+        sqlx::query_as::<_, RoomObjectRow>("SELECT room_id, object_id FROM room_objects")
+            .fetch(pool);
+
+    while let Some(room_object) = results.try_next().await? {
+        let (room_id, object_id) = match room_object.try_into() {
+            Ok(pair) => pair,
+            Err(e) => bail!("Failed to deserialize room_objects row: {}", e),
+        };
+
+        let object = match world
+            .get_resource::<Objects>()
+            .unwrap()
+            .get_object(object_id)
+        {
+            Some(object) => object,
+            None => bail!("Failed to retrieve object by ID: {}", object_id),
+        };
+
+        match world
+            .get_resource::<Rooms>()
+            .unwrap()
+            .get_room(room_id)
+            .and_then(|room_entity| world.get_mut::<Room>(room_entity))
+        {
+            Some(mut room) => room.objects.push(object),
+            None => bail!("Failed to retrieve Room by ID: {}", room_id),
+        };
+    }
+
+    Ok(())
+}
+
+#[derive(sqlx::FromRow)]
+struct RoomObjectRow {
+    room_id: i64,
+    object_id: i64,
+}
+
+impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RoomObjectRow) -> Result<Self, Self::Error> {
+        let room_id = RoomId::try_from(value.room_id)?;
+        let object_id = ObjectId::try_from(value.object_id)?;
+        Ok((room_id, object_id))
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct ObjectRow {
+    id: i64,
+    keywords: String,
+    long: String,
+    short: String,
+}
+
+impl TryFrom<ObjectRow> for Object {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ObjectRow) -> Result<Self, Self::Error> {
+        let id = ObjectId::try_from(value.id)?;
+        let keywords = value
+            .keywords
+            .split(',')
+            .map(|keyword| keyword.to_string())
+            .collect_vec();
+
+        Ok(Object::new(id, keywords, value.short, value.long))
+    }
 }
 
 #[derive(sqlx::FromRow)]

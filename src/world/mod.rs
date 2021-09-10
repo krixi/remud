@@ -15,7 +15,7 @@ use crate::{
     world::{
         action::{DynAction, Login, Logout},
         types::{
-            object::{Object, Objects},
+            object::Object,
             players::{Messages, Player, Players},
             room::{Direction, Room, RoomId, Rooms},
             Configuration, Location,
@@ -41,7 +41,6 @@ impl GameWorld {
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
-        world.insert_resource(Objects::new(0));
 
         // Create schedule
         let mut schedule = Schedule::default();

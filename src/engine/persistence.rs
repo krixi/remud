@@ -31,6 +31,46 @@ pub trait Update {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()>;
 }
 
+pub struct PersistObjectRoom {
+    object: Entity,
+    room: Entity,
+}
+
+impl PersistObjectRoom {
+    pub fn new(object: Entity, room: Entity) -> Box<Self> {
+        Box::new(PersistObjectRoom { object, room })
+    }
+}
+
+#[async_trait]
+impl Update for PersistObjectRoom {
+    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
+        let object_id = match world.get::<Object>(self.object) {
+            Some(object) => object.id,
+            None => bail!(
+                "Failed to persist object room, object does not exist: {:?}",
+                self.object
+            ),
+        };
+
+        let room_id = match world.get::<Room>(self.room) {
+            Some(room) => room.id,
+            None => bail!(
+                "Failed to persist object room, room does not exist: {:?}",
+                self.room
+            ),
+        };
+
+        sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
+            .bind(room_id)
+            .bind(object_id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct PersistObjectUpdate {
     object: Entity,
 }
@@ -38,6 +78,31 @@ pub struct PersistObjectUpdate {
 impl PersistObjectUpdate {
     pub fn new(object: Entity) -> Box<Self> {
         Box::new(PersistObjectUpdate { object })
+    }
+}
+
+#[async_trait]
+impl Update for PersistObjectUpdate {
+    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
+        let object = match world.get::<Object>(self.object) {
+            Some(object) => object,
+            None => bail!(
+                "Failed to persist object updates, object does not exist: {:?}",
+                self.object
+            ),
+        };
+
+        let keywords = object.keywords.join(",");
+
+        sqlx::query("UPDATE objects SET keywords = ?, short = ?, long = ? WHERE id = ?")
+            .bind(keywords)
+            .bind(&object.short)
+            .bind(&object.long)
+            .bind(object.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -61,6 +126,16 @@ impl Update for PersistNewObject {
                 self.object
             ),
         };
+
+        let keywords = object.keywords.join(",");
+
+        sqlx::query("INSERT INTO objects (id, keywords, short, long) VALUES (?, ?, ?, ?)")
+            .bind(object.id)
+            .bind(keywords)
+            .bind(&object.short)
+            .bind(&object.long)
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
