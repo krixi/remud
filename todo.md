@@ -1,3 +1,7 @@
+- prevent duplicate user logins
+
+-
+
 - add help command
 
   > help \[topic\]

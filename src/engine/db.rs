@@ -270,10 +270,15 @@ impl Db {
             })
             .id();
 
+        match world.get_mut::<Room>(room) {
+            Some(mut room) => room.players.push(player),
+            None => bail!("Room {:?} has no Room.", room),
+        }
+
         world
             .get_resource_mut::<Players>()
             .unwrap()
-            .spawn(player, name.to_string());
+            .insert(player, name.to_string());
 
         self.load_player_inventory(world, name).await?;
 
@@ -285,7 +290,8 @@ impl Db {
             r#"SELECT objects.id, player_id AS container, keywords, short, long
                 FROM objects
                 INNER JOIN player_objects ON player_objects.object_id = objects.id
-                INNER JOIN players ON players.username= ?"#,
+                INNER JOIN players ON player_objects.player_id = players.id
+                    AND players.username = ?"#,
         )
         .bind(name)
         .fetch(&self.pool);

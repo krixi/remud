@@ -61,26 +61,29 @@ impl Action for Move {
             .unwrap()
             .remove_player(player);
         world.get_mut::<Player>(player).unwrap().room = destination;
+        match world.get_mut::<Room>(destination) {
+            Some(mut room) => room.players.push(player),
+            None => bail!("Room {:?} has no Room."),
+        }
 
-        let (from_direction, present_players) = match world.get::<Room>(destination) {
-            Some(room) => {
-                let direction = room
-                    .exits
-                    .iter()
-                    .find(|(_, room)| **room == current_room)
-                    .map(|(direction, _)| direction)
-                    .copied();
+        let (from_direction, present_players) = {
+            let room = world.get::<Room>(destination).unwrap();
 
-                let present_players = room
-                    .players
-                    .iter()
-                    .filter(|present_player| **present_player != player)
-                    .copied()
-                    .collect_vec();
+            let direction = room
+                .exits
+                .iter()
+                .find(|(_, room)| **room == current_room)
+                .map(|(direction, _)| direction)
+                .copied();
 
-                (direction, present_players)
-            }
-            None => bail!("Room {:?} does not have a Room.", destination),
+            let present_players = room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .copied()
+                .collect_vec();
+
+            (direction, present_players)
         };
 
         let message = from_direction.map_or_else(

@@ -47,11 +47,11 @@ impl Players {
         self.by_name.get(name).copied()
     }
 
-    pub fn spawn(&mut self, player: Entity, name: String) {
+    pub fn insert(&mut self, player: Entity, name: String) {
         self.by_name.insert(name, player);
     }
 
-    pub fn despawn(&mut self, name: &str) {
+    pub fn remove(&mut self, name: &str) {
         self.by_name.remove(name);
     }
 }

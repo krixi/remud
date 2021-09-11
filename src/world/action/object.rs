@@ -257,7 +257,10 @@ impl Action for Get {
 
             format!("You pick up \"{}\".", self.keywords.join(" "))
         } else {
-            format!("You find no \"{}\" here.", self.keywords.join(" "))
+            format!(
+                "You find no object called \"{}\" here.",
+                self.keywords.join(" ")
+            )
         };
 
         queue_message(world, player, message);

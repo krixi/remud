@@ -149,6 +149,22 @@ impl Look {
                             .all(|keyword| object.keywords.contains(keyword))
                     })
                     .map(|object| object.long.as_str())
+            })
+            .or_else(|| {
+                world.get::<Contents>(player).and_then(|contents| {
+                    contents
+                        .objects
+                        .iter()
+                        .filter_map(|object| world.get::<Object>(*object))
+                        .find(|object| {
+                            self.at
+                                .as_ref()
+                                .unwrap()
+                                .iter()
+                                .all(|keyword| object.keywords.contains(keyword))
+                        })
+                        .map(|object| object.long.as_str())
+                })
             });
 
         let message = if let Some(description) = description {

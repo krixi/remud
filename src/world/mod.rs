@@ -111,7 +111,7 @@ impl GameWorld {
         self.world
             .get_resource_mut::<Players>()
             .unwrap()
-            .despawn(&name);
+            .remove(&name);
         match self.world.get_mut::<Room>(room) {
             Some(mut room) => room.remove_player(player),
             None => bail!("Room {:?} does not have a Room.", room),
