@@ -258,7 +258,7 @@ impl Action for Get {
             format!("You pick up \"{}\".", self.keywords.join(" "))
         } else {
             format!(
-                "You find no object called \"{}\" here.",
+                "You find no object called \"{}\" to pick up.",
                 self.keywords.join(" ")
             )
         };
@@ -274,13 +274,14 @@ pub struct Inventory {}
 
 impl Action for Inventory {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let mut message = "You have:".to_string();
+        let mut message = "You have".to_string();
 
         match world.get::<Contents>(player) {
             Some(contents) => {
                 if contents.objects.is_empty() {
                     message.push_str(" nothing.");
                 } else {
+                    message.push(':');
                     contents
                         .objects
                         .iter()

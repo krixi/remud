@@ -22,7 +22,7 @@ use crate::{
     },
     world::{
         action::{parse, Login, Look},
-        types::Configuration,
+        types::{player::Players, Configuration},
         GameWorld,
     },
     ClientId,
@@ -139,7 +139,8 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
-                let message = String::from("User?\r\n> ");
+                let message =
+                    String::from("\r\nConnected to ucs://uplink.six.city\r\n\r\nName?\r\n> ");
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
                 } else {
@@ -163,7 +164,7 @@ impl Engine {
                         let has_user = match self.db.has_player(name).await {
                             Ok(has_user) => has_user,
                             Err(e) => {
-                                tracing::error!("User presence check error: {}", e);
+                                tracing::error!("Player presence check error: {}", e);
                                 client
                                     .send("Error retrieving user.\r\nName?\r\n> ".into())
                                     .await;
@@ -172,6 +173,19 @@ impl Engine {
                         };
 
                         if has_user {
+                            if self
+                                .game_world
+                                .get_world()
+                                .get_resource::<Players>()
+                                .unwrap()
+                                .by_name(name)
+                                .is_some()
+                            {
+                                client
+                                    .send("User currently online.\r\nName?\r\n> ".into())
+                                    .await;
+                                return;
+                            }
                             client.send("User located.\r\nPassword?\r\n> ".into()).await;
                             client.set_state(State::LoginPassword {
                                 name: name.to_string(),

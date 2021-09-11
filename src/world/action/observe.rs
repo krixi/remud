@@ -171,7 +171,7 @@ impl Look {
             description.to_string()
         } else {
             format!(
-                "I didn't find anything {}.",
+                "You find nothing called \"{}\" to look at.",
                 word_list(self.at.as_ref().unwrap().clone())
             )
         };
