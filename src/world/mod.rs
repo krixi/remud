@@ -11,7 +11,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 
 use crate::{
-    engine::persist::{DynUpdate, Updates},
+    engine::persist::{self, DynUpdate, Updates},
     world::{
         action::{queue_message, DynAction, Logout},
         types::{
