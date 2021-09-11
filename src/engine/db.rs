@@ -8,9 +8,9 @@ use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::types::{
-    object::{self, Location, Object, Objects},
+    object::{self, Object, Objects},
     room::{self, Direction, Room, Rooms},
-    Configuration,
+    Configuration, Contents,
 };
 
 lazy_static! {
@@ -207,15 +207,15 @@ async fn load_objects(
 
         let object = Object::new(
             id,
-            Location::Room(room_entity),
+            room_entity,
             object.keywords(),
             object.short,
             object.long,
         );
 
         let object_entity = world.spawn().insert(object).id();
-        match world.get_mut::<Room>(room_entity) {
-            Some(mut room) => room.objects.push(object_entity),
+        match world.get_mut::<Contents>(room_entity) {
+            Some(mut contents) => contents.objects.push(object_entity),
             None => bail!("Failed to retrieve Room for room {:?}", room_entity),
         }
 

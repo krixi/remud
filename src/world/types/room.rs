@@ -2,11 +2,18 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
 
+use crate::world::types::Contents;
+
+#[derive(Bundle)]
+pub struct RoomBundle {
+    room: Room,
+    contents: Contents,
+}
+
 pub struct Room {
     pub id: Id,
     pub description: String,
     pub exits: HashMap<Direction, Entity>,
-    pub objects: Vec<Entity>,
     pub players: Vec<Entity>,
 }
 
@@ -16,14 +23,7 @@ impl Room {
             id,
             description,
             exits: HashMap::new(),
-            objects: Vec::new(),
             players: Vec::new(),
-        }
-    }
-
-    pub fn remove_object(&mut self, object: Entity) {
-        if let Some(index) = self.objects.iter().position(|o| *o == object) {
-            self.objects.remove(index);
         }
     }
 

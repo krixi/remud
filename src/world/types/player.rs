@@ -2,6 +2,14 @@ use std::collections::{HashMap, VecDeque};
 
 use bevy_ecs::prelude::*;
 
+use crate::world::types::Contents;
+
+#[derive(Bundle)]
+pub struct PlayerBundle {
+    pub player: Player,
+    pub contents: Contents,
+}
+
 pub struct Player {
     pub name: String,
     pub room: Entity,

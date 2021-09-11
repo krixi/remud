@@ -12,6 +12,7 @@ use crate::{
             object::Object,
             player::Player,
             room::{Direction, Room},
+            Contents,
         },
     },
 };
@@ -88,16 +89,19 @@ impl Look {
             Some(room) => {
                 let mut message = room.description.clone();
 
-                if !room.objects.is_empty() {
-                    message.push_str("\r\n");
-                }
+                if let Some(contents) = world.get::<Contents>(look_target) {
+                    if !contents.objects.is_empty() {
+                        message.push_str("\r\n");
+                    }
 
-                room.objects
-                    .iter()
-                    .filter_map(|object| world.get::<Object>(*object))
-                    .for_each(|object| {
-                        message.push_str(object.short.as_str());
-                    });
+                    contents
+                        .objects
+                        .iter()
+                        .filter_map(|object| world.get::<Object>(*object))
+                        .for_each(|object| {
+                            message.push_str(object.short.as_str());
+                        });
+                }
 
                 let present_names = room
                     .players
@@ -134,9 +138,10 @@ impl Look {
         let description = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .and_then(|room| world.get::<Room>(room))
-            .and_then(|room| {
-                room.objects
+            .and_then(|room| world.get::<Contents>(room))
+            .and_then(|contents| {
+                contents
+                    .objects
                     .iter()
                     .filter_map(|object| world.get::<Object>(*object))
                     .find(|object| {

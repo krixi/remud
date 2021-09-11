@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::{
     engine::persistence::{
-        PersistNewRoom, PersistObjectLocation, PersistRemoveRoom, PersistRoomExits,
+        PersistNewRoom, PersistObjectContainer, PersistRemoveRoom, PersistRoomExits,
         PersistRoomUpdates, Updates,
     },
     text::Tokenizer,
@@ -15,6 +15,7 @@ use crate::{
         types::{
             player::Player,
             room::{self, Direction, Room, Rooms},
+            Contents,
         },
         VOID_ROOM_ID,
     },
@@ -257,7 +258,11 @@ impl Action for RemoveRoom {
                 }
 
                 let players = room.players.iter().copied().collect_vec();
-                let objects = room.objects.iter().copied().collect_vec();
+                let objects = if let Some(contents) = world.get::<Contents>(room_entity) {
+                    contents.objects.iter().copied().collect_vec()
+                } else {
+                    bail!("Room {:?} does not have Contents.", room_entity);
+                };
 
                 (room.id, players, objects)
             }
@@ -276,9 +281,9 @@ impl Action for RemoveRoom {
             .by_id(*VOID_ROOM_ID)
             .unwrap();
         {
-            let mut void_room = world.get_mut::<Room>(void_room_entity).unwrap();
+            let mut void_contents = world.get_mut::<Contents>(void_room_entity).unwrap();
             for object in &present_objects {
-                void_room.objects.push(*object);
+                void_contents.objects.push(*object);
             }
         }
 
@@ -307,7 +312,7 @@ impl Action for RemoveRoom {
         updates.queue(PersistRemoveRoom::new(room_id));
 
         for object in present_objects {
-            updates.queue(PersistObjectLocation::new(object));
+            updates.queue(PersistObjectContainer::new(object));
         }
 
         let message = format!("Room {} removed.", room_id);

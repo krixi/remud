@@ -1,11 +1,6 @@
 use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
-use bevy_ecs::prelude::Entity;
-
-#[derive(Clone, Copy)]
-pub enum Location {
-    Room(Entity),
-}
+use bevy_ecs::prelude::*;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -49,7 +44,7 @@ impl error::Error for IdParseError {}
 
 pub struct Object {
     pub id: Id,
-    pub location: Location,
+    pub container: Entity,
     pub keywords: Vec<String>,
     pub short: String,
     pub long: String,
@@ -58,14 +53,14 @@ pub struct Object {
 impl Object {
     pub fn new(
         id: Id,
-        location: Location,
+        container: Entity,
         keywords: Vec<String>,
         short: String,
         long: String,
     ) -> Self {
         Object {
             id,
-            location,
+            container,
             keywords,
             short,
             long,

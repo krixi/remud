@@ -6,15 +6,15 @@ use itertools::Itertools;
 
 use crate::{
     engine::persistence::{
-        PersistNewObject, PersistObjectLocation, PersistRemoveObject, PersistUpdateObject, Updates,
+        PersistNewObject, PersistObjectContainer, PersistRemoveObject, PersistUpdateObject, Updates,
     },
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
         types::{
-            object::{self, Location, Object, Objects},
+            object::{self, Object, Objects},
             player::Player,
-            room::Room,
+            Contents,
         },
     },
 };
@@ -103,15 +103,15 @@ impl Action for CreateObject {
             .spawn()
             .insert(Object {
                 id,
-                location: Location::Room(room_entity),
+                container: room_entity,
                 keywords: vec!["object".to_string()],
                 short: "An object.".to_string(),
                 long: "A nondescript object. Completely uninteresting.".to_string(),
             })
             .id();
 
-        if let Some(mut room) = world.get_mut::<Room>(room_entity) {
-            room.objects.push(object_entity);
+        if let Some(mut contents) = world.get_mut::<Contents>(room_entity) {
+            contents.objects.push(object_entity);
         }
 
         world
@@ -124,7 +124,7 @@ impl Action for CreateObject {
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(PersistNewObject::new(object_entity));
-        updates.queue(PersistObjectLocation::new(object_entity));
+        updates.queue(PersistObjectContainer::new(object_entity));
 
         Ok(())
     }
@@ -183,20 +183,18 @@ impl Action for RemoveObject {
             None => bail!("Unable to find object by ID: {}", self.id),
         };
 
-        let location = match world
+        let container = match world
             .get::<Object>(object_entity)
-            .map(|object| object.location)
+            .map(|object| object.container)
         {
-            Some(location) => location,
+            Some(container) => container,
             None => bail!("Object {:?} does not have Object", object_entity),
         };
 
         world.despawn(object_entity);
-        match location {
-            Location::Room(room) => match world.get_mut::<Room>(room) {
-                Some(mut room) => room.remove_object(object_entity),
-                None => bail!("Room {:?} does not have a Room.", room),
-            },
+        match world.get_mut::<Contents>(container) {
+            Some(mut room) => room.remove(object_entity),
+            None => bail!("Container {:?} does not have Contents.", container),
         }
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();

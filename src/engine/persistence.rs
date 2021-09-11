@@ -6,7 +6,7 @@ use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 use crate::world::types::{
-    object::{Id, Location, Object},
+    object::{Id, Object},
     room::{self, Room},
 };
 
@@ -188,44 +188,39 @@ impl Update for PersistRoomExits {
     }
 }
 
-pub struct PersistObjectLocation {
+pub struct PersistObjectContainer {
     object: Entity,
 }
 
-impl PersistObjectLocation {
+impl PersistObjectContainer {
     pub fn new(object: Entity) -> Box<Self> {
-        Box::new(PersistObjectLocation { object })
+        Box::new(PersistObjectContainer { object })
     }
 }
 
 #[async_trait]
-impl Update for PersistObjectLocation {
+impl Update for PersistObjectContainer {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let (object_id, location) = match world.get::<Object>(self.object) {
-            Some(object) => (object.id, object.location),
+        let (object_id, container) = match world.get::<Object>(self.object) {
+            Some(object) => (object.id, object.container),
             None => bail!(
                 "Failed to persist object room, object does not exist: {:?}",
                 self.object
             ),
         };
 
-        match location {
-            Location::Room(room) => {
-                let room_id = match world.get::<Room>(room) {
-                    Some(room) => room.id,
-                    None => bail!(
-                        "Failed to persist object room, room does not exist: {:?}",
-                        room
-                    ),
-                };
-
-                sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
-                    .bind(room_id)
-                    .bind(object_id)
-                    .execute(pool)
-                    .await?;
-            }
-        }
+        if let Some(room) = world.get::<Room>(container) {
+            sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
+                .bind(room.id)
+                .bind(object_id)
+                .execute(pool)
+                .await?;
+        } else {
+            bail!(
+                "Failed to persist object room, room does not exist: {:?}",
+                container
+            );
+        };
 
         Ok(())
     }
