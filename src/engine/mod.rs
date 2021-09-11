@@ -243,7 +243,7 @@ impl Engine {
                         Ok(_) => (),
                         Err(e) => {
                             if let VerifyError::Unknown(e) = e {
-                                tracing::info!("Create verify password failure: {}", e);
+                                tracing::error!("Create verify password failure: {}", e);
                                 client.verification_failed_creation(name.as_str()).await;
                                 return;
                             }
@@ -303,7 +303,7 @@ impl Engine {
                         Ok(_) => (),
                         Err(e) => {
                             if let VerifyError::Unknown(e) = e {
-                                tracing::info!("Login verify password failure: {}", e);
+                                tracing::error!("Login verify password failure: {}", e);
                                 client.verification_failed_creation(name.as_str()).await;
                                 return;
                             }
@@ -332,7 +332,7 @@ impl Engine {
                     spawned_player = Some(player);
                 }
                 State::InGame { player } => {
-                    tracing::info!("{}> {:?} sent {:?}", self.tick, client_id, input);
+                    tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
                     match parse(&input) {
                         Ok(action) => self.game_world.player_action(*player, action),
                         Err(message) => client.send(format!("{}\r\n> ", message).into()).await,
