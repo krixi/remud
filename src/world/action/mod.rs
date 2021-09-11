@@ -11,7 +11,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            communicate::{parse_say, parse_send, Say},
+            communicate::{parse_me, parse_say, parse_send, Emote, Say},
             movement::{parse_teleport, Move},
             object::{parse_drop, parse_get, Inventory},
             observe::{parse_look, Exits, Who},
@@ -37,6 +37,12 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
         }
 
         return Ok(Say::new(message));
+    } else if let Some(emote) = input.strip_prefix(';').map(ToString::to_string) {
+        if emote.is_empty() {
+            return Err("Do what?".to_string());
+        }
+
+        return Ok(Emote::new(emote));
     }
 
     let mut tokenizer = Tokenizer::new(input);
@@ -49,6 +55,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "get" => parse_get(tokenizer),
             "inventory" => Ok(Box::new(Inventory {})),
             "look" => parse_look(tokenizer),
+            "me" => parse_me(tokenizer),
             "north" => Ok(Move::new(Direction::North)),
             "object" => object::parse(tokenizer),
             "room" => room::parse(tokenizer),

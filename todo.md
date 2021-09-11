@@ -1,10 +1,8 @@
+- change persist objects to take exclusively IDs and remove the World parameter
+
 - add help command
 
   > help \[topic\]
-
-- add emote command
-
-  > me <emote\>
 
 - add unlink command to remove room links
 

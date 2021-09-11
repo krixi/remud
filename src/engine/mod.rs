@@ -344,7 +344,7 @@ impl Engine {
         }
 
         if let Some(player) = spawned_player {
-            self.clients.set_player(client_id, player);
+            self.clients.insert(client_id, player);
         }
     }
 }

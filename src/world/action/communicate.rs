@@ -13,6 +13,45 @@ use crate::{
     },
 };
 
+pub fn parse_me(tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if tokenizer.rest().is_empty() {
+        Err("Do what?".to_string())
+    } else {
+        Ok(Emote::new(tokenizer.rest().to_string()))
+    }
+}
+
+pub struct Emote {
+    emote: String,
+}
+
+impl Emote {
+    pub fn new(emote: String) -> Box<Self> {
+        Box::new(Emote { emote })
+    }
+}
+
+impl Action for Emote {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let (name, room_entity) = match world.get::<Player>(player) {
+            Some(player) => (player.name.as_str(), player.room),
+            None => bail!("Player {:?} has no name.", player),
+        };
+
+        let present_players = match world.get::<Room>(room_entity) {
+            Some(room) => room.players.iter().copied().collect_vec(),
+            None => bail!("Room {:?} has no Room.", room_entity),
+        };
+
+        let message = format!("{} {}", name, self.emote);
+        for present_player in present_players {
+            queue_message(world, present_player, message.clone());
+        }
+
+        Ok(())
+    }
+}
+
 pub fn parse_say(tokenizer: Tokenizer) -> Result<DynAction, String> {
     if tokenizer.rest().is_empty() {
         Err("Say what?".to_string())

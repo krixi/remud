@@ -106,6 +106,18 @@ impl Clients {
         );
     }
 
+    pub fn get(&self, client: ClientId) -> Option<&Client> {
+        self.clients.get(&client)
+    }
+
+    pub fn get_mut(&mut self, client: ClientId) -> Option<&mut Client> {
+        self.clients.get_mut(&client)
+    }
+
+    pub fn insert(&mut self, client: ClientId, player: Entity) {
+        self.by_player.insert(player, client);
+    }
+
     pub fn remove(&mut self, client: ClientId) {
         let player =
             self.clients
@@ -121,18 +133,6 @@ impl Clients {
         }
 
         self.clients.remove(&client);
-    }
-
-    pub fn get(&self, client: ClientId) -> Option<&Client> {
-        self.clients.get(&client)
-    }
-
-    pub fn get_mut(&mut self, client: ClientId) -> Option<&mut Client> {
-        self.clients.get_mut(&client)
-    }
-
-    pub fn set_player(&mut self, client: ClientId, player: Entity) {
-        self.by_player.insert(player, client);
     }
 
     pub fn by_player(&self, player: Entity) -> Option<&Client> {
