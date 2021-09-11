@@ -83,7 +83,7 @@ impl Client {
     }
 
     pub async fn verified(&mut self) {
-        self.send("Password verified.\r\n\r\nWelcome to City Six.\r\n\r\n> ".into())
+        self.send("Password verified.\r\n\r\nWelcome to City Six.\r\n\r\n".into())
             .await;
     }
 }

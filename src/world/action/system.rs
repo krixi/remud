@@ -13,7 +13,7 @@ impl Action for Login {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let (name, room) = match world.get::<Player>(player) {
             Some(player) => (player.name.as_str(), player.room),
-            None => bail!("Player {:?} has no Player."),
+            None => bail!("Player {:?} has no Player.", player),
         };
 
         let present_players = match world.get::<Room>(room) {

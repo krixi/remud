@@ -5,9 +5,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{
-        PersistNewObject, PersistObjectContainer, PersistRemoveObject, PersistUpdateObject, Updates,
-    },
+    engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction},
@@ -123,8 +121,178 @@ impl Action for CreateObject {
         queue_message(world, player, message);
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(PersistNewObject::new(object_entity));
-        updates.queue(PersistObjectContainer::new(object_entity));
+        updates.queue(persist::object::New::new(object_entity));
+        updates.queue(persist::room::AddObject::new(room_entity, object_entity));
+
+        Ok(())
+    }
+}
+
+pub fn parse_drop(tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if tokenizer.rest().is_empty() {
+        return Err("Drop what?".to_string());
+    }
+
+    let keywords = tokenizer
+        .rest()
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect_vec();
+
+    Ok(Box::new(Drop { keywords }))
+}
+
+#[derive(Default)]
+pub struct Drop {
+    keywords: Vec<String>,
+}
+
+impl Action for Drop {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let pos = match world.get::<Contents>(player) {
+            Some(contents) => contents.objects.iter().position(|object| {
+                world
+                    .get::<Object>(*object)
+                    .map(|object| {
+                        {
+                            self.keywords
+                                .iter()
+                                .all(|keyword| object.keywords.contains(keyword))
+                        }
+                    })
+                    .unwrap_or(false)
+            }),
+            None => bail!("Player {:?} does not have Contents.", player),
+        };
+
+        let message = if let Some(pos) = pos {
+            let room_entity = match world.get::<Player>(player) {
+                Some(player) => player.room,
+                None => bail!("Player {:?} does not have a Player.", player),
+            };
+
+            let object_entity = world
+                .get_mut::<Contents>(player)
+                .unwrap()
+                .objects
+                .remove(pos);
+            match world.get_mut::<Contents>(room_entity) {
+                Some(mut contents) => contents.objects.push(object_entity),
+                None => bail!("Room {:?} does not have Contents.", room_entity),
+            }
+            world.get_mut::<Object>(object_entity).unwrap().container = room_entity;
+
+            let mut updates = world.get_resource_mut::<Updates>().unwrap();
+            updates.queue(persist::room::AddObject::new(room_entity, object_entity));
+            updates.queue(persist::player::RemoveObject::new(player, object_entity));
+
+            format!("You drop \"{}\".", self.keywords.join(" "))
+        } else {
+            format!("You don't have \"{}\".", self.keywords.join(" "))
+        };
+
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+pub fn parse_get(tokenizer: Tokenizer) -> Result<DynAction, String> {
+    if tokenizer.rest().is_empty() {
+        return Err("Get what?".to_string());
+    }
+
+    let keywords = tokenizer
+        .rest()
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect_vec();
+
+    Ok(Box::new(Get { keywords }))
+}
+
+#[derive(Default)]
+pub struct Get {
+    keywords: Vec<String>,
+}
+
+impl Action for Get {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room_entity = match world.get::<Player>(player) {
+            Some(player) => player.room,
+            None => bail!("Player {:?} does not have a Player.", player),
+        };
+
+        let pos = match world.get::<Contents>(room_entity) {
+            Some(contents) => contents.objects.iter().position(|object| {
+                world
+                    .get::<Object>(*object)
+                    .map(|object| {
+                        {
+                            self.keywords
+                                .iter()
+                                .all(|keyword| object.keywords.contains(keyword))
+                        }
+                    })
+                    .unwrap_or(false)
+            }),
+            None => bail!("Player {:?} does not have Contents.", player),
+        };
+
+        let message = if let Some(pos) = pos {
+            let object_entity = world
+                .get_mut::<Contents>(room_entity)
+                .unwrap()
+                .objects
+                .remove(pos);
+            match world.get_mut::<Contents>(player) {
+                Some(mut contents) => contents.objects.push(object_entity),
+                None => bail!("Player {:?} does not have Contents.", object_entity),
+            }
+            world.get_mut::<Object>(object_entity).unwrap().container = player;
+
+            let mut updates = world.get_resource_mut::<Updates>().unwrap();
+            updates.queue(persist::room::RemoveObject::new(room_entity, object_entity));
+            updates.queue(persist::player::AddObject::new(player, object_entity));
+
+            format!("You pick up \"{}\".", self.keywords.join(" "))
+        } else {
+            format!("You find no \"{}\" here.", self.keywords.join(" "))
+        };
+
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct Inventory {}
+
+impl Action for Inventory {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let mut message = "You have:".to_string();
+
+        match world.get::<Contents>(player) {
+            Some(contents) => {
+                if contents.objects.is_empty() {
+                    message.push_str(" nothing.");
+                } else {
+                    contents
+                        .objects
+                        .iter()
+                        .filter_map(|object| world.get::<Object>(*object))
+                        .map(|object| object.short.as_str())
+                        .for_each(|desc| {
+                            message.push_str("\r\n  ");
+                            message.push_str(desc)
+                        });
+                }
+            }
+            None => bail!("Player {:?} does not have Contents.", player),
+        }
+
+        queue_message(world, player, message);
 
         Ok(())
     }
@@ -166,7 +334,7 @@ impl Action for UpdateObject {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(PersistUpdateObject::new(object_entity));
+            .queue(persist::object::Update::new(object_entity));
 
         Ok(())
     }
@@ -198,7 +366,7 @@ impl Action for RemoveObject {
         }
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(PersistRemoveObject::new(self.id));
+        updates.queue(persist::object::Remove::new(self.id));
 
         let message = format!("Object {} removed.", self.id);
         queue_message(world, player, message);

@@ -11,13 +11,13 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 
 use crate::{
-    engine::persistence::{DynUpdate, PersistNewRoom, Updates},
+    engine::persist::{DynUpdate, Updates},
     world::{
-        action::{DynAction, Login, Logout, Look},
+        action::{queue_message, DynAction, Logout},
         types::{
             player::{Messages, Player, Players},
             room::{self, Room, Rooms},
-            Configuration,
+            Configuration, Contents,
         },
     },
 };
@@ -56,7 +56,7 @@ impl GameWorld {
             world
                 .get_resource_mut::<Updates>()
                 .unwrap()
-                .queue(PersistNewRoom::new(void_room));
+                .queue(persist::room::New::new(void_room));
 
             tracing::warn!("Void room was deleted and has been recreated.");
         }
@@ -80,47 +80,6 @@ impl GameWorld {
             .map_or(true, |configuration| configuration.shutdown)
     }
 
-    pub fn spawn_player(&mut self, name: String) -> anyhow::Result<Entity> {
-        let (player, room) = {
-            let room = {
-                let configuration = self.world.get_resource::<Configuration>().unwrap();
-                let rooms = self.world.get_resource::<Rooms>().unwrap();
-
-                rooms.by_id(configuration.spawn_room).unwrap_or_else(|| {
-                    self.world
-                        .get_resource::<Rooms>()
-                        .unwrap()
-                        .by_id(*VOID_ROOM_ID)
-                        .unwrap()
-                })
-            };
-
-            let player = self
-                .world
-                .spawn()
-                .insert(Player {
-                    name: name.clone(),
-                    room,
-                })
-                .id();
-
-            (player, room)
-        };
-
-        let mut players = self.world.get_resource_mut::<Players>().unwrap();
-
-        players.spawn(player, name);
-        match self.world.get_mut::<Room>(room) {
-            Some(mut room) => room.players.push(player),
-            None => bail!("Room {:?} does not have a Room.", room),
-        }
-
-        self.player_action(player, Box::new(Login {}));
-        self.player_action(player, Look::here());
-
-        Ok(player)
-    }
-
     pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         self.player_action(player, Box::new(Logout {}));
 
@@ -139,10 +98,20 @@ impl GameWorld {
             bail!("Unable to despawn player {:?} at {:?}", player, room);
         };
 
-        self.world.entity_mut(player).despawn();
-
-        let mut players = self.world.get_resource_mut::<Players>().unwrap();
-        players.despawn(&name);
+        if let Some(objects) = self
+            .world
+            .get::<Contents>(player)
+            .map(|contents| contents.objects.clone())
+        {
+            for object in objects {
+                self.world.despawn(object);
+            }
+        }
+        self.world.despawn(player);
+        self.world
+            .get_resource_mut::<Players>()
+            .unwrap()
+            .despawn(&name);
         match self.world.get_mut::<Room>(room) {
             Some(mut room) => room.remove_player(player),
             None => bail!("Room {:?} does not have a Room.", room),
@@ -162,6 +131,7 @@ impl GameWorld {
             }
         }
         if let Err(e) = action.enact(player, &mut self.world) {
+            queue_message(&mut self.world, player, "Command failed.".to_string());
             tracing::error!("Action error: {}", e);
         };
     }
@@ -198,5 +168,9 @@ impl GameWorld {
 
     pub fn get_world(&self) -> &World {
         &self.world
+    }
+
+    pub fn get_world_mut(&mut self) -> &mut World {
+        &mut self.world
     }
 }

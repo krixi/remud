@@ -5,10 +5,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persistence::{
-        PersistNewRoom, PersistObjectContainer, PersistRemoveRoom, PersistRoomExits,
-        PersistRoomUpdates, Updates,
-    },
+    engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
         action::{movement::Teleport, queue_message, Action, DynAction},
@@ -152,10 +149,10 @@ impl Action for CreateRoom {
 
         // Queue update
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(PersistNewRoom::new(new_room));
+        updates.queue(persist::room::New::new(new_room));
         if self.direction.is_some() {
-            updates.queue(PersistRoomExits::new(new_room));
-            updates.queue(PersistRoomExits::new(current_room));
+            updates.queue(persist::room::Exits::new(new_room));
+            updates.queue(persist::room::Exits::new(current_room));
         }
 
         Ok(())
@@ -194,7 +191,7 @@ impl Action for UpdateExit {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(PersistRoomExits::new(from_room));
+            .queue(persist::room::Exits::new(from_room));
 
         let from_room = world.get::<Room>(from_room).unwrap();
         let message = format!(
@@ -234,7 +231,7 @@ impl Action for UpdateRoom {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(PersistRoomUpdates::new(room_entity));
+            .queue(persist::room::Update::new(room_entity));
 
         Ok(())
     }
@@ -309,10 +306,10 @@ impl Action for RemoveRoom {
 
         // Persist the changes
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(PersistRemoveRoom::new(room_id));
+        updates.queue(persist::room::Remove::new(room_id));
 
         for object in present_objects {
-            updates.queue(PersistObjectContainer::new(object));
+            updates.queue(persist::room::AddObject::new(room_entity, object));
         }
 
         let message = format!("Room {} removed.", room_id);

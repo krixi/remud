@@ -6,8 +6,8 @@ use crate::world::types::Contents;
 
 #[derive(Bundle)]
 pub struct RoomBundle {
-    room: Room,
-    contents: Contents,
+    pub room: Room,
+    pub contents: Contents,
 }
 
 pub struct Room {

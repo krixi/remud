@@ -3,6 +3,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
+    engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
         action::{queue_message, Action, DynAction, Look},
@@ -90,6 +91,11 @@ impl Action for Move {
             queue_message(world, present_player, message.clone());
         }
 
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::player::Room::new(player));
+
         Look::here().enact(player, world)
     }
 }
@@ -169,6 +175,11 @@ impl Action for Teleport {
         for present_player in present_players {
             queue_message(world, present_player, message.clone());
         }
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::player::Room::new(player));
 
         Look::here().enact(player, world)
     }

@@ -5,6 +5,7 @@ pub mod player;
 pub mod room;
 
 // Components
+#[derive(Default)]
 pub struct Contents {
     pub objects: Vec<Entity>,
 }

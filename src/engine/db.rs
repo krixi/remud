@@ -7,10 +7,14 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
-use crate::world::types::{
-    object::{self, Object, Objects},
-    room::{self, Direction, Room, Rooms},
-    Configuration, Contents,
+use crate::world::{
+    types::{
+        object::{self, Object, Objects},
+        player::{Player, PlayerBundle, Players},
+        room::{self, Direction, Room, RoomBundle, Rooms},
+        Configuration, Contents,
+    },
+    VOID_ROOM_ID,
 };
 
 lazy_static! {
@@ -55,8 +59,17 @@ impl Db {
         db
     }
 
-    pub async fn has_user(&self, user: &str) -> anyhow::Result<bool> {
-        let result = sqlx::query("SELECT * FROM users WHERE username = ?")
+    pub fn get_pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub async fn vacuum(&self) -> anyhow::Result<()> {
+        sqlx::query("VACUUM").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn has_player(&self, user: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query("SELECT * FROM players WHERE username = ?")
             .bind(user)
             .fetch_one(&self.pool)
             .await?;
@@ -64,19 +77,26 @@ impl Db {
         Ok(!result.is_empty())
     }
 
-    pub async fn create_user(&self, user: &str, hash: &str) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO users (username, password) VALUES (?, ?)")
-            .bind(user)
-            .bind(hash)
-            .bind("")
-            .execute(&self.pool)
-            .await?;
+    pub async fn create_player(
+        &self,
+        user: &str,
+        hash: &str,
+        room: room::Id,
+    ) -> anyhow::Result<i64> {
+        let results = sqlx::query(
+            "INSERT INTO players (username, password, room) VALUES (?, ?, ?) RETURNING id",
+        )
+        .bind(user)
+        .bind(hash)
+        .bind(room)
+        .fetch_one(&self.pool)
+        .await?;
 
-        Ok(())
+        Ok(results.get("id"))
     }
 
     pub async fn get_user_hash(&self, user: &str) -> anyhow::Result<String> {
-        let results = sqlx::query("SELECT password FROM users WHERE username = ?")
+        let results = sqlx::query("SELECT password FROM players WHERE username = ?")
             .bind(user)
             .fetch_one(&self.pool)
             .await?;
@@ -87,158 +107,229 @@ impl Db {
     pub async fn load_world(&self) -> anyhow::Result<World> {
         let mut world = World::new();
 
-        load_configuration(&self.pool, &mut world).await?;
-        load_rooms(&self.pool, &mut world).await?;
-        load_exits(&self.pool, &mut world).await?;
-        let room_objects = load_room_objects(&self.pool).await?;
-        load_objects(&self.pool, &mut world, room_objects).await?;
+        self.load_configuration(&mut world).await?;
+        self.load_rooms(&mut world).await?;
+        self.load_exits(&mut world).await?;
+        self.load_room_objects(&mut world).await?;
 
         Ok(world)
     }
 
-    pub fn get_pool(&self) -> &SqlitePool {
-        &self.pool
+    async fn load_configuration(&self, world: &mut World) -> anyhow::Result<()> {
+        let config_row = sqlx::query(r#"SELECT value FROM config WHERE key = "spawn_room""#)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let spawn_room_str: String = config_row.get("value");
+        let spawn_room = room::Id::try_from(spawn_room_str.parse::<i64>()?)?;
+
+        let configuration = Configuration {
+            shutdown: false,
+            spawn_room,
+        };
+
+        world.insert_resource(configuration);
+
+        Ok(())
     }
 
-    pub async fn vacuum(&self) -> anyhow::Result<()> {
-        sqlx::query("VACUUM").execute(&self.pool).await?;
+    async fn load_rooms(&self, world: &mut World) -> anyhow::Result<()> {
+        let mut rooms_by_id = HashMap::new();
+
+        let mut results =
+            sqlx::query_as::<_, RoomRow>("SELECT id, description FROM rooms").fetch(&self.pool);
+
+        while let Some(room) = results.try_next().await? {
+            let id = room.id;
+            let entity = world
+                .spawn()
+                .insert_bundle(RoomBundle {
+                    room: Room::try_from(room)?,
+                    contents: Contents::default(),
+                })
+                .id();
+            rooms_by_id.insert(room::Id::try_from(id)?, entity);
+        }
+
+        let highest_id = sqlx::query("SELECT MAX(id) AS max_id FROM rooms")
+            .fetch_one(&self.pool)
+            .await?
+            .get("max_id");
+
+        let rooms = Rooms::new(rooms_by_id, highest_id);
+        world.insert_resource(rooms);
+
+        Ok(())
+    }
+
+    async fn load_exits(&self, world: &mut World) -> anyhow::Result<()> {
+        let mut results =
+            sqlx::query_as::<_, ExitRow>("SELECT room_from, room_to, direction FROM exits")
+                .fetch(&self.pool);
+
+        while let Some(exit) = results.try_next().await? {
+            let (from, to) = {
+                let rooms = &world.get_resource::<Rooms>().unwrap();
+                let from = rooms.by_id(room::Id::try_from(exit.room_from)?).unwrap();
+                let to = rooms.by_id(room::Id::try_from(exit.room_to)?).unwrap();
+                (from, to)
+            };
+
+            let direction = Direction::from_str(exit.direction.as_str()).unwrap();
+
+            world
+                .get_mut::<Room>(from)
+                .unwrap()
+                .exits
+                .insert(direction, to);
+        }
+
+        Ok(())
+    }
+
+    async fn load_room_objects(&self, world: &mut World) -> anyhow::Result<()> {
+        let mut results = sqlx::query_as::<_, ObjectRow>(
+            r#"SELECT id, room_id AS container, keywords, short, long
+                FROM objects
+                INNER JOIN room_objects ON room_objects.object_id = objects.id"#,
+        )
+        .fetch(&self.pool);
+
+        let mut by_id = HashMap::new();
+
+        while let Some(object) = results.try_next().await? {
+            let room_id = match room::Id::try_from(object.container) {
+                Ok(id) => id,
+                Err(_) => bail!("Failed to deserialize room ID: {}", object.container),
+            };
+
+            let room_entity = match world.get_resource::<Rooms>().unwrap().by_id(room_id) {
+                Some(room) => room,
+                None => bail!("Failed to retrieve Room for room {}", room_id),
+            };
+
+            let id = match object::Id::try_from(object.id) {
+                Ok(id) => id,
+                Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
+            };
+
+            let object = Object::new(
+                id,
+                room_entity,
+                object.keywords(),
+                object.short,
+                object.long,
+            );
+
+            let object_entity = world.spawn().insert(object).id();
+            match world.get_mut::<Contents>(room_entity) {
+                Some(mut contents) => contents.objects.push(object_entity),
+                None => bail!("Failed to retrieve Room for room {:?}", room_entity),
+            }
+
+            by_id.insert(id, object_entity);
+        }
+
+        let results = sqlx::query("SELECT MAX(id) AS max_id FROM objects")
+            .fetch_one(&self.pool)
+            .await?;
+        let highest_id = results.get("max_id");
+
+        world.insert_resource(Objects::new(highest_id, by_id));
+
+        Ok(())
+    }
+
+    pub async fn load_player(&self, world: &mut World, name: &str) -> anyhow::Result<Entity> {
+        let player_row =
+            sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+
+        let room = room::Id::try_from(player_row.room)
+            .ok()
+            .and_then(|id| world.get_resource::<Rooms>().unwrap().by_id(id))
+            .unwrap_or_else(|| {
+                world
+                    .get_resource::<Rooms>()
+                    .unwrap()
+                    .by_id(*VOID_ROOM_ID)
+                    .unwrap()
+            });
+
+        let player = world
+            .spawn()
+            .insert_bundle(PlayerBundle {
+                player: Player {
+                    id: player_row.id,
+                    name: name.to_string(),
+                    room,
+                },
+                contents: Contents::default(),
+            })
+            .id();
+
+        world
+            .get_resource_mut::<Players>()
+            .unwrap()
+            .spawn(player, name.to_string());
+
+        self.load_player_inventory(world, name).await?;
+
+        Ok(player)
+    }
+
+    async fn load_player_inventory(&self, world: &mut World, name: &str) -> anyhow::Result<()> {
+        let mut results = sqlx::query_as::<_, ObjectRow>(
+            r#"SELECT objects.id, player_id AS container, keywords, short, long
+                FROM objects
+                INNER JOIN player_objects ON player_objects.object_id = objects.id
+                INNER JOIN players ON players.username= ?"#,
+        )
+        .bind(name)
+        .fetch(&self.pool);
+
+        while let Some(object) = results.try_next().await? {
+            let player_entity = match world.get_resource::<Players>().unwrap().by_name(name) {
+                Some(room) => room,
+                None => bail!("Failed to retrieve Player {}.", name),
+            };
+
+            let id = match object::Id::try_from(object.id) {
+                Ok(id) => id,
+                Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
+            };
+
+            let object = Object::new(
+                id,
+                player_entity,
+                object.keywords(),
+                object.short,
+                object.long,
+            );
+
+            let object_entity = world.spawn().insert(object).id();
+            world
+                .get_mut::<Contents>(player_entity)
+                .unwrap()
+                .objects
+                .push(object_entity);
+
+            world
+                .get_resource_mut::<Objects>()
+                .unwrap()
+                .insert(id, object_entity);
+        }
+
         Ok(())
     }
 }
 
-async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
-    let config_row = sqlx::query(r#"SELECT value FROM config WHERE key = "spawn_room""#)
-        .fetch_one(pool)
-        .await?;
-
-    let spawn_room_str: String = config_row.get("value");
-    let spawn_room = room::Id::try_from(spawn_room_str.parse::<i64>()?)?;
-
-    let configuration = Configuration {
-        shutdown: false,
-        spawn_room,
-    };
-
-    world.insert_resource(configuration);
-
-    Ok(())
-}
-
-async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
-    let mut highest_id = 0;
-    let mut rooms_by_id = HashMap::new();
-
-    let mut results = sqlx::query_as::<_, RoomRow>("SELECT id, description FROM rooms").fetch(pool);
-
-    while let Some(room) = results.try_next().await? {
-        let id = room.id;
-        if id > highest_id {
-            highest_id = id;
-        }
-        let entity = world.spawn().insert(Room::try_from(room)?).id();
-        rooms_by_id.insert(room::Id::try_from(id)?, entity);
-    }
-
-    let rooms = Rooms::new(rooms_by_id, highest_id);
-    world.insert_resource(rooms);
-
-    Ok(())
-}
-
-async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
-    let mut results =
-        sqlx::query_as::<_, ExitRow>("SELECT room_from, room_to, direction FROM exits").fetch(pool);
-
-    while let Some(exit) = results.try_next().await? {
-        let (from, to) = {
-            let rooms = &world.get_resource::<Rooms>().unwrap();
-            let from = rooms.by_id(room::Id::try_from(exit.room_from)?).unwrap();
-            let to = rooms.by_id(room::Id::try_from(exit.room_to)?).unwrap();
-            (from, to)
-        };
-
-        let direction = Direction::from_str(exit.direction.as_str()).unwrap();
-
-        world
-            .get_mut::<Room>(from)
-            .unwrap()
-            .exits
-            .insert(direction, to);
-    }
-
-    Ok(())
-}
-
-async fn load_objects(
-    pool: &SqlitePool,
-    world: &mut World,
-    room_objects: HashMap<i64, i64>,
-) -> anyhow::Result<()> {
-    let mut results =
-        sqlx::query_as::<_, ObjectRow>("SELECT id, keywords, short, long FROM objects").fetch(pool);
-
-    let mut highest_id = 0;
-    let mut by_id = HashMap::new();
-
-    while let Some(object) = results.try_next().await? {
-        if object.id > highest_id {
-            highest_id = object.id;
-        }
-
-        let room_id = match room_objects.get(&object.id) {
-            Some(room) => *room,
-            None => bail!("Failed to find room for object {}", object.id),
-        };
-
-        let room_id = match room::Id::try_from(room_id) {
-            Ok(id) => id,
-            Err(_) => bail!("Failed to deserialize room ID: {}", room_id),
-        };
-
-        let room_entity = match world.get_resource::<Rooms>().unwrap().by_id(room_id) {
-            Some(room) => room,
-            None => bail!("Failed to retrieve Room for room {}", room_id),
-        };
-
-        let id = match object::Id::try_from(object.id) {
-            Ok(id) => id,
-            Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
-        };
-
-        let object = Object::new(
-            id,
-            room_entity,
-            object.keywords(),
-            object.short,
-            object.long,
-        );
-
-        let object_entity = world.spawn().insert(object).id();
-        match world.get_mut::<Contents>(room_entity) {
-            Some(mut contents) => contents.objects.push(object_entity),
-            None => bail!("Failed to retrieve Room for room {:?}", room_entity),
-        }
-
-        by_id.insert(id, object_entity);
-    }
-
-    world.insert_resource(Objects::new(highest_id, by_id));
-
-    Ok(())
-}
-
-async fn load_room_objects(pool: &SqlitePool) -> anyhow::Result<HashMap<i64, i64>> {
-    let mut results =
-        sqlx::query_as::<_, RoomObjectRow>("SELECT room_id, object_id FROM room_objects")
-            .fetch(pool);
-
-    let mut map = HashMap::new();
-
-    while let Some(room_object) = results.try_next().await? {
-        map.insert(room_object.object_id, room_object.room_id);
-    }
-
-    Ok(map)
+#[derive(sqlx::FromRow)]
+struct PlayerRow {
+    id: i64,
+    room: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -260,6 +351,7 @@ impl TryFrom<RoomObjectRow> for (room::Id, object::Id) {
 #[derive(sqlx::FromRow)]
 struct ObjectRow {
     id: i64,
+    container: i64,
     keywords: String,
     long: String,
     short: String,

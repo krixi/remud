@@ -11,6 +11,7 @@ pub struct PlayerBundle {
 }
 
 pub struct Player {
+    pub id: i64,
     pub name: String,
     pub room: Entity,
 }

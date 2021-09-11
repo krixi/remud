@@ -1,7 +1,7 @@
 mod client;
 mod db;
 mod macros;
-pub mod persistence;
+pub mod persist;
 
 use argon2::{
     password_hash::{self, SaltString},
@@ -20,7 +20,11 @@ use crate::{
         client::{Client, Clients, State},
         db::Db,
     },
-    world::{action::parse, GameWorld},
+    world::{
+        action::{parse, Login, Look},
+        types::Configuration,
+        GameWorld,
+    },
     ClientId,
 };
 
@@ -156,7 +160,7 @@ impl Engine {
                 State::LoginName => {
                     let name = input.trim();
                     if name_valid(name) {
-                        let has_user = match self.db.has_user(name).await {
+                        let has_user = match self.db.has_player(name).await {
                             Ok(has_user) => has_user,
                             Err(e) => {
                                 tracing::error!("User presence check error: {}", e);
@@ -232,27 +236,42 @@ impl Engine {
                         }
                     }
 
-                    match self.db.create_user(name.as_str(), hash).await {
+                    let spawn_room = self
+                        .game_world
+                        .get_world()
+                        .get_resource::<Configuration>()
+                        .unwrap()
+                        .spawn_room;
+
+                    match self.db.create_player(name.as_str(), hash, spawn_room).await {
                         Ok(_) => (),
                         Err(e) => {
                             tracing::error!("User creation error: {}", e);
                             client.verification_failed_creation(name.as_str()).await;
                             return;
                         }
-                    }
+                    };
+
+                    let player = match self
+                        .db
+                        .load_player(self.game_world.get_world_mut(), name.as_str())
+                        .await
+                    {
+                        Ok(player) => (player),
+                        Err(e) => {
+                            tracing::error!("Failed to load player: {}", e);
+                            client.spawn_failed().await;
+                            return;
+                        }
+                    };
 
                     client.verified().await;
+                    client.set_state(State::InGame { player });
 
-                    match self.game_world.spawn_player(name.clone()) {
-                        Ok(player) => {
-                            spawned_player = Some(player);
-                            client.set_state(State::InGame { player });
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to spawn player: {}", e);
-                            client.spawn_failed().await;
-                        }
-                    }
+                    self.game_world.player_action(player, Box::new(Login {}));
+                    self.game_world.player_action(player, Look::here());
+
+                    spawned_player = Some(player);
                 }
                 State::LoginPassword { name } => {
                     let name = name.clone();
@@ -277,18 +296,26 @@ impl Engine {
                         }
                     }
 
-                    client.verified().await;
-
-                    match self.game_world.spawn_player(name.clone()) {
-                        Ok(player) => {
-                            spawned_player = Some(player);
-                            client.set_state(State::InGame { player });
-                        }
+                    let player = match self
+                        .db
+                        .load_player(self.game_world.get_world_mut(), name.as_str())
+                        .await
+                    {
+                        Ok(player) => (player),
                         Err(e) => {
+                            tracing::error!("Failed to load player: {}", e);
                             client.spawn_failed().await;
-                            tracing::error!("Failed to spawn player: {}", e);
+                            return;
                         }
-                    }
+                    };
+
+                    client.verified().await;
+                    client.set_state(State::InGame { player });
+
+                    self.game_world.player_action(player, Box::new(Login {}));
+                    self.game_world.player_action(player, Look::here());
+
+                    spawned_player = Some(player);
                 }
                 State::InGame { player } => {
                     tracing::info!("{}> {:?} sent {:?}", self.tick, client_id, input);

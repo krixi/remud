@@ -13,6 +13,7 @@ use crate::{
         action::{
             communicate::{parse_say, parse_send, Say},
             movement::{parse_teleport, Move},
+            object::{parse_drop, parse_get, Inventory},
             observe::{parse_look, Exits, Who},
             system::Shutdown,
         },
@@ -42,8 +43,11 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
     if let Some(token) = tokenizer.next() {
         match token.to_lowercase().as_str() {
             "down" => Ok(Move::new(Direction::Down)),
+            "drop" => parse_drop(tokenizer),
             "east" => Ok(Move::new(Direction::East)),
             "exits" => Ok(Box::new(Exits {})),
+            "get" => parse_get(tokenizer),
+            "inventory" => Ok(Box::new(Inventory {})),
             "look" => parse_look(tokenizer),
             "north" => Ok(Move::new(Direction::North)),
             "object" => object::parse(tokenizer),
@@ -63,7 +67,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
     }
 }
 
-fn queue_message(world: &mut World, player: Entity, mut message: String) {
+pub fn queue_message(world: &mut World, player: Entity, mut message: String) {
     message.push_str("\r\n");
 
     match world.get_mut::<Messages>(player) {

@@ -67,7 +67,7 @@ impl Look {
     fn look_room(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let current_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Location."),
+            None => bail!("Player {:?} does not have a Player.", player),
         };
 
         let look_target = if let Some(direction) = &self.direction {
@@ -90,15 +90,12 @@ impl Look {
                 let mut message = room.description.clone();
 
                 if let Some(contents) = world.get::<Contents>(look_target) {
-                    if !contents.objects.is_empty() {
-                        message.push_str("\r\n");
-                    }
-
                     contents
                         .objects
                         .iter()
                         .filter_map(|object| world.get::<Object>(*object))
                         .for_each(|object| {
+                            message.push_str("\r\n");
                             message.push_str(object.short.as_str());
                         });
                 }
