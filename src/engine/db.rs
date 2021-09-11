@@ -65,7 +65,7 @@ impl Db {
     }
 
     pub async fn create_user(&self, user: &str, hash: &str) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO users (username, password, salt) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO users (username, password) VALUES (?, ?)")
             .bind(user)
             .bind(hash)
             .bind("")
