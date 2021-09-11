@@ -3,7 +3,12 @@ mod db;
 mod macros;
 pub mod persistence;
 
+use argon2::{
+    password_hash::{self, SaltString},
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+};
 use lazy_static::lazy_static;
+use rand::rngs::OsRng;
 use regex::Regex;
 use tokio::{
     sync::mpsc,
@@ -12,7 +17,7 @@ use tokio::{
 
 use crate::{
     engine::{
-        client::{Client, ClientState, Clients},
+        client::{Client, Clients, State},
         db::Db,
     },
     world::{action::parse, GameWorld},
@@ -96,7 +101,7 @@ impl Engine {
                         break
                     }
 
-                    self.tick += 1
+                    self.tick += 1;
                 }
                 maybe_message = self.engine_rx.recv() => {
                     if let Some(message) = maybe_message {
@@ -130,62 +135,195 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
-                let message = String::from("Welcome to the world.\r\n\r\nName?\r\n> ");
+                let message = String::from("User?\r\n> ");
                 if let Some(client) = self.clients.get(client_id) {
-                    client.send(message).await;
+                    client.send(message.into()).await;
                 } else {
                     tracing::error!("Received message from unknown client: {:?}", message);
                 }
             }
             ClientMessage::Input(client_id, input) => {
-                let mut new_player = None;
-
-                if let Some(client) = self.clients.get_mut(client_id) {
-                    tracing::info!("{}> {:?} sent {:?}", self.tick, client_id, input);
-                    match client.get_state() {
-                        ClientState::LoginName => {
-                            let name = input.trim();
-                            if name_valid(name) {
-                                client.send(String::from("Password?\r\n> ")).await;
-                                client.set_state(ClientState::LoginPassword {
-                                    name: name.to_string(),
-                                });
-                            } else {
-                                client
-                                    .send(String::from("That name is invalid.\r\n\r\nName?\r\n> "))
-                                    .await;
-                            }
-                        }
-                        ClientState::LoginPassword { name } => {
-                            match self.game_world.spawn_player(name.clone()) {
-                                Ok(player) => {
-                                    new_player = Some(player);
-                                    client.set_state(ClientState::InGame { player });
-                                }
-                                Err(e) => {
-                                    client.set_state(ClientState::LoginName);
-                                    client
-                                        .send(String::from("Failed to login.\r\n\r\nName?\r\n> "))
-                                        .await;
-                                    tracing::error!("Failed to spawn player: {}", e)
-                                }
-                            }
-                        }
-                        ClientState::InGame { player } => match parse(&input) {
-                            Ok(action) => self.game_world.player_action(*player, action),
-                            Err(message) => client.send(format!("{}\r\n> ", message)).await,
-                        },
-                    }
-                } else {
-                    tracing::error!("Received message from unknown client ({:?})", client_id);
-                }
-
-                if let Some(player) = new_player {
-                    self.clients.set_player(client_id, player);
-                }
+                self.process_input(client_id, input).await;
             }
         }
     }
+
+    async fn process_input(&mut self, client_id: ClientId, input: String) {
+        let mut spawned_player = None;
+
+        if let Some(client) = self.clients.get_mut(client_id) {
+            match client.get_state() {
+                State::LoginName => {
+                    let name = input.trim();
+                    if name_valid(name) {
+                        let has_user = match self.db.has_user(name).await {
+                            Ok(has_user) => has_user,
+                            Err(e) => {
+                                tracing::error!("User presence check error: {}", e);
+                                client
+                                    .send("Error retrieving user.\r\nName?\r\n> ".into())
+                                    .await;
+                                return;
+                            }
+                        };
+
+                        if has_user {
+                            client.send("User located.\r\nPassword?\r\n> ".into()).await;
+                            client.set_state(State::LoginPassword {
+                                name: name.to_string(),
+                            });
+                        } else {
+                            client
+                                .send("New user detected.\r\nPassword?\r\n>".into())
+                                .await;
+                            client.set_state(State::CreatePassword {
+                                name: name.to_string(),
+                            });
+                        }
+                    } else {
+                        client.send("Invalid username.\r\nName?\r\n> ".into()).await;
+                    }
+                }
+                State::CreatePassword { name } => {
+                    let name = name.clone();
+
+                    if input.len() < 5 {
+                        client
+                            .send("Weak password detected.\r\nPassword?\r\n> ".into())
+                            .await;
+                        return;
+                    }
+
+                    let hasher = Argon2::default();
+                    let salt = SaltString::generate(&mut OsRng);
+                    let hash = match hasher
+                        .hash_password(input.as_bytes(), &salt)
+                        .map(|hash| hash.to_string())
+                    {
+                        Ok(hash) => hash,
+                        Err(e) => {
+                            tracing::error!("Create password hash error: {}", e);
+                            client
+                                .send("Error computing password hash.\r\nPassword?\r\n> ".into())
+                                .await;
+                            return;
+                        }
+                    };
+
+                    client
+                        .send("Password accepted.\r\nVerify?\r\n> ".into())
+                        .await;
+                    client.set_state(State::VerifyPassword {
+                        name: name.clone(),
+                        hash,
+                    });
+                }
+                State::VerifyPassword { name, hash } => {
+                    let name = name.clone();
+
+                    match verify_password(hash, input.as_str()) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            if let VerifyError::Unknown(e) = e {
+                                tracing::info!("Create verify password failure: {}", e);
+                                client.verification_failed_creation(name.as_str()).await;
+                                return;
+                            }
+                        }
+                    }
+
+                    match self.db.create_user(name.as_str(), hash).await {
+                        Ok(_) => (),
+                        Err(e) => {
+                            tracing::error!("User creation error: {}", e);
+                            client.verification_failed_creation(name.as_str()).await;
+                            return;
+                        }
+                    }
+
+                    client.verified().await;
+
+                    match self.game_world.spawn_player(name.clone()) {
+                        Ok(player) => {
+                            spawned_player = Some(player);
+                            client.set_state(State::InGame { player });
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to spawn player: {}", e);
+                            client.spawn_failed().await;
+                        }
+                    }
+                }
+                State::LoginPassword { name } => {
+                    let name = name.clone();
+
+                    let hash = match self.db.get_user_hash(name.as_str()).await {
+                        Ok(hash) => hash,
+                        Err(e) => {
+                            tracing::error!("Get user hash error: {}", e);
+                            client.verification_failed_login().await;
+                            return;
+                        }
+                    };
+
+                    match verify_password(hash.as_str(), input.as_str()) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            if let VerifyError::Unknown(e) = e {
+                                tracing::info!("Login verify password failure: {}", e);
+                                client.verification_failed_creation(name.as_str()).await;
+                                return;
+                            }
+                        }
+                    }
+
+                    client.verified().await;
+
+                    match self.game_world.spawn_player(name.clone()) {
+                        Ok(player) => {
+                            spawned_player = Some(player);
+                            client.set_state(State::InGame { player });
+                        }
+                        Err(e) => {
+                            client.spawn_failed().await;
+                            tracing::error!("Failed to spawn player: {}", e);
+                        }
+                    }
+                }
+                State::InGame { player } => {
+                    tracing::info!("{}> {:?} sent {:?}", self.tick, client_id, input);
+                    match parse(&input) {
+                        Ok(action) => self.game_world.player_action(*player, action),
+                        Err(message) => client.send(format!("{}\r\n> ", message).into()).await,
+                    }
+                }
+            }
+        } else {
+            tracing::error!("Received message from unknown client ({:?})", client_id);
+        }
+
+        if let Some(player) = spawned_player {
+            self.clients.set_player(client_id, player);
+        }
+    }
+}
+
+enum VerifyError {
+    BadPassword,
+    Unknown(String),
+}
+
+fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
+    let password_hash = PasswordHash::new(hash)
+        .map_err(|e| VerifyError::Unknown(format!("Hash parsing error: {}", e)))?;
+    let hasher = Argon2::default();
+    hasher
+        .verify_password(password.as_bytes(), &password_hash)
+        .map_err(|e| match e {
+            password_hash::Error::Password => VerifyError::BadPassword,
+            e => VerifyError::Unknown(format!("Verify password error: {}", e)),
+        })?;
+    Ok(())
 }
 
 fn name_valid(name: &str) -> bool {

@@ -16,14 +16,14 @@ use crate::{
         action::{DynAction, Login, Logout, Look},
         types::{
             player::{Messages, Player, Players},
-            room::{Room, RoomId, Rooms},
+            room::{self, Room, Rooms},
             Configuration,
         },
     },
 };
 
 lazy_static! {
-    pub static ref VOID_ROOM_ID: RoomId = RoomId::try_from(0).unwrap();
+    pub static ref VOID_ROOM_ID: room::Id = room::Id::try_from(0).unwrap();
 }
 
 pub struct GameWorld {

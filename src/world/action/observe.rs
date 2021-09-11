@@ -27,7 +27,7 @@ pub fn parse_look(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                 let keywords = tokenizer
                     .rest()
                     .split_whitespace()
-                    .map(|keyword| keyword.to_string())
+                    .map(ToString::to_string)
                     .collect_vec();
 
                 Ok(Box::new(Look {
@@ -70,16 +70,15 @@ impl Look {
         };
 
         let look_target = if let Some(direction) = &self.direction {
-            match world
+            if let Some(room) = world
                 .get::<Room>(current_room)
                 .and_then(|room| room.exits.get(direction))
             {
-                Some(room) => *room,
-                None => {
-                    let message = format!("There is no room {}.", direction.as_to_str());
-                    queue_message(world, player, message);
-                    return Ok(());
-                }
+                *room
+            } else {
+                let message = format!("There is no room {}.", direction.as_to_str());
+                queue_message(world, player, message);
+                return Ok(());
             }
         } else {
             current_room
@@ -131,7 +130,7 @@ impl Look {
         Ok(())
     }
 
-    fn look_object(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn look_object(&mut self, player: Entity, world: &mut World) {
         let description = world
             .get::<Player>(player)
             .map(|player| player.room)
@@ -150,26 +149,27 @@ impl Look {
                     .map(|object| object.long.as_str())
             });
 
-        let message = match description {
-            Some(description) => description.to_string(),
-            None => format!(
+        let message = if let Some(description) = description {
+            description.to_string()
+        } else {
+            format!(
                 "I didn't find anything {}.",
                 word_list(self.at.as_ref().unwrap().clone())
-            ),
+            )
         };
         queue_message(world, player, message);
-
-        Ok(())
     }
 }
 
 impl Action for Look {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         if self.at.is_some() {
-            self.look_object(player, world)
+            self.look_object(player, world);
         } else {
-            self.look_room(player, world)
+            self.look_room(player, world)?;
         }
+
+        Ok(())
     }
 }
 
@@ -188,7 +188,7 @@ impl Action for Exits {
                     .exits
                     .keys()
                     .map(Direction::as_str)
-                    .map(|str| str.to_string())
+                    .map(ToString::to_string)
                     .sorted()
                     .collect_vec();
 

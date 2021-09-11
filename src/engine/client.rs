@@ -1,12 +1,17 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, VecDeque},
+};
 
 use bevy_ecs::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::{engine::EngineMessage, ClientId};
 
-pub enum ClientState {
+pub enum State {
     LoginName,
+    CreatePassword { name: String },
+    VerifyPassword { name: String, hash: String },
     LoginPassword { name: String },
     InGame { player: Entity },
 }
@@ -14,19 +19,24 @@ pub enum ClientState {
 pub struct Client {
     id: ClientId,
     tx: mpsc::Sender<EngineMessage>,
-    state: ClientState,
+    state: State,
 }
 
 impl Client {
     pub fn get_player(&self) -> Option<Entity> {
         match self.state {
-            ClientState::InGame { player } => Some(player),
+            State::InGame { player } => Some(player),
             _ => None,
         }
     }
 
-    pub async fn send(&self, message: String) {
-        if self.tx.send(EngineMessage::Output(message)).await.is_err() {
+    pub async fn send(&self, message: Cow<'_, str>) {
+        if self
+            .tx
+            .send(EngineMessage::Output(message.to_string()))
+            .await
+            .is_err()
+        {
             tracing::error!("Failed to send message to client {:?}", self.id);
         }
     }
@@ -44,12 +54,37 @@ impl Client {
         }
     }
 
-    pub fn get_state(&self) -> &ClientState {
+    pub fn get_state(&self) -> &State {
         &self.state
     }
 
-    pub fn set_state(&mut self, new_state: ClientState) {
+    pub fn set_state(&mut self, new_state: State) {
         self.state = new_state;
+    }
+
+    pub async fn verification_failed_creation(&mut self, name: &str) {
+        self.send("Verification failed.\r\nPassword?\r\n> ".into())
+            .await;
+        self.set_state(State::CreatePassword {
+            name: name.to_string(),
+        });
+    }
+
+    pub async fn verification_failed_login(&mut self) {
+        self.send("Verification failed.\r\nName?\r\n> ".into())
+            .await;
+        self.set_state(State::LoginName {});
+    }
+
+    pub async fn spawn_failed(&mut self) {
+        self.send("User instantiation failed.\r\nName?\r\n> ".into())
+            .await;
+        self.set_state(State::LoginName {});
+    }
+
+    pub async fn verified(&mut self) {
+        self.send("Password verified.\r\n\r\nWelcome to City Six.\r\n\r\n> ".into())
+            .await;
     }
 }
 
@@ -66,7 +101,7 @@ impl Clients {
             Client {
                 id: client_id,
                 tx,
-                state: ClientState::LoginName,
+                state: State::LoginName,
             },
         );
     }
@@ -77,7 +112,7 @@ impl Clients {
                 .get(&client)
                 .map(Client::get_state)
                 .and_then(|state| match state {
-                    ClientState::InGame { player } => Some(*player),
+                    State::InGame { player } => Some(*player),
                     _ => None,
                 });
 

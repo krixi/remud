@@ -30,12 +30,12 @@ pub trait Action {
 }
 
 pub fn parse(input: &str) -> Result<DynAction, String> {
-    if let Some(message) = input.strip_prefix('\'').map(|str| str.to_string()) {
+    if let Some(message) = input.strip_prefix('\'').map(ToString::to_string) {
         if message.is_empty() {
             return Err("Say what?".to_string());
-        } else {
-            return Ok(Say::new(message));
         }
+
+        return Ok(Say::new(message));
     }
 
     let mut tokenizer = Tokenizer::new(input);

@@ -12,7 +12,7 @@ use crate::{
     world::{
         action::{queue_message, Action, DynAction},
         types::{
-            object::{Location, Object, ObjectId, Objects},
+            object::{self, Location, Object, Objects},
             player::Player,
             room::Room,
         },
@@ -24,7 +24,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
         match token {
             "new" => Ok(Box::new(CreateObject {})),
             maybe_id => {
-                if let Ok(id) = ObjectId::from_str(maybe_id) {
+                if let Ok(id) = object::Id::from_str(maybe_id) {
                     if let Some(token) = tokenizer.next() {
                         match token {
                             "keywords" => {
@@ -131,7 +131,7 @@ impl Action for CreateObject {
 }
 
 struct UpdateObject {
-    id: ObjectId,
+    id: object::Id,
     keywords: Option<Vec<String>>,
     short: Option<String>,
     long: Option<String>,
@@ -173,7 +173,7 @@ impl Action for UpdateObject {
 }
 
 struct RemoveObject {
-    id: ObjectId,
+    id: object::Id,
 }
 
 impl Action for RemoveObject {

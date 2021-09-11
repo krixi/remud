@@ -8,7 +8,7 @@ use crate::{
         action::{queue_message, Action, DynAction, Look},
         types::{
             player::Player,
-            room::{Direction, Room, RoomId, Rooms},
+            room::{self, Direction, Room, Rooms},
         },
     },
 };
@@ -32,19 +32,18 @@ impl Action for Move {
 
         let (destination, present_players) = match world.get::<Room>(current_room) {
             Some(room) => {
-                let destination = match room.exits.get(&self.direction) {
-                    Some(destination) => *destination,
-                    None => {
-                        let message = format!("There is no exit {}.", self.direction.as_to_str());
-                        queue_message(world, player, message);
-                        return Ok(());
-                    }
+                let destination = if let Some(destination) = room.exits.get(&self.direction) {
+                    *destination
+                } else {
+                    let message = format!("There is no exit {}.", self.direction.as_to_str());
+                    queue_message(world, player, message);
+                    return Ok(());
                 };
                 let present_players = room
                     .players
                     .iter()
                     .filter(|present_player| **present_player != player)
-                    .cloned()
+                    .copied()
                     .collect_vec();
                 (destination, present_players)
             }
@@ -53,7 +52,7 @@ impl Action for Move {
 
         let leave_message = format!("{} leaves {}.", name, self.direction.as_to_str());
         for present_player in present_players {
-            queue_message(world, present_player, leave_message.clone())
+            queue_message(world, present_player, leave_message.clone());
         }
 
         world
@@ -75,7 +74,7 @@ impl Action for Move {
                     .players
                     .iter()
                     .filter(|present_player| **present_player != player)
-                    .cloned()
+                    .copied()
                     .collect_vec();
 
                 (direction, present_players)
@@ -83,9 +82,10 @@ impl Action for Move {
             None => bail!("Room {:?} does not have a Room.", destination),
         };
 
-        let message = from_direction
-            .map(|from| format!("{} arrives {}.", name, from.as_from_str()))
-            .unwrap_or_else(|| format!("{} appears.", name));
+        let message = from_direction.map_or_else(
+            || format!("{} appears.", name),
+            |from| format!("{} arrives {}.", name, from.as_from_str()),
+        );
         for present_player in present_players {
             queue_message(world, present_player, message.clone());
         }
@@ -96,7 +96,7 @@ impl Action for Move {
 
 pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(destination) = tokenizer.next() {
-        match destination.parse::<RoomId>() {
+        match destination.parse::<room::Id>() {
             Ok(room_id) => Ok(Box::new(Teleport { room_id })),
             Err(e) => Err(e.to_string()),
         }
@@ -106,11 +106,11 @@ pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 }
 
 pub struct Teleport {
-    room_id: RoomId,
+    room_id: room::Id,
 }
 
 impl Teleport {
-    pub fn new(room_id: RoomId) -> Box<Self> {
+    pub fn new(room_id: room::Id) -> Box<Self> {
         Box::new(Teleport { room_id })
     }
 }
@@ -136,7 +136,7 @@ impl Action for Teleport {
                 .players
                 .iter()
                 .filter(|present_player| **present_player != player)
-                .cloned()
+                .copied()
                 .collect_vec(),
             None => bail!("Room {:?} has no Room.", current_room),
         };
@@ -162,7 +162,7 @@ impl Action for Teleport {
             .players
             .iter()
             .filter(|present_player| **present_player != player)
-            .cloned()
+            .copied()
             .collect_vec();
 
         let message = format!("{} appears in a flash of light.", name);

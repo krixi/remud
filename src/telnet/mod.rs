@@ -18,7 +18,7 @@ pub enum Negotiate {
 }
 
 impl Negotiate {
-    fn byte(&self) -> u8 {
+    fn byte(self) -> u8 {
         match self {
             Negotiate::Dont => DONT,
             Negotiate::Do => DO,

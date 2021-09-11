@@ -6,8 +6,8 @@ use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 use crate::world::types::{
-    object::{Location, Object, ObjectId},
-    room::{Room, RoomId},
+    object::{Id, Location, Object},
+    room::{self, Room},
 };
 
 pub type DynUpdate = Box<dyn Update + Send + Sync>;
@@ -232,11 +232,11 @@ impl Update for PersistObjectLocation {
 }
 
 pub struct PersistRemoveObject {
-    object_id: ObjectId,
+    object_id: Id,
 }
 
 impl PersistRemoveObject {
-    pub fn new(object_id: ObjectId) -> Box<Self> {
+    pub fn new(object_id: Id) -> Box<Self> {
         Box::new(PersistRemoveObject { object_id })
     }
 }
@@ -254,11 +254,11 @@ impl Update for PersistRemoveObject {
 }
 
 pub struct PersistRemoveRoom {
-    room_id: RoomId,
+    room_id: room::Id,
 }
 
 impl PersistRemoveRoom {
-    pub fn new(room_id: RoomId) -> Box<Self> {
+    pub fn new(room_id: room::Id) -> Box<Self> {
         Box::new(PersistRemoveRoom { room_id })
     }
 }

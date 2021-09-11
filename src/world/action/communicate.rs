@@ -43,7 +43,7 @@ impl Action for Say {
                 .players
                 .iter()
                 .filter(|present_player| **present_player != player)
-                .cloned()
+                .copied()
                 .collect_vec(),
             None => bail!("Room {:?} has no Room.", room_entity),
         };
@@ -112,7 +112,7 @@ impl Action for SendMessage {
         };
 
         let message = format!("{} sends \"{}\".", sender, self.message);
-        queue_message(world, player, message);
+        queue_message(world, recipient, message);
 
         let recipient_name = match world
             .get::<Player>(recipient)

@@ -10,8 +10,6 @@
 
   > room unlink <direction\>
 
-- add .players to Room, remove by_room in Players
-
 - add ability to look at players
 
   > look at <player\>

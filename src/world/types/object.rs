@@ -9,46 +9,46 @@ pub enum Location {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct ObjectId(i64);
+pub struct Id(i64);
 
-impl TryFrom<i64> for ObjectId {
-    type Error = ObjectIdParseError;
+impl TryFrom<i64> for Id {
+    type Error = IdParseError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value >= 0 {
-            Ok(ObjectId(value))
+            Ok(Id(value))
         } else {
-            Err(ObjectIdParseError {})
+            Err(IdParseError {})
         }
     }
 }
 
-impl FromStr for ObjectId {
-    type Err = ObjectIdParseError;
+impl FromStr for Id {
+    type Err = IdParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let int = s.parse::<i64>().map_err(|_| ObjectIdParseError {})?;
-        ObjectId::try_from(int)
+        let int = s.parse::<i64>().map_err(|_| IdParseError {})?;
+        Id::try_from(int)
     }
 }
 
-impl fmt::Display for ObjectId {
+impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
 #[derive(Debug)]
-pub struct ObjectIdParseError {}
-impl fmt::Display for ObjectIdParseError {
+pub struct IdParseError {}
+impl fmt::Display for IdParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Object IDs must be a non-negative integers.")
     }
 }
-impl error::Error for ObjectIdParseError {}
+impl error::Error for IdParseError {}
 
 pub struct Object {
-    pub id: ObjectId,
+    pub id: Id,
     pub location: Location,
     pub keywords: Vec<String>,
     pub short: String,
@@ -57,7 +57,7 @@ pub struct Object {
 
 impl Object {
     pub fn new(
-        id: ObjectId,
+        id: Id,
         location: Location,
         keywords: Vec<String>,
         short: String,
@@ -74,25 +74,25 @@ impl Object {
 }
 
 pub struct Objects {
-    by_id: HashMap<ObjectId, Entity>,
+    by_id: HashMap<Id, Entity>,
     highest_id: i64,
 }
 
 impl Objects {
-    pub fn new(highest_id: i64, by_id: HashMap<ObjectId, Entity>) -> Self {
+    pub fn new(highest_id: i64, by_id: HashMap<Id, Entity>) -> Self {
         Objects { by_id, highest_id }
     }
 
-    pub fn insert(&mut self, id: ObjectId, entity: Entity) {
+    pub fn insert(&mut self, id: Id, entity: Entity) {
         self.by_id.insert(id, entity);
     }
 
-    pub fn by_id(&self, id: ObjectId) -> Option<Entity> {
-        self.by_id.get(&id).cloned()
+    pub fn by_id(&self, id: Id) -> Option<Entity> {
+        self.by_id.get(&id).copied()
     }
 
-    pub fn next_id(&mut self) -> ObjectId {
+    pub fn next_id(&mut self) -> Id {
         self.highest_id += 1;
-        ObjectId(self.highest_id)
+        Id(self.highest_id)
     }
 }

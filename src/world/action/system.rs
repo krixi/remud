@@ -21,7 +21,7 @@ impl Action for Login {
                 .players
                 .iter()
                 .filter(|present_player| **present_player != player)
-                .cloned()
+                .copied()
                 .collect_vec(),
             None => bail!("Room {:?} does not have a Room", room),
         };
@@ -49,7 +49,7 @@ impl Action for Logout {
                 .players
                 .iter()
                 .filter(|present_player| **present_player != player)
-                .cloned()
+                .copied()
                 .collect_vec(),
             None => bail!("Room {:?} does not have a Room", room),
         };

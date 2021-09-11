@@ -14,7 +14,7 @@ use crate::{
         action::{movement::Teleport, queue_message, Action, DynAction},
         types::{
             player::Player,
-            room::{Direction, Room, RoomId, Rooms},
+            room::{self, Direction, Room, Rooms},
         },
         VOID_ROOM_ID,
     },
@@ -66,7 +66,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                                 ),
                             };
 
-                        let destination = match destination.parse::<RoomId>() {
+                        let destination = match destination.parse::<room::Id>() {
                             Ok(destination) => destination,
                             Err(e) => return Err(e.to_string()),
                         };
@@ -163,22 +163,21 @@ impl Action for CreateRoom {
 
 struct UpdateExit {
     direction: Direction,
-    destination: RoomId,
+    destination: room::Id,
 }
 
 impl Action for UpdateExit {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let destination = match world
+        let destination = if let Some(room) = world
             .get_resource::<Rooms>()
             .unwrap()
             .by_id(self.destination)
         {
-            Some(room) => room,
-            None => {
-                let message = format!("Room {} does not exist.", self.destination);
-                queue_message(world, player, message);
-                return Ok(());
-            }
+            room
+        } else {
+            let message = format!("Room {} does not exist.", self.destination);
+            queue_message(world, player, message);
+            return Ok(());
         };
 
         let from_room = match world.get::<Player>(player).map(|player| player.room) {
@@ -257,8 +256,8 @@ impl Action for RemoveRoom {
                     return Ok(());
                 }
 
-                let players = room.players.iter().cloned().collect_vec();
-                let objects = room.objects.iter().cloned().collect_vec();
+                let players = room.players.iter().copied().collect_vec();
+                let objects = room.objects.iter().copied().collect_vec();
 
                 (room.id, players, objects)
             }
@@ -278,7 +277,7 @@ impl Action for RemoveRoom {
             .unwrap();
         {
             let mut void_room = world.get_mut::<Room>(void_room_entity).unwrap();
-            for object in present_objects.iter() {
+            for object in &present_objects {
                 void_room.objects.push(*object);
             }
         }
@@ -308,7 +307,7 @@ impl Action for RemoveRoom {
         updates.queue(PersistRemoveRoom::new(room_id));
 
         for object in present_objects {
-            updates.queue(PersistObjectLocation::new(object))
+            updates.queue(PersistObjectLocation::new(object));
         }
 
         let message = format!("Room {} removed.", room_id);

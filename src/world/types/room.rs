@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 use bevy_ecs::prelude::*;
 
 pub struct Room {
-    pub id: RoomId,
+    pub id: Id,
     pub description: String,
     pub exits: HashMap<Direction, Entity>,
     pub objects: Vec<Entity>,
@@ -11,7 +11,7 @@ pub struct Room {
 }
 
 impl Room {
-    pub fn new(id: RoomId, description: String) -> Self {
+    pub fn new(id: Id, description: String) -> Self {
         Room {
             id,
             description,
@@ -36,43 +36,43 @@ impl Room {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct RoomId(i64);
+pub struct Id(i64);
 
-impl TryFrom<i64> for RoomId {
-    type Error = RoomIdParseError;
+impl TryFrom<i64> for Id {
+    type Error = IdParseError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value >= 0 {
-            Ok(RoomId(value))
+            Ok(Id(value))
         } else {
-            Err(RoomIdParseError {})
+            Err(IdParseError {})
         }
     }
 }
 
-impl FromStr for RoomId {
-    type Err = RoomIdParseError;
+impl FromStr for Id {
+    type Err = IdParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let int = s.parse::<i64>().map_err(|_| RoomIdParseError {})?;
-        RoomId::try_from(int)
+        let int = s.parse::<i64>().map_err(|_| IdParseError {})?;
+        Id::try_from(int)
     }
 }
 
-impl fmt::Display for RoomId {
+impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
 #[derive(Debug)]
-pub struct RoomIdParseError {}
-impl fmt::Display for RoomIdParseError {
+pub struct IdParseError {}
+impl fmt::Display for IdParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Room IDs must be a non-negative integers.")
     }
 }
-impl error::Error for RoomIdParseError {}
+impl error::Error for IdParseError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -161,29 +161,29 @@ impl fmt::Display for Direction {
 
 // Resource used as index for room/player lookups
 pub struct Rooms {
-    by_id: HashMap<RoomId, Entity>,
+    by_id: HashMap<Id, Entity>,
     highest_id: i64,
 }
 
 impl Rooms {
-    pub fn new(by_id: HashMap<RoomId, Entity>, highest_id: i64) -> Self {
+    pub fn new(by_id: HashMap<Id, Entity>, highest_id: i64) -> Self {
         Rooms { by_id, highest_id }
     }
 
-    pub fn insert(&mut self, id: RoomId, room: Entity) {
+    pub fn insert(&mut self, id: Id, room: Entity) {
         self.by_id.insert(id, room);
     }
 
-    pub fn by_id(&self, id: RoomId) -> Option<Entity> {
+    pub fn by_id(&self, id: Id) -> Option<Entity> {
         self.by_id.get(&id).copied()
     }
 
-    pub fn remove(&mut self, id: RoomId) {
+    pub fn remove(&mut self, id: Id) {
         self.by_id.remove(&id);
     }
 
-    pub fn next_id(&mut self) -> RoomId {
+    pub fn next_id(&mut self) -> Id {
         self.highest_id += 1;
-        RoomId(self.highest_id)
+        Id(self.highest_id)
     }
 }
