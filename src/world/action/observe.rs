@@ -6,8 +6,9 @@ use itertools::Itertools;
 use crate::{
     text::{word_list, Tokenizer},
     world::{
-        action::{queue_message, Action, DynAction, MissingComponent},
+        action::{self, queue_message, Action, DynAction},
         types::{
+            self,
             object::Object,
             player::Player,
             room::{Direction, Room},
@@ -63,11 +64,11 @@ impl Look {
 }
 
 impl Look {
-    fn look_room(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn look_room(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let current_room = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let look_target = if let Some(direction) = &self.direction {
             if let Some(room) = world
@@ -86,7 +87,7 @@ impl Look {
 
         let room = world
             .get::<Room>(look_target)
-            .ok_or_else(|| MissingComponent::new(look_target, "Room"))?;
+            .ok_or(action::Error::MissingComponent(look_target, "Room"))?;
         {
             let mut message = room.description.clone();
 
@@ -118,6 +119,7 @@ impl Look {
                     .objects
                     .iter()
                     .filter_map(|object| world.get::<Object>(*object))
+                    .filter(|object| !object.flags.contains(types::object::Flags::SUBTLE))
                     .map(|object| object.short.clone())
                     .collect_vec();
 
@@ -168,7 +170,7 @@ impl Look {
 }
 
 impl Action for Look {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         if self.at.is_some() {
             self.look_object(player, world);
         } else {
@@ -182,15 +184,15 @@ impl Action for Look {
 pub struct Exits {}
 
 impl Action for Exits {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let room = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let room = world
             .get::<Room>(room)
-            .ok_or_else(|| MissingComponent::new(room, "Room"))?;
+            .ok_or(action::Error::MissingComponent(room, "Room"))?;
 
         let exits = room
             .exits
@@ -217,7 +219,7 @@ impl Action for Exits {
 pub struct Who {}
 
 impl Action for Who {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let players = world
             .query::<&Player>()
             .iter(world)

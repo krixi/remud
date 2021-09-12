@@ -8,8 +8,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            movement::Teleport, queue_message, Action, DynAction, MissingComponent,
-            DEFAULT_ROOM_DESCRIPTION,
+            self, movement::Teleport, queue_message, Action, DynAction, DEFAULT_ROOM_DESCRIPTION,
         },
         types::{
             object::Object,
@@ -120,17 +119,17 @@ struct Create {
 }
 
 impl Action for Create {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let current_room = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         // Confirm a room does not already exist in this direction
         if let Some(direction) = self.direction {
             let room = world
                 .get::<Room>(current_room)
-                .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
+                .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
 
             if room.exits.contains_key(&direction) {
                 let message = format!("A room already exists {}.", direction.as_to_str());
@@ -171,7 +170,7 @@ impl Action for Create {
         let current_room_id = world
             .get::<Room>(current_room)
             .map(|room| room.id)
-            .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
+            .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
 
         // Queue update
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
@@ -207,15 +206,15 @@ impl Action for Create {
 struct Info {}
 
 impl Action for Info {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let room_entity = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let room = world
             .get::<Room>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
         let mut message = format!("Room {}", room.id);
 
@@ -245,7 +244,7 @@ impl Action for Info {
         message.push_str("\r\n  objects:");
         world
             .get::<Contents>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
             .objects
             .iter()
             .filter_map(|object| world.get::<Object>(*object))
@@ -266,7 +265,7 @@ struct Link {
 }
 
 impl Action for Link {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let destination = if let Some(room) = world
             .get_resource::<Rooms>()
             .unwrap()
@@ -282,12 +281,12 @@ impl Action for Link {
         let from_room = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let from_id = {
             let mut room = world
                 .get_mut::<Room>(from_room)
-                .ok_or_else(|| MissingComponent::new(from_room, "Room"))?;
+                .ok_or(action::Error::MissingComponent(from_room, "Room"))?;
             room.exits.insert(self.direction, destination);
             room.id
         };
@@ -316,16 +315,16 @@ struct Update {
 }
 
 impl Action for Update {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let room_entity = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let (room_id, description) = {
             let mut room = world
                 .get_mut::<Room>(room_entity)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
             if self.description.is_some() {
                 room.description = self.description.take().unwrap();
@@ -352,16 +351,16 @@ impl Action for Update {
 struct Remove {}
 
 impl Action for Remove {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let (player_id, room_entity) = world
             .get::<Player>(player)
             .map(|player| (player.id, player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let (room_id, present_players, present_objects) = {
             let room = world
                 .get::<Room>(room_entity)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
             if room.id == *VOID_ROOM_ID {
                 let message = "You cannot delete the void room.".to_string();
@@ -372,7 +371,7 @@ impl Action for Remove {
             let players = room.players.iter().copied().collect_vec();
             let objects = world
                 .get::<Contents>(room_entity)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+                .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
                 .objects
                 .iter()
                 .copied()
@@ -454,16 +453,16 @@ struct Unlink {
 }
 
 impl Action for Unlink {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let room_entity = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let (room_id, removed) = {
             let mut room = world
                 .get_mut::<Room>(room_entity)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
             let removed = room.exits.remove(&self.direction).is_some();
             (room.id, removed)
         };

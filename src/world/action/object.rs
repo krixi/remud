@@ -1,6 +1,5 @@
-use std::str::FromStr;
+use std::{convert::TryFrom, str::FromStr};
 
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -9,11 +8,12 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{
-            queue_message, Action, DynAction, MissingComponent, DEFAULT_OBJECT_KEYWORD,
-            DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT,
+            self, queue_message, Action, DynAction, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG,
+            DEFAULT_OBJECT_SHORT,
         },
         types::{
-            object::{self, Object, Objects},
+            self,
+            object::{self, Flags, Object, Objects},
             player::Player,
             room::Room,
             Contents,
@@ -51,23 +51,9 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
-                                Ok(Box::new(Update {
+                                Ok(Box::new(UpdateKeywords {
                                     id,
-                                    keywords: Some(keywords),
-                                    short: None,
-                                    long: None,
-                                }))
-                            }
-                        }
-                        "short" => {
-                            if tokenizer.rest().is_empty() {
-                                Err("Enter a short description.".to_string())
-                            } else {
-                                Ok(Box::new(Update {
-                                    id,
-                                    keywords: None,
-                                    short: Some(tokenizer.rest().to_string()),
-                                    long: None,
+                                    keywords,
                                 }))
                             }
                         }
@@ -75,15 +61,37 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a long description.".to_string())
                             } else {
-                                Ok(Box::new(Update {
+                                Ok(Box::new(UpdateLongDescription {
                                     id,
-                                    keywords: None,
-                                    short: None,
-                                    long: Some(tokenizer.rest().to_string()),
+                                    long: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
                         "remove" => Ok(Box::new(Remove { id })),
+                        "set" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                            } else {
+                                Ok(Box::new(SetFlags {id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                            }
+                        }
+                        "short" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a short description.".to_string())
+                            } else {
+                                Ok(Box::new(UpdateShortDescription {
+                                    id,
+                                    short: tokenizer.rest().to_string(),
+                                }))
+                            }
+                        }
+                        "unset" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                            } else {
+                                Ok(Box::new(ClearFlags {id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                            }
+                        }
                         _ => Err("Enter a valid object subcommand: info, keywords, short, long, or remove."
                             .to_string()),
                     }
@@ -100,19 +108,65 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
+struct ClearFlags {
+    id: object::Id,
+    flags: Vec<String>,
+}
+
+impl Action for ClearFlags {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
+        let object_entity =
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+                entity
+            } else {
+                let message = format!("Object {} not found.", self.id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
+
+        let remove_flags = match Flags::try_from(self.flags.as_slice()) {
+            Ok(flags) => flags,
+            Err(e) => {
+                queue_message(world, player, e.to_string());
+                return Ok(());
+            }
+        };
+
+        let (id, flags) = {
+            let mut object = world
+                .get_mut::<Object>(object_entity)
+                .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
+
+            object.flags.remove(remove_flags);
+
+            (object.id, object.flags)
+        };
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::object::Flags::new(id, flags));
+
+        let message = format!("Updated object {} flags.", self.id);
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
 struct Create {}
 
 impl Action for Create {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let room_entity = world
             .get::<Player>(player)
             .map(|player| player.room)
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
         let id = world.get_resource_mut::<Objects>().unwrap().next_id();
         let object_entity = world
             .spawn()
             .insert(Object {
                 id,
+                flags: object::Flags::empty(),
                 container: room_entity,
                 keywords: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
                 short: DEFAULT_OBJECT_SHORT.to_string(),
@@ -122,7 +176,7 @@ impl Action for Create {
 
         world
             .get_mut::<Contents>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
             .objects
             .push(object_entity);
 
@@ -134,7 +188,7 @@ impl Action for Create {
         let room_id = world
             .get::<Room>(room_entity)
             .map(|room| room.id)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(persist::object::New::new(id));
@@ -167,10 +221,10 @@ pub struct Drop {
 }
 
 impl Action for Drop {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let pos = world
             .get::<Contents>(player)
-            .ok_or_else(|| MissingComponent::new(player, "Contents"))?
+            .ok_or(action::Error::MissingComponent(player, "Contents"))?
             .objects
             .iter()
             .position(|object| {
@@ -190,7 +244,7 @@ impl Action for Drop {
             let (player_id, room_entity) = world
                 .get::<Player>(player)
                 .map(|player| (player.id, player.room))
-                .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+                .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
             let object_entity = world
                 .get_mut::<Contents>(player)
@@ -200,26 +254,26 @@ impl Action for Drop {
 
             world
                 .get_mut::<Contents>(room_entity)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+                .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
                 .objects
                 .push(object_entity);
 
-            let object_id = {
+            let (object_id, short) = {
                 let mut object = world.get_mut::<Object>(object_entity).unwrap();
                 object.container = room_entity;
-                object.id
+                (object.id, object.short.clone())
             };
 
             let room_id = world
                 .get::<Room>(room_entity)
                 .map(|room| room.id)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
             updates.queue(persist::player::RemoveObject::new(player_id, object_id));
             updates.queue(persist::room::AddObject::new(room_id, object_id));
 
-            format!("You drop \"{}\".", self.keywords.join(" "))
+            format!("You drop {}.", short)
         } else {
             format!("You don't have \"{}\".", self.keywords.join(" "))
         };
@@ -250,15 +304,15 @@ pub struct Get {
 }
 
 impl Action for Get {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let (player_id, room_entity) = world
             .get::<Player>(player)
             .map(|player| (player.id, player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let pos = world
             .get::<Contents>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
             .objects
             .iter()
             .position(|object| {
@@ -275,7 +329,25 @@ impl Action for Get {
             });
 
         let message = if let Some(pos) = pos {
-            let object_entity = world
+            let object_entity = world.get::<Contents>(room_entity).unwrap().objects[pos];
+
+            let (short, fixed) = world
+                .get::<Object>(object_entity)
+                .map(|object| {
+                    (
+                        object.short.clone(),
+                        object.flags.contains(types::object::Flags::FIXED),
+                    )
+                })
+                .unwrap();
+
+            if fixed {
+                let message = format!("Try as you might, you cannot pick up {}.", short);
+                queue_message(world, player, message);
+                return Ok(());
+            }
+
+            world
                 .get_mut::<Contents>(room_entity)
                 .unwrap()
                 .objects
@@ -283,7 +355,7 @@ impl Action for Get {
 
             world
                 .get_mut::<Contents>(player)
-                .ok_or_else(|| MissingComponent::new(player, "Contents"))?
+                .ok_or(action::Error::MissingComponent(player, "Contents"))?
                 .objects
                 .push(object_entity);
 
@@ -296,13 +368,13 @@ impl Action for Get {
             let room_id = world
                 .get::<Room>(room_entity)
                 .map(|room| room.id)
-                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
             updates.queue(persist::room::RemoveObject::new(room_id, object_id));
             updates.queue(persist::player::AddObject::new(player_id, object_id));
 
-            format!("You pick up \"{}\".", self.keywords.join(" "))
+            format!("You pick up {}.", short)
         } else {
             format!(
                 "You find no object called \"{}\" to pick up.",
@@ -321,7 +393,7 @@ struct Info {
 }
 
 impl Action for Info {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let object_entity = match world.get_resource::<Objects>().unwrap().by_id(self.id) {
             Some(entity) => entity,
             None => {
@@ -333,9 +405,11 @@ impl Action for Info {
 
         let object = world
             .get::<Object>(object_entity)
-            .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
+            .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
 
         let mut message = format!("Object {}", self.id);
+        message.push_str("\r\n  flags: ");
+        message.push_str(format!("{:?}", object.flags).as_str());
         message.push_str("\r\n  keywords: ");
         message.push_str(word_list(object.keywords.clone()).as_str());
         message.push_str("\r\n  short: ");
@@ -363,12 +437,12 @@ impl Action for Info {
 pub struct Inventory {}
 
 impl Action for Inventory {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let mut message = "You have".to_string();
 
         let contents = world
             .get::<Contents>(player)
-            .ok_or_else(|| MissingComponent::new(player, "Contents"))?;
+            .ok_or(action::Error::MissingComponent(player, "Contents"))?;
 
         if contents.objects.is_empty() {
             message.push_str(" nothing.");
@@ -391,15 +465,13 @@ impl Action for Inventory {
     }
 }
 
-struct Update {
+struct UpdateKeywords {
     id: object::Id,
-    keywords: Option<Vec<String>>,
-    short: Option<String>,
-    long: Option<String>,
+    keywords: Vec<String>,
 }
 
-impl Action for Update {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+impl Action for UpdateKeywords {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let object_entity =
             if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
                 entity
@@ -409,35 +481,98 @@ impl Action for Update {
                 return Ok(());
             };
 
-        let (id, keywords, short, long) = {
+        let (id, keywords) = {
             let mut object = world
                 .get_mut::<Object>(object_entity)
-                .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
+                .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
 
-            if self.keywords.is_some() {
-                object.keywords = self.keywords.take().unwrap();
-            }
-            if self.short.is_some() {
-                object.short = self.short.take().unwrap();
-            }
-            if self.long.is_some() {
-                object.long = self.long.take().unwrap();
-            }
+            object.keywords = self.keywords.clone();
 
-            (
-                object.id,
-                object.keywords.clone(),
-                object.short.clone(),
-                object.long.clone(),
-            )
+            (object.id, object.keywords.clone())
         };
 
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::object::Update::new(id, keywords, short, long));
+            .queue(persist::object::Keywords::new(id, keywords));
 
-        let message = format!("Updated object {}.", self.id);
+        let message = format!("Updated object {} keywords.", self.id);
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+struct UpdateLongDescription {
+    id: object::Id,
+    long: String,
+}
+
+impl Action for UpdateLongDescription {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
+        let object_entity =
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+                entity
+            } else {
+                let message = format!("Object {} not found.", self.id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
+
+        let (id, long) = {
+            let mut object = world
+                .get_mut::<Object>(object_entity)
+                .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
+
+            object.long = self.long.clone();
+
+            (object.id, object.long.clone())
+        };
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::object::Long::new(id, long));
+
+        let message = format!("Updated object {} long description.", self.id);
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+struct UpdateShortDescription {
+    id: object::Id,
+    short: String,
+}
+
+impl Action for UpdateShortDescription {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
+        let object_entity =
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+                entity
+            } else {
+                let message = format!("Object {} not found.", self.id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
+
+        let (id, short) = {
+            let mut object = world
+                .get_mut::<Object>(object_entity)
+                .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
+
+            object.short = self.short.clone();
+
+            (object.id, object.short.clone())
+        };
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::object::Short::new(id, short));
+
+        let message = format!("Updated object {} short description.", self.id);
         queue_message(world, player, message);
 
         Ok(())
@@ -449,27 +584,77 @@ struct Remove {
 }
 
 impl Action for Remove {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let object_entity = match world.get_resource::<Objects>().unwrap().by_id(self.id) {
-            Some(entity) => entity,
-            None => bail!("Unable to find object by ID: {}", self.id),
-        };
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
+        let object_entity =
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+                entity
+            } else {
+                let message = format!("Object {} not found.", self.id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
 
         let container = world
             .get::<Object>(object_entity)
             .map(|object| object.container)
-            .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
+            .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
 
         world.despawn(object_entity);
         world
             .get_mut::<Contents>(container)
-            .ok_or_else(|| MissingComponent::new(container, "Contents"))?
+            .ok_or(action::Error::MissingComponent(container, "Contents"))?
             .remove(object_entity);
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(persist::object::Remove::new(self.id));
 
         let message = format!("Object {} removed.", self.id);
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+struct SetFlags {
+    id: object::Id,
+    flags: Vec<String>,
+}
+
+impl Action for SetFlags {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
+        let object_entity =
+            if let Some(entity) = world.get_resource::<Objects>().unwrap().by_id(self.id) {
+                entity
+            } else {
+                let message = format!("Object {} not found.", self.id);
+                queue_message(world, player, message);
+                return Ok(());
+            };
+
+        let new_flags = match Flags::try_from(self.flags.as_slice()) {
+            Ok(flags) => flags,
+            Err(e) => {
+                queue_message(world, player, e.to_string());
+                return Ok(());
+            }
+        };
+
+        let (id, flags) = {
+            let mut object = world
+                .get_mut::<Object>(object_entity)
+                .ok_or(action::Error::MissingComponent(object_entity, "Object"))?;
+
+            object.flags.insert(new_flags);
+
+            (object.id, object.flags)
+        };
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::object::Flags::new(id, flags));
+
+        let message = format!("Updated object {} flags.", self.id);
         queue_message(world, player, message);
 
         Ok(())

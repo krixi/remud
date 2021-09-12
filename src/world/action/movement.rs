@@ -1,4 +1,3 @@
-use anyhow::{self};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -6,7 +5,7 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction, Look, MissingComponent},
+        action::{self, queue_message, Action, DynAction, Look},
         types::{
             player::Player,
             room::{self, Direction, Room, Rooms},
@@ -25,16 +24,16 @@ impl Move {
 }
 
 impl Action for Move {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let (player_id, name, current_room) = world
             .get::<Player>(player)
             .map(|player| (player.id, player.name.clone(), player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let (destination, present_players) = {
             let room = world
                 .get::<Room>(current_room)
-                .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
+                .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
 
             let destination = if let Some(destination) = room.exits.get(&self.direction) {
                 *destination
@@ -66,7 +65,7 @@ impl Action for Move {
         world.get_mut::<Player>(player).unwrap().room = destination;
         world
             .get_mut::<Room>(destination)
-            .ok_or_else(|| MissingComponent::new(destination, "Room"))?
+            .ok_or(action::Error::MissingComponent(destination, "Room"))?
             .players
             .push(player);
 
@@ -129,7 +128,7 @@ impl Teleport {
 }
 
 impl Action for Teleport {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let destination =
             if let Some(room) = world.get_resource::<Rooms>().unwrap().by_id(self.room_id) {
                 room
@@ -142,11 +141,11 @@ impl Action for Teleport {
         let (player_id, name, current_room) = world
             .get::<Player>(player)
             .map(|player| (player.id, player.name.clone(), player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let present_players = world
             .get::<Room>(current_room)
-            .ok_or_else(|| MissingComponent::new(current_room, "Room"))?
+            .ok_or(action::Error::MissingComponent(current_room, "Room"))?
             .players
             .iter()
             .filter(|present_player| **present_player != player)
@@ -166,7 +165,7 @@ impl Action for Teleport {
         let destination_id = {
             let mut room = world
                 .get_mut::<Room>(destination)
-                .ok_or_else(|| MissingComponent::new(destination, "Room"))?;
+                .ok_or(action::Error::MissingComponent(destination, "Room"))?;
             room.players.push(player);
             room.id
         };

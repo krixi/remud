@@ -4,7 +4,7 @@ use itertools::Itertools;
 use crate::{
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction, MissingComponent},
+        action::{self, queue_message, Action, DynAction},
         types::{
             player::{Player, Players},
             room::Room,
@@ -31,15 +31,15 @@ impl Emote {
 }
 
 impl Action for Emote {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let (name, room_entity) = world
             .get::<Player>(player)
             .map(|player| (player.name.as_str(), player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let present_players = world
             .get::<Room>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?
+            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?
             .players
             .iter()
             .copied()
@@ -73,15 +73,15 @@ impl Say {
 }
 
 impl Action for Say {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let (name, room_entity) = world
             .get::<Player>(player)
             .map(|player| (player.name.as_str(), player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let present_players = world
             .get::<Room>(room_entity)
-            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?
+            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?
             .players
             .iter()
             .filter(|present_player| **present_player != player)
@@ -121,7 +121,7 @@ struct SendMessage {
 }
 
 impl Action for SendMessage {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
         let recipient = if let Some(recipient) = world
             .get_resource::<Players>()
             .unwrap()
@@ -146,7 +146,7 @@ impl Action for SendMessage {
         let sender = world
             .get::<Player>(player)
             .map(|player| player.name.as_str())
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let message = format!("{} sends \"{}\".", sender, self.message);
         queue_message(world, recipient, message);
@@ -154,7 +154,7 @@ impl Action for SendMessage {
         let recipient_name = world
             .get::<Player>(recipient)
             .map(|player| player.name.as_str())
-            .ok_or_else(|| MissingComponent::new(recipient, "Player"))?;
+            .ok_or(action::Error::MissingComponent(recipient, "Player"))?;
 
         let sent_message = format!(
             "Your term chirps happily: \"Message sent to '{}'.\"",

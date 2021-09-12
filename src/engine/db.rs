@@ -11,8 +11,9 @@ use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 use tokio::sync::RwLock;
 
 use crate::world::{
-    action::MissingComponent,
+    action::{self},
     types::{
+        self,
         object::{self, Object, Objects},
         player::{self, Player, PlayerBundle, Players},
         room::{self, Direction, Room, RoomBundle, Rooms},
@@ -193,7 +194,7 @@ impl Db {
 
     async fn load_room_objects(&self, world: &mut World) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT id, room_id AS container, keywords, short, long
+            r#"SELECT id, flags, room_id AS container, keywords, short, long
                 FROM objects
                 INNER JOIN room_objects ON room_objects.object_id = objects.id"#,
         )
@@ -201,10 +202,10 @@ impl Db {
 
         let mut by_id = HashMap::new();
 
-        while let Some(object) = results.try_next().await? {
-            let room_id = match room::Id::try_from(object.container) {
+        while let Some(object_row) = results.try_next().await? {
+            let room_id = match room::Id::try_from(object_row.container) {
                 Ok(id) => id,
-                Err(_) => bail!("Failed to deserialize room ID: {}", object.container),
+                Err(_) => bail!("Failed to deserialize room ID: {}", object_row.container),
             };
 
             let room_entity = match world.get_resource::<Rooms>().unwrap().by_id(room_id) {
@@ -212,17 +213,18 @@ impl Db {
                 None => bail!("Failed to retrieve Room for room {}", room_id),
             };
 
-            let id = match object::Id::try_from(object.id) {
+            let id = match object::Id::try_from(object_row.id) {
                 Ok(id) => id,
-                Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
+                Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
             let object = Object::new(
                 id,
+                types::object::Flags::from_bits_truncate(object_row.flags),
                 room_entity,
-                object.keywords(),
-                object.short,
-                object.long,
+                object_row.keywords(),
+                object_row.short,
+                object_row.long,
             );
 
             let object_entity = world.spawn().insert(object).id();
@@ -287,7 +289,7 @@ impl Db {
 
         world
             .get_mut::<Room>(room)
-            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .ok_or(action::Error::MissingComponent(room, "Room"))?
             .players
             .push(player);
 
@@ -303,7 +305,7 @@ impl Db {
 
     async fn load_player_inventory(&self, world: &mut World, name: &str) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT objects.id, player_id AS container, keywords, short, long
+            r#"SELECT objects.id, flags, player_id AS container, keywords, short, long
                 FROM objects
                 INNER JOIN player_objects ON player_objects.object_id = objects.id
                 INNER JOIN players ON player_objects.player_id = players.id
@@ -312,23 +314,24 @@ impl Db {
         .bind(name)
         .fetch(&self.pool);
 
-        while let Some(object) = results.try_next().await? {
+        while let Some(object_row) = results.try_next().await? {
             let player_entity = match world.get_resource::<Players>().unwrap().by_name(name) {
                 Some(room) => room,
                 None => bail!("Failed to retrieve Player {}.", name),
             };
 
-            let id = match object::Id::try_from(object.id) {
+            let id = match object::Id::try_from(object_row.id) {
                 Ok(id) => id,
-                Err(_) => bail!("Failed to deserialize object ID: {}", object.id),
+                Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
             let object = Object::new(
                 id,
+                types::object::Flags::from_bits_truncate(object_row.flags),
                 player_entity,
-                object.keywords(),
-                object.short,
-                object.long,
+                object_row.keywords(),
+                object_row.short,
+                object_row.long,
             );
 
             let object_entity = world.spawn().insert(object).id();
@@ -373,6 +376,7 @@ impl TryFrom<RoomObjectRow> for (room::Id, object::Id) {
 #[derive(sqlx::FromRow)]
 struct ObjectRow {
     id: i64,
+    flags: i64,
     container: i64,
     keywords: String,
     long: String,

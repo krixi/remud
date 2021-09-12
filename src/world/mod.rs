@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
     world::{
-        action::{queue_message, DynAction, Logout, MissingComponent},
+        action::{queue_message, DynAction, Logout},
         types::{
             player::{Messages, Player, Players},
             room::{self, Room, Rooms},
@@ -90,7 +90,7 @@ impl GameWorld {
         let (name, room) = world
             .get::<Player>(player)
             .map(|player| (player.name.clone(), player.room))
-            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         if let Some(objects) = world
             .get::<Contents>(player)
@@ -104,7 +104,7 @@ impl GameWorld {
         world.get_resource_mut::<Players>().unwrap().remove(&name);
         world
             .get_mut::<Room>(room)
-            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .ok_or(action::Error::MissingComponent(room, "Room"))?
             .remove_player(player);
 
         Ok(())

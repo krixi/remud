@@ -1,6 +1,8 @@
 use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
+use bitflags::bitflags;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -42,8 +44,44 @@ impl fmt::Display for IdParseError {
 }
 impl error::Error for IdParseError {}
 
+bitflags! {
+    pub struct Flags: i64{
+        const FIXED = 0b0001;
+        const SUBTLE = 0b0010;
+    }
+}
+
+impl TryFrom<&[String]> for Flags {
+    type Error = FlagsParseError;
+
+    fn try_from(strs: &[String]) -> Result<Self, Self::Error> {
+        let mut flags = Flags::empty();
+
+        for flag in strs {
+            match flag.to_lowercase().as_str() {
+                "fixed" => flags.insert(Flags::FIXED),
+                "subtle" => flags.insert(Flags::SUBTLE),
+                _ => {
+                    return Err(FlagsParseError {
+                        invalid_flag: flag.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(flags)
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Invalid object flag: {invalid_flag}. Valid flags: fixed, subtle.")]
+pub struct FlagsParseError {
+    invalid_flag: String,
+}
+
 pub struct Object {
     pub id: Id,
+    pub flags: Flags,
     pub container: Entity,
     pub keywords: Vec<String>,
     pub short: String,
@@ -53,6 +91,7 @@ pub struct Object {
 impl Object {
     pub fn new(
         id: Id,
+        flags: Flags,
         container: Entity,
         keywords: Vec<String>,
         short: String,
@@ -60,6 +99,7 @@ impl Object {
     ) -> Self {
         Object {
             id,
+            flags,
             container,
             keywords,
             short,

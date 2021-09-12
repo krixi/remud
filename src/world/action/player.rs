@@ -3,7 +3,7 @@ use bevy_ecs::prelude::{Entity, World};
 use crate::{
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction, MissingComponent},
+        action::{self, queue_message, Action, DynAction},
         types::{
             object::Object,
             player::{Player, Players},
@@ -37,7 +37,7 @@ struct Info {
 }
 
 impl Action for Info {
-    fn enact(&mut self, asking_player: Entity, world: &mut World) -> anyhow::Result<()> {
+    fn enact(&mut self, asking_player: Entity, world: &mut World) -> Result<(), action::Error> {
         let player_entity = match world
             .get_resource::<Players>()
             .unwrap()
@@ -53,11 +53,11 @@ impl Action for Info {
 
         let player = world
             .get::<Player>(player_entity)
-            .ok_or_else(|| MissingComponent::new(player_entity, "Player"))?;
+            .ok_or(action::Error::MissingComponent(player_entity, "Player"))?;
 
         let room = world
             .get::<Room>(player.room)
-            .ok_or_else(|| MissingComponent::new(player.room, "Room"))?;
+            .ok_or(action::Error::MissingComponent(player.room, "Room"))?;
 
         let mut message = format!("Player {}", player.name);
 
@@ -67,7 +67,7 @@ impl Action for Info {
         message.push_str("\r\n  objects:");
         world
             .get::<Contents>(player_entity)
-            .ok_or_else(|| MissingComponent::new(player_entity, "Contents"))?
+            .ok_or(action::Error::MissingComponent(player_entity, "Contents"))?
             .objects
             .iter()
             .filter_map(|object| world.get::<Object>(*object))
