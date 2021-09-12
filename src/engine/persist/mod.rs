@@ -5,7 +5,6 @@ pub mod room;
 use std::mem;
 
 use async_trait::async_trait;
-use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 pub type DynUpdate = Box<dyn Persist + Send + Sync>;
@@ -29,5 +28,5 @@ impl Updates {
 
 #[async_trait]
 pub trait Persist {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()>;
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()>;
 }

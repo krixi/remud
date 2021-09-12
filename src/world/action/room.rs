@@ -8,11 +8,11 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{movement::Teleport, queue_message, Action, DynAction},
+        action::{movement::Teleport, queue_message, Action, DynAction, DEFAULT_ROOM_DESCRIPTION},
         types::{
             object::Object,
             player::Player,
-            room::{self, Direction, Room, Rooms},
+            room::{self, Direction, Room, RoomBundle, Rooms},
             Contents,
         },
         VOID_ROOM_ID,
@@ -113,6 +113,96 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
+struct Create {
+    direction: Option<Direction>,
+}
+
+impl Action for Create {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let current_room = match world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("{:?} has no Player.", player),
+        };
+
+        // Confirm a room does not already exist in this direction
+        if let Some(direction) = self.direction {
+            match world.get::<Room>(current_room) {
+                Some(room) => {
+                    if room.exits.contains_key(&direction) {
+                        let message = format!("A room already exists {}.", direction.as_to_str());
+                        queue_message(world, player, message);
+                        return Ok(());
+                    }
+                }
+                None => bail!("{:?} has no Room.", current_room),
+            }
+        };
+
+        // Create new room
+        let new_room_id = world.get_resource_mut::<Rooms>().unwrap().next_id();
+        let room = RoomBundle {
+            room: Room::new(new_room_id, DEFAULT_ROOM_DESCRIPTION.to_string()),
+            contents: Contents::default(),
+        };
+        let new_room_entity = world.spawn().insert_bundle(room).id();
+
+        // Add reverse lookup
+        world
+            .get_resource_mut::<Rooms>()
+            .unwrap()
+            .insert(new_room_id, new_room_entity);
+
+        // Create links
+        if let Some(direction) = self.direction {
+            world
+                .get_mut::<Room>(new_room_entity)
+                .unwrap()
+                .exits
+                .insert(direction.opposite(), current_room);
+
+            world
+                .get_mut::<Room>(current_room)
+                .unwrap()
+                .exits
+                .insert(direction, new_room_entity);
+        }
+
+        let current_room_id = match world.get::<Room>(current_room).map(|room| room.id) {
+            Some(id) => id,
+            None => bail!("{:?} has no Room.", current_room),
+        };
+
+        // Queue update
+        let mut updates = world.get_resource_mut::<Updates>().unwrap();
+        updates.queue(persist::room::New::new(
+            new_room_id,
+            DEFAULT_ROOM_DESCRIPTION.to_string(),
+        ));
+        if let Some(direction) = self.direction {
+            updates.queue(persist::room::AddExit::new(
+                current_room_id,
+                new_room_id,
+                direction,
+            ));
+            updates.queue(persist::room::AddExit::new(
+                new_room_id,
+                current_room_id,
+                direction.opposite(),
+            ));
+        }
+
+        let mut message = format!("Created room {}", new_room_id);
+        if let Some(direction) = self.direction {
+            message.push(' ');
+            message.push_str(direction.as_to_str());
+        }
+        message.push('.');
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
 struct Info {}
 
 impl Action for Info {
@@ -172,77 +262,6 @@ impl Action for Info {
     }
 }
 
-struct Create {
-    direction: Option<Direction>,
-}
-
-impl Action for Create {
-    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let current_room = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
-
-        // Confirm a room does not already exist in this direction
-        if let Some(direction) = self.direction {
-            match world.get::<Room>(current_room) {
-                Some(room) => {
-                    if room.exits.contains_key(&direction) {
-                        let message = format!("A room already exists {}.", direction.as_to_str());
-                        queue_message(world, player, message);
-                        return Ok(());
-                    }
-                }
-                None => bail!("{:?} has no Room.", current_room),
-            }
-        }
-
-        // Create new room
-        let id = world.get_resource_mut::<Rooms>().unwrap().next_id();
-        let room = Room::new(id, "An empty room.".to_string());
-        let new_room = world.spawn().insert(room).id();
-
-        // Add reverse lookup
-        world
-            .get_resource_mut::<Rooms>()
-            .unwrap()
-            .insert(id, new_room);
-
-        // Create links
-        if let Some(direction) = self.direction {
-            world
-                .get_mut::<Room>(new_room)
-                .unwrap()
-                .exits
-                .insert(direction.opposite(), current_room);
-
-            world
-                .get_mut::<Room>(current_room)
-                .unwrap()
-                .exits
-                .insert(direction, new_room);
-        }
-
-        let mut message = format!("Created room {}", id);
-        if let Some(direction) = self.direction {
-            message.push(' ');
-            message.push_str(direction.as_to_str());
-        }
-        message.push('.');
-        queue_message(world, player, message);
-
-        // Queue update
-        let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(persist::room::New::new(new_room));
-        if self.direction.is_some() {
-            updates.queue(persist::room::Exits::new(new_room));
-            updates.queue(persist::room::Exits::new(current_room));
-        }
-
-        Ok(())
-    }
-}
-
 struct Link {
     direction: Direction,
     destination: room::Id,
@@ -267,15 +286,22 @@ impl Action for Link {
             None => bail!("{:?} has no Player.", player),
         };
 
-        match world.get_mut::<Room>(from_room) {
-            Some(mut room) => room.exits.insert(self.direction, destination),
+        let from_id = match world.get_mut::<Room>(from_room) {
+            Some(mut room) => {
+                room.exits.insert(self.direction, destination);
+                room.id
+            }
             None => bail!("{:?} has no Room", from_room),
         };
 
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::room::Exits::new(from_room));
+            .queue(persist::room::AddExit::new(
+                from_id,
+                self.destination,
+                self.direction,
+            ));
 
         let message = format!(
             "Linked {} exit to room {}.",
@@ -298,23 +324,27 @@ impl Action for Update {
             None => bail!("{:?} has no Player.", player),
         };
 
-        match world.get_mut::<Room>(room_entity) {
+        let (room_id, description) = match world.get_mut::<Room>(room_entity) {
             Some(mut room) => {
                 if self.description.is_some() {
                     room.description = self.description.take().unwrap();
-
-                    let message = format!("Updated room {} description.", room.id);
-                    queue_message(world, player, message);
                 }
+
+                (room.id, room.description.clone())
             }
             None => bail!("{:?} has no Room.", room_entity),
-        }
+        };
 
         // Queue update
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::room::Update::new(room_entity));
+        if self.description.is_some() {
+            world
+                .get_resource_mut::<Updates>()
+                .unwrap()
+                .queue(persist::room::Update::new(room_id, description));
+        }
+
+        let message = format!("Updated room {}.", room_id);
+        queue_message(world, player, message);
 
         Ok(())
     }
@@ -324,8 +354,8 @@ struct Remove {}
 
 impl Action for Remove {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
+        let (player_id, room_entity) = match world.get::<Player>(player) {
+            Some(player) => (player.id, player.room),
             None => bail!("{:?} has no Player.", player),
         };
 
@@ -351,8 +381,8 @@ impl Action for Remove {
 
         // Move all players and objects from this room to the void room.
         let mut emergency_teleport = Teleport::new(*VOID_ROOM_ID);
-        for present_player in present_players {
-            emergency_teleport.enact(present_player, world)?;
+        for present_player in present_players.iter() {
+            emergency_teleport.enact(*present_player, world)?;
         }
 
         let void_room_entity = world
@@ -387,12 +417,27 @@ impl Action for Remove {
                 }
             });
 
+        let present_player_ids = present_players
+            .iter()
+            .filter_map(|entity| world.get::<Player>(*entity).map(|player| player.id))
+            .collect_vec();
+
+        let present_object_ids = present_objects
+            .iter()
+            .filter_map(|entity| world.get::<Object>(*entity).map(|object| object.id))
+            .collect_vec();
+
         // Persist the changes
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(persist::room::Remove::new(room_id));
 
-        for object in present_objects {
-            updates.queue(persist::room::AddObject::new(room_entity, object));
+        updates.queue(persist::player::Room::new(player_id, *VOID_ROOM_ID));
+        for id in present_player_ids {
+            updates.queue(persist::player::Room::new(id, *VOID_ROOM_ID));
+        }
+
+        for id in present_object_ids {
+            updates.queue(persist::room::AddObject::new(*VOID_ROOM_ID, id));
         }
 
         let message = format!("Room {} removed.", room_id);
@@ -413,17 +458,24 @@ impl Action for Unlink {
             None => bail!("{:?} has no Player.", player),
         };
 
-        let mut room = match world.get_mut::<Room>(room_entity) {
-            Some(room) => room,
+        let (room_id, removed) = match world.get_mut::<Room>(room_entity) {
+            Some(mut room) => {
+                let removed = room.exits.remove(&self.direction).is_some();
+                (room.id, removed)
+            }
             None => bail!("{:?} has no Room.", room_entity),
         };
 
-        let removed = room.exits.remove(&self.direction).is_some();
         let message = if removed {
             format!("Removed exit {}.", self.direction.as_to_str())
         } else {
             format!("There is no exit {}.", self.direction.as_to_str())
         };
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::room::RemoveExit::new(room_id, self.direction));
 
         queue_message(world, player, message);
 

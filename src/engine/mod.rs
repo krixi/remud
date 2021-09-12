@@ -95,7 +95,7 @@ impl Engine {
                     }
 
                     for update in self.game_world.updates() {
-                        match update.enact(self.db.get_pool(), self.game_world.get_world()).await {
+                        match update.enact(self.db.get_pool()).await {
                             Ok(_) => (),
                             Err(e) => tracing::error!("Failed to execute update: {}", e),
                         };

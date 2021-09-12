@@ -43,10 +43,8 @@ impl GameWorld {
             .by_id(*VOID_ROOM_ID)
             .is_none()
         {
-            let room = Room::new(
-                *VOID_ROOM_ID,
-                "A dark void extends infinitely in all directions.".to_string(),
-            );
+            let description = "A dark void extends infinitely in all directions.".to_string();
+            let room = Room::new(*VOID_ROOM_ID, description.clone());
             let void_room = world.spawn().insert(room).id();
             world
                 .get_resource_mut::<Rooms>()
@@ -56,7 +54,7 @@ impl GameWorld {
             world
                 .get_resource_mut::<Updates>()
                 .unwrap()
-                .queue(persist::room::New::new(void_room));
+                .queue(persist::room::New::new(*VOID_ROOM_ID, description));
 
             tracing::warn!("Void room was deleted and has been recreated.");
         }

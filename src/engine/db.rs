@@ -10,7 +10,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 use crate::world::{
     types::{
         object::{self, Object, Objects},
-        player::{Player, PlayerBundle, Players},
+        player::{self, Player, PlayerBundle, Players},
         room::{self, Direction, Room, RoomBundle, Rooms},
         Configuration, Contents,
     },
@@ -247,6 +247,11 @@ impl Db {
                 .fetch_one(&self.pool)
                 .await?;
 
+        let id = match player::Id::try_from(player_row.id) {
+            Ok(id) => id,
+            Err(_) => bail!("Failed to deserialize object ID: {}", player_row.id),
+        };
+
         let room = room::Id::try_from(player_row.room)
             .ok()
             .and_then(|id| world.get_resource::<Rooms>().unwrap().by_id(id))
@@ -262,7 +267,7 @@ impl Db {
             .spawn()
             .insert_bundle(PlayerBundle {
                 player: Player {
-                    id: player_row.id,
+                    id,
                     name: name.to_string(),
                     room,
                 },

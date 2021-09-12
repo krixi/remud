@@ -1,8 +1,37 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::TryFrom,
+    error, fmt,
+};
 
 use bevy_ecs::prelude::*;
 
 use crate::world::types::Contents;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct Id(i64);
+
+impl TryFrom<i64> for Id {
+    type Error = IdParseError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value >= 0 {
+            Ok(Id(value))
+        } else {
+            Err(IdParseError {})
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct IdParseError {}
+impl fmt::Display for IdParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Player IDs must be a non-negative integers.")
+    }
+}
+impl error::Error for IdParseError {}
 
 #[derive(Bundle)]
 pub struct PlayerBundle {
@@ -11,7 +40,7 @@ pub struct PlayerBundle {
 }
 
 pub struct Player {
-    pub id: i64,
+    pub id: Id,
     pub name: String,
     pub room: Entity,
 }

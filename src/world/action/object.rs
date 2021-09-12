@@ -8,7 +8,10 @@ use crate::{
     engine::persist::{self, Updates},
     text::{word_list, Tokenizer},
     world::{
-        action::{queue_message, Action, DynAction},
+        action::{
+            queue_message, Action, DynAction, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG,
+            DEFAULT_OBJECT_SHORT,
+        },
         types::{
             object::{self, Object, Objects},
             player::Player,
@@ -112,14 +115,15 @@ impl Action for Create {
             .insert(Object {
                 id,
                 container: room_entity,
-                keywords: vec!["object".to_string()],
-                short: "An object.".to_string(),
-                long: "A nondescript object. Completely uninteresting.".to_string(),
+                keywords: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
+                short: DEFAULT_OBJECT_SHORT.to_string(),
+                long: DEFAULT_OBJECT_LONG.to_string(),
             })
             .id();
 
-        if let Some(mut contents) = world.get_mut::<Contents>(room_entity) {
-            contents.objects.push(object_entity);
+        match world.get_mut::<Contents>(room_entity) {
+            Some(mut contents) => contents.objects.push(object_entity),
+            None => bail!("{:?} has no Contents.", room_entity),
         }
 
         world
@@ -127,12 +131,17 @@ impl Action for Create {
             .unwrap()
             .insert(id, object_entity);
 
-        let message = format!("Created object {}.", id);
-        queue_message(world, player, message);
+        let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
+            Some(id) => id,
+            None => bail!("{:?} has no Room", room_entity),
+        };
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(persist::object::New::new(object_entity));
-        updates.queue(persist::room::AddObject::new(room_entity, object_entity));
+        updates.queue(persist::object::New::new(id));
+        updates.queue(persist::room::AddObject::new(room_id, id));
+
+        let message = format!("Created object {}.", id);
+        queue_message(world, player, message);
 
         Ok(())
     }
@@ -176,8 +185,8 @@ impl Action for Drop {
         };
 
         let message = if let Some(pos) = pos {
-            let room_entity = match world.get::<Player>(player) {
-                Some(player) => player.room,
+            let (player_id, room_entity) = match world.get::<Player>(player) {
+                Some(player) => (player.id, player.room),
                 None => bail!("{:?} has no Player.", player),
             };
 
@@ -190,11 +199,21 @@ impl Action for Drop {
                 Some(mut contents) => contents.objects.push(object_entity),
                 None => bail!("{:?} has no Contents.", room_entity),
             }
-            world.get_mut::<Object>(object_entity).unwrap().container = room_entity;
+
+            let object_id = {
+                let mut object = world.get_mut::<Object>(object_entity).unwrap();
+                object.container = room_entity;
+                object.id
+            };
+
+            let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
+                Some(id) => id,
+                None => bail!("{:?} has no Room", room_entity),
+            };
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
-            updates.queue(persist::room::AddObject::new(room_entity, object_entity));
-            updates.queue(persist::player::RemoveObject::new(player, object_entity));
+            updates.queue(persist::player::RemoveObject::new(player_id, object_id));
+            updates.queue(persist::room::AddObject::new(room_id, object_id));
 
             format!("You drop \"{}\".", self.keywords.join(" "))
         } else {
@@ -228,8 +247,8 @@ pub struct Get {
 
 impl Action for Get {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player) {
-            Some(player) => player.room,
+        let (player_id, room_entity) = match world.get::<Player>(player) {
+            Some(player) => (player.id, player.room),
             None => bail!("{:?} has no Player.", player),
         };
 
@@ -259,11 +278,21 @@ impl Action for Get {
                 Some(mut contents) => contents.objects.push(object_entity),
                 None => bail!("{:?} has no Contents.", object_entity),
             }
-            world.get_mut::<Object>(object_entity).unwrap().container = player;
+
+            let object_id = {
+                let mut object = world.get_mut::<Object>(object_entity).unwrap();
+                object.container = player;
+                object.id
+            };
+
+            let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
+                Some(id) => id,
+                None => bail!("{:?} has no Room", room_entity),
+            };
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
-            updates.queue(persist::room::RemoveObject::new(room_entity, object_entity));
-            updates.queue(persist::player::AddObject::new(player, object_entity));
+            updates.queue(persist::room::RemoveObject::new(room_id, object_id));
+            updates.queue(persist::player::AddObject::new(player_id, object_id));
 
             format!("You pick up \"{}\".", self.keywords.join(" "))
         } else {
@@ -374,25 +403,35 @@ impl Action for Update {
                 return Ok(());
             };
 
-        if let Some(mut object) = world.get_mut::<Object>(object_entity) {
-            if self.keywords.is_some() {
-                object.keywords = self.keywords.take().unwrap();
-            }
-            if self.short.is_some() {
-                object.short = self.short.take().unwrap();
-            }
-            if self.long.is_some() {
-                object.long = self.long.take().unwrap();
-            }
-        }
+        let (id, keywords, short, long) = match world.get_mut::<Object>(object_entity) {
+            Some(mut object) => {
+                if self.keywords.is_some() {
+                    object.keywords = self.keywords.take().unwrap();
+                }
+                if self.short.is_some() {
+                    object.short = self.short.take().unwrap();
+                }
+                if self.long.is_some() {
+                    object.long = self.long.take().unwrap();
+                }
 
-        let message = format!("Updated object {}.", self.id);
-        queue_message(world, player, message);
+                (
+                    object.id,
+                    object.keywords.clone(),
+                    object.short.clone(),
+                    object.long.clone(),
+                )
+            }
+            None => bail!("{:?} has no Object.", object_entity),
+        };
 
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::object::Update::new(object_entity));
+            .queue(persist::object::Update::new(id, keywords, short, long));
+
+        let message = format!("Updated object {}.", self.id);
+        queue_message(world, player, message);
 
         Ok(())
     }

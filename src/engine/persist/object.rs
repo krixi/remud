@@ -1,41 +1,32 @@
-use anyhow::bail;
 use async_trait::async_trait;
-use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::object::{Id, Object},
+    world::{
+        action::{DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
+        types::object::{self, Id},
+    },
 };
 
 pub struct New {
-    object: Entity,
+    id: object::Id,
 }
 
 impl New {
-    pub fn new(object: Entity) -> Box<Self> {
-        Box::new(New { object })
+    pub fn new(id: object::Id) -> Box<Self> {
+        Box::new(New { id })
     }
 }
 
 #[async_trait]
 impl Persist for New {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let object = match world.get::<Object>(self.object) {
-            Some(object) => object,
-            None => bail!(
-                "Failed to persist new object, object does not exist: {:?}",
-                self.object
-            ),
-        };
-
-        let keywords = object.keywords.join(",");
-
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO objects (id, keywords, short, long) VALUES (?, ?, ?, ?)")
-            .bind(object.id)
-            .bind(keywords)
-            .bind(&object.short)
-            .bind(&object.long)
+            .bind(self.id)
+            .bind(DEFAULT_OBJECT_KEYWORD)
+            .bind(DEFAULT_OBJECT_SHORT)
+            .bind(DEFAULT_OBJECT_LONG)
             .execute(pool)
             .await?;
 
@@ -44,33 +35,32 @@ impl Persist for New {
 }
 
 pub struct Update {
-    object: Entity,
+    id: object::Id,
+    keywords: Vec<String>,
+    short: String,
+    long: String,
 }
 
 impl Update {
-    pub fn new(object: Entity) -> Box<Self> {
-        Box::new(Update { object })
+    pub fn new(id: object::Id, keywords: Vec<String>, short: String, long: String) -> Box<Self> {
+        Box::new(Update {
+            id,
+            keywords,
+            short,
+            long,
+        })
     }
 }
 
 #[async_trait]
 impl Persist for Update {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let object = match world.get::<Object>(self.object) {
-            Some(object) => object,
-            None => bail!(
-                "Failed to persist object updates, object does not exist: {:?}",
-                self.object
-            ),
-        };
-
-        let keywords = object.keywords.join(",");
-
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        let keywords = self.keywords.join(",");
         sqlx::query("UPDATE objects SET keywords = ?, short = ?, long = ? WHERE id = ?")
             .bind(keywords)
-            .bind(&object.short)
-            .bind(&object.long)
-            .bind(object.id)
+            .bind(&self.short)
+            .bind(&self.long)
+            .bind(self.id)
             .execute(pool)
             .await?;
 
@@ -90,7 +80,7 @@ impl Remove {
 
 #[async_trait]
 impl Persist for Remove {
-    async fn enact(&self, pool: &SqlitePool, _world: &World) -> anyhow::Result<()> {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM objects WHERE id = ?")
             .bind(self.object_id)
             .execute(pool)

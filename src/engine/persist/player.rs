@@ -1,40 +1,35 @@
-use anyhow::bail;
 use async_trait::async_trait;
-use bevy_ecs::prelude::*;
 use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::{object::Object, player::Player, room},
+    world::types::{
+        object::{self},
+        player::{self},
+        room,
+    },
 };
 
 pub struct AddObject {
-    player: Entity,
-    object: Entity,
+    player_id: player::Id,
+    object_id: object::Id,
 }
 
 impl AddObject {
-    pub fn new(player: Entity, object: Entity) -> Box<Self> {
-        Box::new(AddObject { player, object })
+    pub fn new(player_id: player::Id, object_id: object::Id) -> Box<Self> {
+        Box::new(AddObject {
+            player_id,
+            object_id,
+        })
     }
 }
 
 #[async_trait]
 impl Persist for AddObject {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let player_id = match world.get::<Player>(self.player).map(|player| player.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Player", self.player),
-        };
-
-        let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Object", self.object),
-        };
-
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO player_objects (player_id, object_id) VALUES (?, ?)")
-            .bind(player_id)
-            .bind(object_id)
+            .bind(self.player_id)
+            .bind(self.object_id)
             .execute(pool)
             .await?;
 
@@ -43,32 +38,25 @@ impl Persist for AddObject {
 }
 
 pub struct RemoveObject {
-    player: Entity,
-    object: Entity,
+    player_id: player::Id,
+    object_id: object::Id,
 }
 
 impl RemoveObject {
-    pub fn new(player: Entity, object: Entity) -> Box<Self> {
-        Box::new(RemoveObject { player, object })
+    pub fn new(player_id: player::Id, object_id: object::Id) -> Box<Self> {
+        Box::new(RemoveObject {
+            player_id,
+            object_id,
+        })
     }
 }
 
 #[async_trait]
 impl Persist for RemoveObject {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let player_id = match world.get::<Player>(self.player).map(|player| player.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Player", self.player),
-        };
-
-        let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Object", self.object),
-        };
-
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM player_objects WHERE player_id = ? AND object_id = ?")
-            .bind(player_id)
-            .bind(object_id)
+            .bind(self.player_id)
+            .bind(self.object_id)
             .execute(pool)
             .await?;
 
@@ -77,31 +65,22 @@ impl Persist for RemoveObject {
 }
 
 pub struct Room {
-    player: Entity,
+    player_id: player::Id,
+    room_id: room::Id,
 }
 
 impl Room {
-    pub fn new(player: Entity) -> Box<Self> {
-        Box::new(Room { player })
+    pub fn new(player_id: player::Id, room_id: room::Id) -> Box<Self> {
+        Box::new(Room { player_id, room_id })
     }
 }
 
 #[async_trait]
 impl Persist for Room {
-    async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
-        let (player_id, room) = match world.get::<Player>(self.player) {
-            Some(player) => (player.id, player.room),
-            None => bail!("{:?} has no Player.", self.player),
-        };
-
-        let room_id = match world.get::<room::Room>(room) {
-            Some(room) => room.id,
-            None => bail!("{:?} has no Room.", room),
-        };
-
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE players SET room = ? WHERE id = ?")
-            .bind(room_id)
-            .bind(player_id)
+            .bind(self.room_id)
+            .bind(self.player_id)
             .execute(pool)
             .await?;
 

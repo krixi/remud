@@ -25,6 +25,11 @@ use crate::{
 pub use observe::Look;
 pub use system::{Login, Logout};
 
+pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
+pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
+pub const DEFAULT_OBJECT_SHORT: &str = "an object";
+pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely uninteresting.";
+
 pub type DynAction = Box<dyn Action + Send>;
 
 pub trait Action {

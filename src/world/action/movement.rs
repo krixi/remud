@@ -26,8 +26,8 @@ impl Move {
 
 impl Action for Move {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, current_room) = match world.get::<Player>(player) {
-            Some(player) => (player.name.clone(), player.room),
+        let (player_id, name, current_room) = match world.get::<Player>(player) {
+            Some(player) => (player.id, player.name.clone(), player.room),
             None => bail!("{:?} has no Player.", player),
         };
 
@@ -66,7 +66,7 @@ impl Action for Move {
             None => bail!("{:?} has no Room.", destination),
         }
 
-        let (from_direction, present_players) = {
+        let (destination_id, from_direction, present_players) = {
             let room = world.get::<Room>(destination).unwrap();
 
             let direction = room
@@ -83,7 +83,7 @@ impl Action for Move {
                 .copied()
                 .collect_vec();
 
-            (direction, present_players)
+            (room.id, direction, present_players)
         };
 
         let message = from_direction.map_or_else(
@@ -97,7 +97,7 @@ impl Action for Move {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::player::Room::new(player));
+            .queue(persist::player::Room::new(player_id, destination_id));
 
         Look::here().enact(player, world)
     }
@@ -135,8 +135,8 @@ impl Action for Teleport {
                 return Ok(());
             };
 
-        let (name, current_room) = match world.get::<Player>(player) {
-            Some(player) => (player.name.clone(), player.room),
+        let (player_id, name, current_room) = match world.get::<Player>(player) {
+            Some(player) => (player.id, player.name.clone(), player.room),
             None => bail!("{:?} has no Player.", player),
         };
 
@@ -160,10 +160,13 @@ impl Action for Teleport {
             .unwrap()
             .remove_player(player);
         world.get_mut::<Player>(player).unwrap().room = destination;
-        match world.get_mut::<Room>(destination) {
-            Some(mut room) => room.players.push(player),
+        let destination_id = match world.get_mut::<Room>(destination) {
+            Some(mut room) => {
+                room.players.push(player);
+                room.id
+            }
             None => bail!("{:?} has no Room", destination),
-        }
+        };
 
         let present_players = world
             .get::<Room>(destination)
@@ -182,7 +185,7 @@ impl Action for Teleport {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::player::Room::new(player));
+            .queue(persist::player::Room::new(player_id, destination_id));
 
         Look::here().enact(player, world)
     }

@@ -17,20 +17,16 @@ use crate::{
 // Valid shapes:
 // player <name> info - displays information about the player
 pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
-    if let Some(token) = tokenizer.next() {
-        match token {
-            name => {
-                if let Some(token) = tokenizer.next() {
-                    match token {
-                        "info" => Ok(Box::new(Info {
-                            name: name.to_string(),
-                        })),
-                        _ => Err("Enter a valid player subcommand: info.".to_string()),
-                    }
-                } else {
-                    Err("Enter a player subcommand: info.".to_string())
-                }
+    if let Some(name) = tokenizer.next() {
+        if let Some(token) = tokenizer.next() {
+            match token {
+                "info" => Ok(Box::new(Info {
+                    name: name.to_string(),
+                })),
+                _ => Err("Enter a valid player subcommand: info.".to_string()),
             }
+        } else {
+            Err("Enter a player subcommand: info.".to_string())
         }
     } else {
         Err("Enter a player name.".to_string())
