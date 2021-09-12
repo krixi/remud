@@ -92,14 +92,11 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                                 Ok(Box::new(ClearFlags {id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
-                        _ => Err("Enter a valid object subcommand: info, keywords, short, long, or remove."
+                        _ => Err("Enter a valid object subcommand: info, keywords, long, set, short, remove, or unset."
                             .to_string()),
                     }
                 } else {
-                    Err(
-                        "Enter an object subcommand: info, keywords, short, long, or remove."
-                            .to_string(),
-                    )
+                    Err("Enter an object subcommand: info, keywords, long, set, short, remove, or unset.".to_string())
                 }
             }
         }
