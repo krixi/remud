@@ -10,6 +10,7 @@ use crate::{
     world::{
         action::{movement::Teleport, queue_message, Action, DynAction},
         types::{
+            object::Object,
             player::Player,
             room::{self, Direction, Room, Rooms},
             Contents,
@@ -19,13 +20,16 @@ use crate::{
 };
 
 // Valid shapes:
+// room info - displays information about the room
 // room new - creates a new unlinked room
 // room new [direction] - creates a room to the [Direction] of this one with a two way link
 // room desc [description] - sets the description of a room
 // room link [direction] [room ID] - links the current room to another in a given direction (one way)
+// room remove - removes the current room and moves everything in it to the void room
 pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
+            "info" => Ok(Box::new(Info {})),
             "new" => {
                 let direction = if let Some(direction) = tokenizer.next() {
                     match Direction::from_str(direction) {
@@ -41,62 +45,142 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                     None
                 };
 
-                Ok(Box::new(CreateRoom { direction }))
+                Ok(Box::new(Create { direction }))
             }
             "desc" => {
                 if tokenizer.rest().is_empty() {
                     Err("Enter a description.".to_string())
                 } else {
-                    Ok(Box::new(UpdateRoom {
+                    Ok(Box::new(Update {
                         description: Some(tokenizer.rest().to_string()),
                     }))
                 }
             }
             "link" => {
                 if let Some(direction) = tokenizer.next() {
-                    if let Some(destination) = tokenizer.next() {
-                        let direction =
-                            match Direction::from_str(direction) {
-                                Ok(direction) => direction,
-                                Err(_) => return Err(
-                                    "Enter a valid direction: up, down, north, east, south, west."
-                                        .to_string(),
-                                ),
-                            };
+                    let direction = match Direction::from_str(direction) {
+                        Ok(direction) => direction,
+                        Err(_) => {
+                            return Err(
+                                "Enter a valid direction: up, down, north, east, south, west."
+                                    .to_string(),
+                            )
+                        }
+                    };
 
+                    if let Some(destination) = tokenizer.next() {
                         let destination = match destination.parse::<room::Id>() {
                             Ok(destination) => destination,
                             Err(e) => return Err(e.to_string()),
                         };
 
-                        Ok(Box::new(UpdateExit {
+                        Ok(Box::new(Link {
                             direction,
                             destination,
                         }))
                     } else {
-                        Err("A destination room ID is required.".to_string())
+                        Err("Enter a destination room ID.".to_string())
                     }
                 } else {
-                    Err("A direction and destination room ID are required.".to_string())
+                    Err("Enter a direction.".to_string())
                 }
             }
-            "remove" => Ok(Box::new(RemoveRoom {})),
-            _ => Err("Enter a valid room subcommand: new, desc, link, remove".to_string()),
+            "remove" => Ok(Box::new(Remove {})),
+            "unlink" => {
+                if let Some(direction) = tokenizer.next() {
+                    let direction = match Direction::from_str(direction) {
+                        Ok(direction) => direction,
+                        Err(_) => {
+                            return Err(
+                                "Enter a valid direction: up, down, north, east, south, west."
+                                    .to_string(),
+                            )
+                        }
+                    };
+
+                    Ok(Box::new(Unlink { direction }))
+                } else {
+                    Err("Enter a direction.".to_string())
+                }
+            }
+            _ => Err(
+                "Enter a valid room subcommand: info, desc, link, new, remove or unlink."
+                    .to_string(),
+            ),
         }
     } else {
-        Err("Enter a valid room subcommand: new, desc, link".to_string())
+        Err("Enter a room subcommand: info, desc, link, new, remove or unlink.".to_string())
     }
 }
 
-struct CreateRoom {
+struct Info {}
+
+impl Action for Info {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("{:?} has no Player.", player),
+        };
+
+        let room = match world.get::<Room>(room_entity) {
+            Some(room) => room,
+            None => bail!("{:?} has no Room.", room_entity),
+        };
+
+        let mut message = format!("Room {}", room.id);
+
+        message.push_str("\r\n  description: ");
+        message.push_str(room.description.as_str());
+
+        message.push_str("\r\n  exits:");
+        room.exits
+            .iter()
+            .filter_map(|(direction, room)| {
+                world.get::<Room>(*room).map(|room| (direction, room.id))
+            })
+            .for_each(|(direction, room_id)| {
+                message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
+            });
+
+        message.push_str("\r\n  players:");
+        room.players
+            .iter()
+            .filter_map(|player| {
+                world
+                    .get::<Player>(*player)
+                    .map(|player| player.name.as_str())
+            })
+            .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
+        message.push_str("\r\n  objects:");
+        match world.get::<Contents>(room_entity) {
+            Some(contents) => {
+                contents
+                    .objects
+                    .iter()
+                    .filter_map(|object| world.get::<Object>(*object))
+                    .map(|object| (object.id, object.short.as_str()))
+                    .for_each(|(id, name)| {
+                        message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
+                    });
+            }
+            None => bail!("{:?} has no Contents.", room_entity),
+        }
+
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+struct Create {
     direction: Option<Direction>,
 }
 
-impl Action for CreateRoom {
+impl Action for Create {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let current_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Location."),
+            None => bail!("{:?} has no Player.", player),
         };
 
         // Confirm a room does not already exist in this direction
@@ -109,7 +193,7 @@ impl Action for CreateRoom {
                         return Ok(());
                     }
                 }
-                None => bail!("Room {:?} has no Room.", current_room),
+                None => bail!("{:?} has no Room.", current_room),
             }
         }
 
@@ -159,12 +243,12 @@ impl Action for CreateRoom {
     }
 }
 
-struct UpdateExit {
+struct Link {
     direction: Direction,
     destination: room::Id,
 }
 
-impl Action for UpdateExit {
+impl Action for Link {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let destination = if let Some(room) = world
             .get_resource::<Rooms>()
@@ -180,12 +264,12 @@ impl Action for UpdateExit {
 
         let from_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Location.", player),
+            None => bail!("{:?} has no Player.", player),
         };
 
         match world.get_mut::<Room>(from_room) {
             Some(mut room) => room.exits.insert(self.direction, destination),
-            None => bail!("Room {:?} does not have a Room"),
+            None => bail!("{:?} has no Room", from_room),
         };
 
         world
@@ -193,10 +277,9 @@ impl Action for UpdateExit {
             .unwrap()
             .queue(persist::room::Exits::new(from_room));
 
-        let from_room = world.get::<Room>(from_room).unwrap();
         let message = format!(
-            "Linked room {} {} to room {}.",
-            from_room.id, self.direction, self.destination
+            "Linked {} exit to room {}.",
+            self.direction, self.destination
         );
         queue_message(world, player, message);
 
@@ -204,15 +287,15 @@ impl Action for UpdateExit {
     }
 }
 
-struct UpdateRoom {
+struct Update {
     description: Option<String>,
 }
 
-impl Action for UpdateRoom {
+impl Action for Update {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let room_entity = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Location.", player),
+            None => bail!("{:?} has no Player.", player),
         };
 
         match world.get_mut::<Room>(room_entity) {
@@ -224,7 +307,7 @@ impl Action for UpdateRoom {
                     queue_message(world, player, message);
                 }
             }
-            None => bail!("Room {:?} has no Room.", room_entity),
+            None => bail!("{:?} has no Room.", room_entity),
         }
 
         // Queue update
@@ -237,13 +320,13 @@ impl Action for UpdateRoom {
     }
 }
 
-struct RemoveRoom {}
+struct Remove {}
 
-impl Action for RemoveRoom {
+impl Action for Remove {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let room_entity = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} has no Location."),
+            None => bail!("{:?} has no Player.", player),
         };
 
         let (room_id, present_players, present_objects) = match world.get::<Room>(room_entity) {
@@ -258,12 +341,12 @@ impl Action for RemoveRoom {
                 let objects = if let Some(contents) = world.get::<Contents>(room_entity) {
                     contents.objects.iter().copied().collect_vec()
                 } else {
-                    bail!("Room {:?} does not have Contents.", room_entity);
+                    bail!("{:?} has no Contents.", room_entity);
                 };
 
                 (room.id, players, objects)
             }
-            None => bail!("Room {:?} does not have a Room", room_entity),
+            None => bail!("{:?} has no Room", room_entity),
         };
 
         // Move all players and objects from this room to the void room.
@@ -313,6 +396,35 @@ impl Action for RemoveRoom {
         }
 
         let message = format!("Room {} removed.", room_id);
+        queue_message(world, player, message);
+
+        Ok(())
+    }
+}
+
+struct Unlink {
+    direction: Direction,
+}
+
+impl Action for Unlink {
+    fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
+        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
+            Some(room) => room,
+            None => bail!("{:?} has no Player.", player),
+        };
+
+        let mut room = match world.get_mut::<Room>(room_entity) {
+            Some(room) => room,
+            None => bail!("{:?} has no Room.", room_entity),
+        };
+
+        let removed = room.exits.remove(&self.direction).is_some();
+        let message = if removed {
+            format!("Removed exit {}.", self.direction.as_to_str())
+        } else {
+            format!("There is no exit {}.", self.direction.as_to_str())
+        };
+
         queue_message(world, player, message);
 
         Ok(())

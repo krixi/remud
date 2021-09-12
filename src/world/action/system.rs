@@ -13,7 +13,7 @@ impl Action for Login {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let (name, room) = match world.get::<Player>(player) {
             Some(player) => (player.name.as_str(), player.room),
-            None => bail!("Player {:?} has no Player.", player),
+            None => bail!("{:?} has no Player.", player),
         };
 
         let present_players = match world.get::<Room>(room) {
@@ -23,7 +23,7 @@ impl Action for Login {
                 .filter(|present_player| **present_player != player)
                 .copied()
                 .collect_vec(),
-            None => bail!("Room {:?} does not have a Room", room),
+            None => bail!("{:?} has no Room", room),
         };
 
         let message = { format!("{} arrives.", name) };
@@ -41,7 +41,7 @@ impl Action for Logout {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let (name, room) = match world.get::<Player>(player) {
             Some(player) => (player.name.clone(), player.room),
-            None => bail!("Player {:?} has no Player.", player),
+            None => bail!("{:?} has no Player.", player),
         };
 
         let present_players = match world.get::<Room>(room) {
@@ -51,7 +51,7 @@ impl Action for Logout {
                 .filter(|present_player| **present_player != player)
                 .copied()
                 .collect_vec(),
-            None => bail!("Room {:?} does not have a Room", room),
+            None => bail!("{:?} has no Room", room),
         };
 
         let message = format!("{} leaves.", name);

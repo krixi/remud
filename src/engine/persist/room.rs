@@ -27,12 +27,12 @@ impl Persist for AddObject {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let room_id = match world.get::<Room>(self.room).map(|room| room.id) {
             Some(id) => id,
-            None => bail!("Room {:?} does not have Room", self.room),
+            None => bail!("{:?} has no Room", self.room),
         };
 
         let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
             Some(id) => id,
-            None => bail!("Object {:?} does not have Object", self.object),
+            None => bail!("{:?} has no Object", self.object),
         };
 
         sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
@@ -116,12 +116,12 @@ impl Persist for RemoveObject {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let room_id = match world.get::<Room>(self.room).map(|room| room.id) {
             Some(id) => id,
-            None => bail!("Room {:?} does not have Room", self.room),
+            None => bail!("{:?} has no Room", self.room),
         };
 
         let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
             Some(id) => id,
-            None => bail!("Object {:?} does not have Object", self.object),
+            None => bail!("{:?} has no Object", self.object),
         };
 
         sqlx::query("DELETE FROM room_objects WHERE room_id = ? AND object_id = ?")

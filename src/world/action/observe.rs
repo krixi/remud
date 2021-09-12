@@ -67,7 +67,7 @@ impl Look {
     fn look_room(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let current_room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Player.", player),
+            None => bail!("{:?} has no Player.", player),
         };
 
         let look_target = if let Some(direction) = &self.direction {
@@ -88,17 +88,6 @@ impl Look {
         match world.get::<Room>(look_target) {
             Some(room) => {
                 let mut message = room.description.clone();
-
-                if let Some(contents) = world.get::<Contents>(look_target) {
-                    contents
-                        .objects
-                        .iter()
-                        .filter_map(|object| world.get::<Object>(*object))
-                        .for_each(|object| {
-                            message.push_str("\r\n");
-                            message.push_str(object.short.as_str());
-                        });
-                }
 
                 let present_names = room
                     .players
@@ -123,9 +112,24 @@ impl Look {
                     message.push_str(player_list.as_str());
                 }
 
+                if let Some(contents) = world.get::<Contents>(look_target) {
+                    let objects = contents
+                        .objects
+                        .iter()
+                        .filter_map(|object| world.get::<Object>(*object))
+                        .map(|object| object.short.clone())
+                        .collect_vec();
+
+                    if !objects.is_empty() {
+                        message.push_str("\r\nYou see ");
+                        message.push_str(word_list(objects).as_str());
+                        message.push('.');
+                    }
+                }
+
                 queue_message(world, player, message);
             }
-            None => bail!("Room {:?} has no Room.", look_target),
+            None => bail!("{:?} has no Room.", look_target),
         };
 
         Ok(())
@@ -197,7 +201,7 @@ impl Action for Exits {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let room = match world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Location."),
+            None => bail!("{:?} has no Player.", player),
         };
 
         match world.get::<Room>(room) {
@@ -220,7 +224,7 @@ impl Action for Exits {
 
                 queue_message(world, player, message);
             }
-            None => bail!("Room {:?} does not have a Room", room),
+            None => bail!("{:?} has no Room", room),
         }
 
         Ok(())

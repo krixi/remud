@@ -1,5 +1,7 @@
 - change persist objects to take exclusively IDs and remove the World parameter
 
+- execute persists in their own async task
+
 - add help command
 
   > help \[topic\]
@@ -21,15 +23,3 @@
 - add flag for fixed object that cannot be moved/picked up
 
 - add flag for subtle object that should not be listed when the room is looked at
-
-- give players an inventory, allow them to list its contents
-
-  > inventory
-
-- allow players to pick up object
-
-  > get <keyword(s)\>
-
-- allow players to drop object
-
-  > drop <keyword(s)\>

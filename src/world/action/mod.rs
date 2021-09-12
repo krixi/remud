@@ -2,6 +2,7 @@ mod communicate;
 mod movement;
 mod object;
 mod observe;
+mod player;
 mod room;
 mod system;
 
@@ -58,6 +59,7 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "me" => parse_me(tokenizer),
             "north" => Ok(Move::new(Direction::North)),
             "object" => object::parse(tokenizer),
+            "player" => player::parse(tokenizer),
             "room" => room::parse(tokenizer),
             "say" => parse_say(tokenizer),
             "send" => parse_send(tokenizer),

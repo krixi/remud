@@ -272,7 +272,7 @@ impl Db {
 
         match world.get_mut::<Room>(room) {
             Some(mut room) => room.players.push(player),
-            None => bail!("Room {:?} has no Room.", room),
+            None => bail!("{:?} has no Room.", room),
         }
 
         world

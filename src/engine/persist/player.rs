@@ -24,12 +24,12 @@ impl Persist for AddObject {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let player_id = match world.get::<Player>(self.player).map(|player| player.id) {
             Some(id) => id,
-            None => bail!("Player {:?} does not have Player", self.player),
+            None => bail!("{:?} has no Player", self.player),
         };
 
         let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
             Some(id) => id,
-            None => bail!("Object {:?} does not have Object", self.object),
+            None => bail!("{:?} has no Object", self.object),
         };
 
         sqlx::query("INSERT INTO player_objects (player_id, object_id) VALUES (?, ?)")
@@ -58,12 +58,12 @@ impl Persist for RemoveObject {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let player_id = match world.get::<Player>(self.player).map(|player| player.id) {
             Some(id) => id,
-            None => bail!("Player {:?} does not have Player", self.player),
+            None => bail!("{:?} has no Player", self.player),
         };
 
         let object_id = match world.get::<Object>(self.object).map(|object| object.id) {
             Some(id) => id,
-            None => bail!("Object {:?} does not have Object", self.object),
+            None => bail!("{:?} has no Object", self.object),
         };
 
         sqlx::query("DELETE FROM player_objects WHERE player_id = ? AND object_id = ?")
@@ -91,12 +91,12 @@ impl Persist for Room {
     async fn enact(&self, pool: &SqlitePool, world: &World) -> anyhow::Result<()> {
         let (player_id, room) = match world.get::<Player>(self.player) {
             Some(player) => (player.id, player.room),
-            None => bail!("Player {:?} does not have Player."),
+            None => bail!("{:?} has no Player.", self.player),
         };
 
         let room_id = match world.get::<room::Room>(room) {
             Some(room) => room.id,
-            None => bail!("Room {:?} does not have Room."),
+            None => bail!("{:?} has no Room.", room),
         };
 
         sqlx::query("UPDATE players SET room = ? WHERE id = ?")

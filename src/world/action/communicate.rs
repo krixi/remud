@@ -35,12 +35,12 @@ impl Action for Emote {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let (name, room_entity) = match world.get::<Player>(player) {
             Some(player) => (player.name.as_str(), player.room),
-            None => bail!("Player {:?} has no name.", player),
+            None => bail!("{:?} has no name.", player),
         };
 
         let present_players = match world.get::<Room>(room_entity) {
             Some(room) => room.players.iter().copied().collect_vec(),
-            None => bail!("Room {:?} has no Room.", room_entity),
+            None => bail!("{:?} has no Room.", room_entity),
         };
 
         let message = format!("{} {}", name, self.emote);
@@ -74,7 +74,7 @@ impl Action for Say {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let (name, room_entity) = match world.get::<Player>(player) {
             Some(player) => (player.name.as_str(), player.room),
-            None => bail!("Player {:?} has no name.", player),
+            None => bail!("{:?} has no name.", player),
         };
 
         let present_players = match world.get::<Room>(room_entity) {
@@ -84,7 +84,7 @@ impl Action for Say {
                 .filter(|present_player| **present_player != player)
                 .copied()
                 .collect_vec(),
-            None => bail!("Room {:?} has no Room.", room_entity),
+            None => bail!("{:?} has no Room.", room_entity),
         };
 
         let message = format!("{} says \"{}\"", name, self.message);
@@ -147,7 +147,7 @@ impl Action for SendMessage {
             .map(|player| player.name.as_str())
         {
             Some(name) => name,
-            None => bail!("Player {:?} has no name.", player),
+            None => bail!("{:?} has no name.", player),
         };
 
         let message = format!("{} sends \"{}\".", sender, self.message);
@@ -158,7 +158,7 @@ impl Action for SendMessage {
             .map(|player| player.name.as_str())
         {
             Some(name) => name,
-            None => bail!("Recipient {:?} has no name.", player),
+            None => bail!("{:?} has no name.", player),
         };
 
         let sent_message = format!(

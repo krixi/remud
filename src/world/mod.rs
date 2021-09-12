@@ -85,7 +85,7 @@ impl GameWorld {
 
         let room = match self.world.get::<Player>(player).map(|player| player.room) {
             Some(room) => room,
-            None => bail!("Player {:?} does not have a Player", player),
+            None => bail!("{:?} has no Player", player),
         };
 
         let name = if let Some(name) = self
@@ -95,7 +95,7 @@ impl GameWorld {
         {
             name
         } else {
-            bail!("Unable to despawn player {:?} at {:?}", player, room);
+            bail!("Unable to despawn {:?} at {:?}", player, room);
         };
 
         if let Some(objects) = self
@@ -114,7 +114,7 @@ impl GameWorld {
             .remove(&name);
         match self.world.get_mut::<Room>(room) {
             Some(mut room) => room.remove_player(player),
-            None => bail!("Room {:?} does not have a Room.", room),
+            None => bail!("{:?} has no Room.", room),
         }
 
         Ok(())
