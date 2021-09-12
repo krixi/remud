@@ -1,4 +1,4 @@
-use anyhow::{self, bail};
+use anyhow::{self};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -6,7 +6,7 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction, Look},
+        action::{queue_message, Action, DynAction, Look, MissingComponent},
         types::{
             player::Player,
             room::{self, Direction, Room, Rooms},
@@ -26,29 +26,32 @@ impl Move {
 
 impl Action for Move {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (player_id, name, current_room) = match world.get::<Player>(player) {
-            Some(player) => (player.id, player.name.clone(), player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (player_id, name, current_room) = world
+            .get::<Player>(player)
+            .map(|player| (player.id, player.name.clone(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let (destination, present_players) = match world.get::<Room>(current_room) {
-            Some(room) => {
-                let destination = if let Some(destination) = room.exits.get(&self.direction) {
-                    *destination
-                } else {
-                    let message = format!("There is no exit {}.", self.direction.as_to_str());
-                    queue_message(world, player, message);
-                    return Ok(());
-                };
-                let present_players = room
-                    .players
-                    .iter()
-                    .filter(|present_player| **present_player != player)
-                    .copied()
-                    .collect_vec();
-                (destination, present_players)
-            }
-            None => bail!("{:?} has no Room.", current_room),
+        let (destination, present_players) = {
+            let room = world
+                .get::<Room>(current_room)
+                .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
+
+            let destination = if let Some(destination) = room.exits.get(&self.direction) {
+                *destination
+            } else {
+                let message = format!("There is no exit {}.", self.direction.as_to_str());
+                queue_message(world, player, message);
+                return Ok(());
+            };
+
+            let present_players = room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .copied()
+                .collect_vec();
+
+            (destination, present_players)
         };
 
         let leave_message = format!("{} leaves {}.", name, self.direction.as_to_str());
@@ -61,10 +64,11 @@ impl Action for Move {
             .unwrap()
             .remove_player(player);
         world.get_mut::<Player>(player).unwrap().room = destination;
-        match world.get_mut::<Room>(destination) {
-            Some(mut room) => room.players.push(player),
-            None => bail!("{:?} has no Room.", destination),
-        }
+        world
+            .get_mut::<Room>(destination)
+            .ok_or_else(|| MissingComponent::new(destination, "Room"))?
+            .players
+            .push(player);
 
         let (destination_id, from_direction, present_players) = {
             let room = world.get::<Room>(destination).unwrap();
@@ -135,20 +139,19 @@ impl Action for Teleport {
                 return Ok(());
             };
 
-        let (player_id, name, current_room) = match world.get::<Player>(player) {
-            Some(player) => (player.id, player.name.clone(), player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (player_id, name, current_room) = world
+            .get::<Player>(player)
+            .map(|player| (player.id, player.name.clone(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let present_players = match world.get::<Room>(current_room) {
-            Some(room) => room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec(),
-            None => bail!("{:?} has no Room.", current_room),
-        };
+        let present_players = world
+            .get::<Room>(current_room)
+            .ok_or_else(|| MissingComponent::new(current_room, "Room"))?
+            .players
+            .iter()
+            .filter(|present_player| **present_player != player)
+            .copied()
+            .collect_vec();
 
         let message = format!("{} disappears in the blink of an eye.", name);
         for present_player in present_players {
@@ -160,12 +163,12 @@ impl Action for Teleport {
             .unwrap()
             .remove_player(player);
         world.get_mut::<Player>(player).unwrap().room = destination;
-        let destination_id = match world.get_mut::<Room>(destination) {
-            Some(mut room) => {
-                room.players.push(player);
-                room.id
-            }
-            None => bail!("{:?} has no Room", destination),
+        let destination_id = {
+            let mut room = world
+                .get_mut::<Room>(destination)
+                .ok_or_else(|| MissingComponent::new(destination, "Room"))?;
+            room.players.push(player);
+            room.id
         };
 
         let present_players = world

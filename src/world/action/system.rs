@@ -1,9 +1,8 @@
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::world::{
-    action::{queue_message, Action},
+    action::{queue_message, Action, MissingComponent},
     types::{player::Player, room::Room, Configuration},
 };
 
@@ -11,20 +10,19 @@ pub struct Login {}
 
 impl Action for Login {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, room) = match world.get::<Player>(player) {
-            Some(player) => (player.name.as_str(), player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (name, room) = world
+            .get::<Player>(player)
+            .map(|player| (player.name.as_str(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let present_players = match world.get::<Room>(room) {
-            Some(room) => room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec(),
-            None => bail!("{:?} has no Room", room),
-        };
+        let present_players = world
+            .get::<Room>(room)
+            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .players
+            .iter()
+            .filter(|present_player| **present_player != player)
+            .copied()
+            .collect_vec();
 
         let message = { format!("{} arrives.", name) };
         for present_player in present_players {
@@ -39,20 +37,19 @@ pub struct Logout {}
 
 impl Action for Logout {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, room) = match world.get::<Player>(player) {
-            Some(player) => (player.name.clone(), player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (name, room) = world
+            .get::<Player>(player)
+            .map(|player| (player.name.clone(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let present_players = match world.get::<Room>(room) {
-            Some(room) => room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec(),
-            None => bail!("{:?} has no Room", room),
-        };
+        let present_players = world
+            .get::<Room>(room)
+            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .players
+            .iter()
+            .filter(|present_player| **present_player != player)
+            .copied()
+            .collect_vec();
 
         let message = format!("{} leaves.", name);
         for present_player in present_players {

@@ -1,13 +1,12 @@
 use std::str::FromStr;
 
-use anyhow::bail;
 use bevy_ecs::prelude::{Entity, World};
 use itertools::Itertools;
 
 use crate::{
     text::{word_list, Tokenizer},
     world::{
-        action::{queue_message, Action, DynAction},
+        action::{queue_message, Action, DynAction, MissingComponent},
         types::{
             object::Object,
             player::Player,
@@ -65,10 +64,10 @@ impl Look {
 
 impl Look {
     fn look_room(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let current_room = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let current_room = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
         let look_target = if let Some(direction) = &self.direction {
             if let Some(room) = world
@@ -85,52 +84,52 @@ impl Look {
             current_room
         };
 
-        match world.get::<Room>(look_target) {
-            Some(room) => {
-                let mut message = room.description.clone();
+        let room = world
+            .get::<Room>(look_target)
+            .ok_or_else(|| MissingComponent::new(look_target, "Room"))?;
+        {
+            let mut message = room.description.clone();
 
-                let present_names = room
-                    .players
+            let present_names = room
+                .players
+                .iter()
+                .filter(|present_player| **present_player != player)
+                .filter_map(|player| world.get::<Player>(*player))
+                .map(|player| player.name.clone())
+                .sorted()
+                .collect_vec();
+
+            if !present_names.is_empty() {
+                message.push_str("\r\n");
+
+                let singular = present_names.len() == 1;
+
+                let mut player_list = word_list(present_names);
+                if singular {
+                    player_list.push_str(" is here.");
+                } else {
+                    player_list.push_str(" are here.");
+                };
+                message.push_str(player_list.as_str());
+            }
+
+            if let Some(contents) = world.get::<Contents>(look_target) {
+                let objects = contents
+                    .objects
                     .iter()
-                    .filter(|present_player| **present_player != player)
-                    .filter_map(|player| world.get::<Player>(*player))
-                    .map(|player| player.name.clone())
-                    .sorted()
+                    .filter_map(|object| world.get::<Object>(*object))
+                    .map(|object| object.short.clone())
                     .collect_vec();
 
-                if !present_names.is_empty() {
-                    message.push_str("\r\n");
-
-                    let singular = present_names.len() == 1;
-
-                    let mut player_list = word_list(present_names);
-                    if singular {
-                        player_list.push_str(" is here.");
-                    } else {
-                        player_list.push_str(" are here.");
-                    };
-                    message.push_str(player_list.as_str());
+                if !objects.is_empty() {
+                    message.push_str("\r\nYou see ");
+                    message.push_str(word_list(objects).as_str());
+                    message.push('.');
                 }
-
-                if let Some(contents) = world.get::<Contents>(look_target) {
-                    let objects = contents
-                        .objects
-                        .iter()
-                        .filter_map(|object| world.get::<Object>(*object))
-                        .map(|object| object.short.clone())
-                        .collect_vec();
-
-                    if !objects.is_empty() {
-                        message.push_str("\r\nYou see ");
-                        message.push_str(word_list(objects).as_str());
-                        message.push('.');
-                    }
-                }
-
-                queue_message(world, player, message);
             }
-            None => bail!("{:?} has no Room.", look_target),
-        };
+
+            queue_message(world, player, message);
+        }
 
         Ok(())
     }
@@ -140,6 +139,7 @@ impl Look {
             .get::<Player>(player)
             .map(|player| player.room)
             .and_then(|room| world.get::<Contents>(room))
+            .or_else(|| world.get::<Contents>(player))
             .and_then(|contents| {
                 contents
                     .objects
@@ -153,22 +153,6 @@ impl Look {
                             .all(|keyword| object.keywords.contains(keyword))
                     })
                     .map(|object| object.long.as_str())
-            })
-            .or_else(|| {
-                world.get::<Contents>(player).and_then(|contents| {
-                    contents
-                        .objects
-                        .iter()
-                        .filter_map(|object| world.get::<Object>(*object))
-                        .find(|object| {
-                            self.at
-                                .as_ref()
-                                .unwrap()
-                                .iter()
-                                .all(|keyword| object.keywords.contains(keyword))
-                        })
-                        .map(|object| object.long.as_str())
-                })
             });
 
         let message = if let Some(description) = description {
@@ -199,33 +183,32 @@ pub struct Exits {}
 
 impl Action for Exits {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
+        let room = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
+
+        let room = world
+            .get::<Room>(room)
+            .ok_or_else(|| MissingComponent::new(room, "Room"))?;
+
+        let exits = room
+            .exits
+            .keys()
+            .map(Direction::as_str)
+            .map(ToString::to_string)
+            .sorted()
+            .collect_vec();
+
+        let message = if exits.is_empty() {
+            "This room has no obvious exits.".to_string()
+        } else if exits.len() == 1 {
+            format!("There is an exit {}.", word_list(exits))
+        } else {
+            format!("There are exits {}.", word_list(exits))
         };
 
-        match world.get::<Room>(room) {
-            Some(room) => {
-                let exits = room
-                    .exits
-                    .keys()
-                    .map(Direction::as_str)
-                    .map(ToString::to_string)
-                    .sorted()
-                    .collect_vec();
-
-                let message = if exits.is_empty() {
-                    "This room has no obvious exits.".to_string()
-                } else if exits.len() == 1 {
-                    format!("There is an exit {}.", word_list(exits))
-                } else {
-                    format!("There are exits {}.", word_list(exits))
-                };
-
-                queue_message(world, player, message);
-            }
-            None => bail!("{:?} has no Room", room),
-        }
+        queue_message(world, player, message);
 
         Ok(())
     }

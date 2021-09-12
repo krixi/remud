@@ -1,11 +1,10 @@
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction},
+        action::{queue_message, Action, DynAction, MissingComponent},
         types::{
             player::{Player, Players},
             room::Room,
@@ -33,15 +32,18 @@ impl Emote {
 
 impl Action for Emote {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, room_entity) = match world.get::<Player>(player) {
-            Some(player) => (player.name.as_str(), player.room),
-            None => bail!("{:?} has no name.", player),
-        };
+        let (name, room_entity) = world
+            .get::<Player>(player)
+            .map(|player| (player.name.as_str(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let present_players = match world.get::<Room>(room_entity) {
-            Some(room) => room.players.iter().copied().collect_vec(),
-            None => bail!("{:?} has no Room.", room_entity),
-        };
+        let present_players = world
+            .get::<Room>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?
+            .players
+            .iter()
+            .copied()
+            .collect_vec();
 
         let message = format!("{} {}", name, self.emote);
         for present_player in present_players {
@@ -72,20 +74,19 @@ impl Say {
 
 impl Action for Say {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (name, room_entity) = match world.get::<Player>(player) {
-            Some(player) => (player.name.as_str(), player.room),
-            None => bail!("{:?} has no name.", player),
-        };
+        let (name, room_entity) = world
+            .get::<Player>(player)
+            .map(|player| (player.name.as_str(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let present_players = match world.get::<Room>(room_entity) {
-            Some(room) => room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec(),
-            None => bail!("{:?} has no Room.", room_entity),
-        };
+        let present_players = world
+            .get::<Room>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?
+            .players
+            .iter()
+            .filter(|present_player| **present_player != player)
+            .copied()
+            .collect_vec();
 
         let message = format!("{} says \"{}\"", name, self.message);
         for present_player in present_players {
@@ -142,24 +143,18 @@ impl Action for SendMessage {
             return Ok(());
         }
 
-        let sender = match world
+        let sender = world
             .get::<Player>(player)
             .map(|player| player.name.as_str())
-        {
-            Some(name) => name,
-            None => bail!("{:?} has no name.", player),
-        };
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
         let message = format!("{} sends \"{}\".", sender, self.message);
         queue_message(world, recipient, message);
 
-        let recipient_name = match world
+        let recipient_name = world
             .get::<Player>(recipient)
             .map(|player| player.name.as_str())
-        {
-            Some(name) => name,
-            None => bail!("{:?} has no name.", player),
-        };
+            .ok_or_else(|| MissingComponent::new(recipient, "Player"))?;
 
         let sent_message = format!(
             "Your term chirps happily: \"Message sent to '{}'.\"",

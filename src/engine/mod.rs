@@ -22,7 +22,6 @@ use crate::{
     },
     world::{
         action::{parse, Login, Look},
-        types::{player::Players, Configuration},
         GameWorld,
     },
     ClientId,
@@ -81,11 +80,9 @@ impl Engine {
         loop {
             tokio::select! {
                 _ = self.ticker.tick() => {
-                    tokio::task::block_in_place(|| {
-                        self.game_world.run();
-                    });
+                    self.game_world.run().await;
 
-                    for (player, mut messages) in self.game_world.messages() {
+                    for (player, mut messages) in self.game_world.messages().await {
                         if let Some(client) = self.clients.by_player(player) {
                             messages.push_back("> ".to_string());
                             client.send_batch(self.tick, messages).await;
@@ -94,14 +91,14 @@ impl Engine {
                         }
                     }
 
-                    for update in self.game_world.updates() {
+                    for update in self.game_world.updates().await {
                         match update.enact(self.db.get_pool()).await {
                             Ok(_) => (),
                             Err(e) => tracing::error!("Failed to execute update: {}", e),
                         };
                     }
 
-                    if self.game_world.should_shutdown() {
+                    if self.game_world.should_shutdown().await {
                         break
                     }
 
@@ -129,7 +126,7 @@ impl Engine {
                 tracing::info!("{}> {:?} disconnected", self.tick, client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
-                    if let Err(e) = self.game_world.despawn_player(player) {
+                    if let Err(e) = self.game_world.despawn_player(player).await {
                         tracing::error!("Failed to despawn player: {}", e);
                     }
                 }
@@ -173,14 +170,7 @@ impl Engine {
                         };
 
                         if has_user {
-                            if self
-                                .game_world
-                                .get_world()
-                                .get_resource::<Players>()
-                                .unwrap()
-                                .by_name(name)
-                                .is_some()
-                            {
+                            if self.game_world.player_online(name).await {
                                 client
                                     .send("User currently online.\r\nName?\r\n> ".into())
                                     .await;
@@ -250,13 +240,7 @@ impl Engine {
                         }
                     }
 
-                    let spawn_room = self
-                        .game_world
-                        .get_world()
-                        .get_resource::<Configuration>()
-                        .unwrap()
-                        .spawn_room;
-
+                    let spawn_room = self.game_world.spawn_room().await;
                     match self.db.create_player(name.as_str(), hash, spawn_room).await {
                         Ok(_) => (),
                         Err(e) => {
@@ -268,7 +252,7 @@ impl Engine {
 
                     let player = match self
                         .db
-                        .load_player(self.game_world.get_world_mut(), name.as_str())
+                        .load_player(self.game_world.get_world(), name.as_str())
                         .await
                     {
                         Ok(player) => (player),
@@ -282,8 +266,10 @@ impl Engine {
                     client.verified().await;
                     client.set_state(State::InGame { player });
 
-                    self.game_world.player_action(player, Box::new(Login {}));
-                    self.game_world.player_action(player, Look::here());
+                    self.game_world
+                        .player_action(player, Box::new(Login {}))
+                        .await;
+                    self.game_world.player_action(player, Look::here()).await;
 
                     spawned_player = Some(player);
                 }
@@ -312,7 +298,7 @@ impl Engine {
 
                     let player = match self
                         .db
-                        .load_player(self.game_world.get_world_mut(), name.as_str())
+                        .load_player(self.game_world.get_world(), name.as_str())
                         .await
                     {
                         Ok(player) => (player),
@@ -326,15 +312,17 @@ impl Engine {
                     client.verified().await;
                     client.set_state(State::InGame { player });
 
-                    self.game_world.player_action(player, Box::new(Login {}));
-                    self.game_world.player_action(player, Look::here());
+                    self.game_world
+                        .player_action(player, Box::new(Login {}))
+                        .await;
+                    self.game_world.player_action(player, Look::here()).await;
 
                     spawned_player = Some(player);
                 }
                 State::InGame { player } => {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
                     match parse(&input) {
-                        Ok(action) => self.game_world.player_action(*player, action),
+                        Ok(action) => self.game_world.player_action(*player, action).await,
                         Err(message) => client.send(format!("{}\r\n> ", message).into()).await,
                     }
                 }

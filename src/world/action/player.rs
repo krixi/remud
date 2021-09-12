@@ -1,10 +1,9 @@
-use anyhow::bail;
 use bevy_ecs::prelude::{Entity, World};
 
 use crate::{
     text::Tokenizer,
     world::{
-        action::{queue_message, Action, DynAction},
+        action::{queue_message, Action, DynAction, MissingComponent},
         types::{
             object::Object,
             player::{Player, Players},
@@ -52,15 +51,13 @@ impl Action for Info {
             }
         };
 
-        let player = match world.get::<Player>(player_entity) {
-            Some(player) => player,
-            None => bail!("{:?} has no Player.", player_entity),
-        };
+        let player = world
+            .get::<Player>(player_entity)
+            .ok_or_else(|| MissingComponent::new(player_entity, "Player"))?;
 
-        let room = match world.get::<Room>(player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Room.", player.room),
-        };
+        let room = world
+            .get::<Room>(player.room)
+            .ok_or_else(|| MissingComponent::new(player.room, "Room"))?;
 
         let mut message = format!("Player {}", player.name);
 
@@ -68,19 +65,16 @@ impl Action for Info {
         message.push_str(room.id.to_string().as_str());
 
         message.push_str("\r\n  objects:");
-        match world.get::<Contents>(player_entity) {
-            Some(contents) => {
-                contents
-                    .objects
-                    .iter()
-                    .filter_map(|object| world.get::<Object>(*object))
-                    .map(|object| (object.id, object.short.as_str()))
-                    .for_each(|(id, name)| {
-                        message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
-                    });
-            }
-            None => bail!("{:?} has no Contents.", player_entity),
-        }
+        world
+            .get::<Contents>(player_entity)
+            .ok_or_else(|| MissingComponent::new(player_entity, "Contents"))?
+            .objects
+            .iter()
+            .filter_map(|object| world.get::<Object>(*object))
+            .map(|object| (object.id, object.short.as_str()))
+            .for_each(|(id, name)| {
+                message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
+            });
 
         queue_message(world, asking_player, message);
 

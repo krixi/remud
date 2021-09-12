@@ -3,17 +3,17 @@
 pub mod action;
 pub mod types;
 
-use std::{collections::VecDeque, convert::TryFrom};
+use std::{collections::VecDeque, convert::TryFrom, ops::DerefMut, sync::Arc};
 
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use tokio::sync::RwLock;
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
     world::{
-        action::{queue_message, DynAction, Logout},
+        action::{queue_message, DynAction, Logout, MissingComponent},
         types::{
             player::{Messages, Player, Players},
             room::{self, Room, Rooms},
@@ -27,7 +27,7 @@ lazy_static! {
 }
 
 pub struct GameWorld {
-    world: World,
+    world: Arc<RwLock<World>>,
     schedule: Schedule,
 }
 
@@ -65,91 +65,106 @@ impl GameWorld {
         // Add fun systems
         schedule.add_stage("update", update);
 
+        let world = Arc::new(RwLock::new(world));
+
         GameWorld { world, schedule }
     }
 
-    pub fn run(&mut self) {
-        self.schedule.run_once(&mut self.world);
+    pub async fn run(&mut self) {
+        self.schedule.run_once(self.world.write().await.deref_mut());
     }
 
-    pub fn should_shutdown(&self) -> bool {
+    pub async fn should_shutdown(&self) -> bool {
         self.world
+            .read()
+            .await
             .get_resource::<Configuration>()
             .map_or(true, |configuration| configuration.shutdown)
     }
 
-    pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        self.player_action(player, Box::new(Logout {}));
+    pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
+        self.player_action(player, Box::new(Logout {})).await;
 
-        let room = match self.world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player", player),
-        };
+        let mut world = self.world.write().await;
 
-        let name = if let Some(name) = self
-            .world
+        let (name, room) = world
             .get::<Player>(player)
-            .map(|player| player.name.clone())
-        {
-            name
-        } else {
-            bail!("Unable to despawn {:?} at {:?}", player, room);
-        };
+            .map(|player| (player.name.clone(), player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        if let Some(objects) = self
-            .world
+        if let Some(objects) = world
             .get::<Contents>(player)
             .map(|contents| contents.objects.clone())
         {
             for object in objects {
-                self.world.despawn(object);
+                world.despawn(object);
             }
         }
-        self.world.despawn(player);
-        self.world
-            .get_resource_mut::<Players>()
-            .unwrap()
-            .remove(&name);
-        match self.world.get_mut::<Room>(room) {
-            Some(mut room) => room.remove_player(player),
-            None => bail!("{:?} has no Room.", room),
-        }
+        world.despawn(player);
+        world.get_resource_mut::<Players>().unwrap().remove(&name);
+        world
+            .get_mut::<Room>(room)
+            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .remove_player(player);
 
         Ok(())
     }
 
-    pub fn player_action(&mut self, player: Entity, mut action: DynAction) {
-        match self.world.get_mut::<Messages>(player) {
+    pub async fn player_action(&mut self, player: Entity, mut action: DynAction) {
+        let mut world = self.world.write().await;
+
+        match world.get_mut::<Messages>(player) {
             Some(mut messages) => messages.received_input = true,
             None => {
-                self.world.entity_mut(player).insert(Messages {
+                world.entity_mut(player).insert(Messages {
                     received_input: true,
                     queue: VecDeque::new(),
                 });
             }
         }
-        if let Err(e) = action.enact(player, &mut self.world) {
-            queue_message(&mut self.world, player, "Command failed.".to_string());
+
+        if let Err(e) = action.enact(player, &mut world) {
+            queue_message(&mut world, player, "Command failed.".to_string());
             tracing::error!("Action error: {}", e);
         };
     }
 
-    pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
-        let players_with_messages = self
-            .world
+    pub async fn player_online(&self, name: &str) -> bool {
+        self.world
+            .read()
+            .await
+            .get_resource::<Players>()
+            .unwrap()
+            .by_name(name)
+            .is_some()
+    }
+
+    pub async fn spawn_room(&self) -> room::Id {
+        self.world
+            .read()
+            .await
+            .get_resource::<Configuration>()
+            .unwrap()
+            .spawn_room
+    }
+
+    pub async fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
+        let mut world = self.world.write().await;
+
+        let players_with_messages = world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
-            .iter(&self.world)
+            .iter(&world)
             .collect_vec();
 
         let mut outgoing = Vec::new();
 
         for player in players_with_messages {
-            if let Some(messages) = self.world.get::<Messages>(player) {
+            if let Some(messages) = world.get::<Messages>(player) {
                 if messages.queue.is_empty() {
                     continue;
                 }
             }
-            if let Some(mut messages) = self.world.entity_mut(player).remove::<Messages>() {
+            if let Some(mut messages) = world.entity_mut(player).remove::<Messages>() {
                 if !messages.received_input {
                     messages.queue.push_front("\r\n".to_string());
                 }
@@ -160,15 +175,16 @@ impl GameWorld {
         outgoing
     }
 
-    pub fn updates(&mut self) -> Vec<DynUpdate> {
-        self.world.get_resource_mut::<Updates>().unwrap().take()
+    pub async fn updates(&mut self) -> Vec<DynUpdate> {
+        self.world
+            .write()
+            .await
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .take()
     }
 
-    pub fn get_world(&self) -> &World {
-        &self.world
-    }
-
-    pub fn get_world_mut(&mut self) -> &mut World {
-        &mut self.world
+    pub fn get_world(&self) -> Arc<RwLock<World>> {
+        self.world.clone()
     }
 }

@@ -9,8 +9,8 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{
-            queue_message, Action, DynAction, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG,
-            DEFAULT_OBJECT_SHORT,
+            queue_message, Action, DynAction, MissingComponent, DEFAULT_OBJECT_KEYWORD,
+            DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT,
         },
         types::{
             object::{self, Object, Objects},
@@ -104,11 +104,10 @@ struct Create {}
 
 impl Action for Create {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
-
+        let room_entity = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
         let id = world.get_resource_mut::<Objects>().unwrap().next_id();
         let object_entity = world
             .spawn()
@@ -121,20 +120,21 @@ impl Action for Create {
             })
             .id();
 
-        match world.get_mut::<Contents>(room_entity) {
-            Some(mut contents) => contents.objects.push(object_entity),
-            None => bail!("{:?} has no Contents.", room_entity),
-        }
+        world
+            .get_mut::<Contents>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .objects
+            .push(object_entity);
 
         world
             .get_resource_mut::<Objects>()
             .unwrap()
             .insert(id, object_entity);
 
-        let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Room", room_entity),
-        };
+        let room_id = world
+            .get::<Room>(room_entity)
+            .map(|room| room.id)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(persist::object::New::new(id));
@@ -168,8 +168,12 @@ pub struct Drop {
 
 impl Action for Drop {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let pos = match world.get::<Contents>(player) {
-            Some(contents) => contents.objects.iter().position(|object| {
+        let pos = world
+            .get::<Contents>(player)
+            .ok_or_else(|| MissingComponent::new(player, "Contents"))?
+            .objects
+            .iter()
+            .position(|object| {
                 world
                     .get::<Object>(*object)
                     .map(|object| {
@@ -180,25 +184,25 @@ impl Action for Drop {
                         }
                     })
                     .unwrap_or(false)
-            }),
-            None => bail!("{:?} has no Contents.", player),
-        };
+            });
 
         let message = if let Some(pos) = pos {
-            let (player_id, room_entity) = match world.get::<Player>(player) {
-                Some(player) => (player.id, player.room),
-                None => bail!("{:?} has no Player.", player),
-            };
+            let (player_id, room_entity) = world
+                .get::<Player>(player)
+                .map(|player| (player.id, player.room))
+                .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
             let object_entity = world
                 .get_mut::<Contents>(player)
                 .unwrap()
                 .objects
                 .remove(pos);
-            match world.get_mut::<Contents>(room_entity) {
-                Some(mut contents) => contents.objects.push(object_entity),
-                None => bail!("{:?} has no Contents.", room_entity),
-            }
+
+            world
+                .get_mut::<Contents>(room_entity)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+                .objects
+                .push(object_entity);
 
             let object_id = {
                 let mut object = world.get_mut::<Object>(object_entity).unwrap();
@@ -206,10 +210,10 @@ impl Action for Drop {
                 object.id
             };
 
-            let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
-                Some(id) => id,
-                None => bail!("{:?} has no Room", room_entity),
-            };
+            let room_id = world
+                .get::<Room>(room_entity)
+                .map(|room| room.id)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
             updates.queue(persist::player::RemoveObject::new(player_id, object_id));
@@ -247,13 +251,17 @@ pub struct Get {
 
 impl Action for Get {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (player_id, room_entity) = match world.get::<Player>(player) {
-            Some(player) => (player.id, player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (player_id, room_entity) = world
+            .get::<Player>(player)
+            .map(|player| (player.id, player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let pos = match world.get::<Contents>(room_entity) {
-            Some(contents) => contents.objects.iter().position(|object| {
+        let pos = world
+            .get::<Contents>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .objects
+            .iter()
+            .position(|object| {
                 world
                     .get::<Object>(*object)
                     .map(|object| {
@@ -264,9 +272,7 @@ impl Action for Get {
                         }
                     })
                     .unwrap_or(false)
-            }),
-            None => bail!("{:?} has no Contents.", player),
-        };
+            });
 
         let message = if let Some(pos) = pos {
             let object_entity = world
@@ -274,10 +280,12 @@ impl Action for Get {
                 .unwrap()
                 .objects
                 .remove(pos);
-            match world.get_mut::<Contents>(player) {
-                Some(mut contents) => contents.objects.push(object_entity),
-                None => bail!("{:?} has no Contents.", object_entity),
-            }
+
+            world
+                .get_mut::<Contents>(player)
+                .ok_or_else(|| MissingComponent::new(player, "Contents"))?
+                .objects
+                .push(object_entity);
 
             let object_id = {
                 let mut object = world.get_mut::<Object>(object_entity).unwrap();
@@ -285,10 +293,10 @@ impl Action for Get {
                 object.id
             };
 
-            let room_id = match world.get::<Room>(room_entity).map(|room| room.id) {
-                Some(id) => id,
-                None => bail!("{:?} has no Room", room_entity),
-            };
+            let room_id = world
+                .get::<Room>(room_entity)
+                .map(|room| room.id)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
             let mut updates = world.get_resource_mut::<Updates>().unwrap();
             updates.queue(persist::room::RemoveObject::new(room_id, object_id));
@@ -323,10 +331,9 @@ impl Action for Info {
             }
         };
 
-        let object = match world.get::<Object>(object_entity) {
-            Some(object) => object,
-            None => bail!("{:?} has no Object.", object_entity),
-        };
+        let object = world
+            .get::<Object>(object_entity)
+            .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
 
         let mut message = format!("Object {}", self.id);
         message.push_str("\r\n  keywords: ");
@@ -359,24 +366,23 @@ impl Action for Inventory {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
         let mut message = "You have".to_string();
 
-        match world.get::<Contents>(player) {
-            Some(contents) => {
-                if contents.objects.is_empty() {
-                    message.push_str(" nothing.");
-                } else {
-                    message.push(':');
-                    contents
-                        .objects
-                        .iter()
-                        .filter_map(|object| world.get::<Object>(*object))
-                        .map(|object| object.short.as_str())
-                        .for_each(|desc| {
-                            message.push_str("\r\n  ");
-                            message.push_str(desc)
-                        });
-                }
-            }
-            None => bail!("{:?} has no Contents.", player),
+        let contents = world
+            .get::<Contents>(player)
+            .ok_or_else(|| MissingComponent::new(player, "Contents"))?;
+
+        if contents.objects.is_empty() {
+            message.push_str(" nothing.");
+        } else {
+            message.push(':');
+            contents
+                .objects
+                .iter()
+                .filter_map(|object| world.get::<Object>(*object))
+                .map(|object| object.short.as_str())
+                .for_each(|desc| {
+                    message.push_str("\r\n  ");
+                    message.push_str(desc)
+                });
         }
 
         queue_message(world, player, message);
@@ -403,26 +409,27 @@ impl Action for Update {
                 return Ok(());
             };
 
-        let (id, keywords, short, long) = match world.get_mut::<Object>(object_entity) {
-            Some(mut object) => {
-                if self.keywords.is_some() {
-                    object.keywords = self.keywords.take().unwrap();
-                }
-                if self.short.is_some() {
-                    object.short = self.short.take().unwrap();
-                }
-                if self.long.is_some() {
-                    object.long = self.long.take().unwrap();
-                }
+        let (id, keywords, short, long) = {
+            let mut object = world
+                .get_mut::<Object>(object_entity)
+                .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
 
-                (
-                    object.id,
-                    object.keywords.clone(),
-                    object.short.clone(),
-                    object.long.clone(),
-                )
+            if self.keywords.is_some() {
+                object.keywords = self.keywords.take().unwrap();
             }
-            None => bail!("{:?} has no Object.", object_entity),
+            if self.short.is_some() {
+                object.short = self.short.take().unwrap();
+            }
+            if self.long.is_some() {
+                object.long = self.long.take().unwrap();
+            }
+
+            (
+                object.id,
+                object.keywords.clone(),
+                object.short.clone(),
+                object.long.clone(),
+            )
         };
 
         world
@@ -448,19 +455,16 @@ impl Action for Remove {
             None => bail!("Unable to find object by ID: {}", self.id),
         };
 
-        let container = match world
+        let container = world
             .get::<Object>(object_entity)
             .map(|object| object.container)
-        {
-            Some(container) => container,
-            None => bail!("{:?} has no Object", object_entity),
-        };
+            .ok_or_else(|| MissingComponent::new(object_entity, "Object"))?;
 
         world.despawn(object_entity);
-        match world.get_mut::<Contents>(container) {
-            Some(mut room) => room.remove(object_entity),
-            None => bail!("{:?} has no Contents.", container),
-        }
+        world
+            .get_mut::<Contents>(container)
+            .ok_or_else(|| MissingComponent::new(container, "Contents"))?
+            .remove(object_entity);
 
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
         updates.queue(persist::object::Remove::new(self.id));

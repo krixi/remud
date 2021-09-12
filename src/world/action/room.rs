@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -8,7 +7,10 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{movement::Teleport, queue_message, Action, DynAction, DEFAULT_ROOM_DESCRIPTION},
+        action::{
+            movement::Teleport, queue_message, Action, DynAction, MissingComponent,
+            DEFAULT_ROOM_DESCRIPTION,
+        },
         types::{
             object::Object,
             player::Player,
@@ -119,22 +121,21 @@ struct Create {
 
 impl Action for Create {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let current_room = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let current_room = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
         // Confirm a room does not already exist in this direction
         if let Some(direction) = self.direction {
-            match world.get::<Room>(current_room) {
-                Some(room) => {
-                    if room.exits.contains_key(&direction) {
-                        let message = format!("A room already exists {}.", direction.as_to_str());
-                        queue_message(world, player, message);
-                        return Ok(());
-                    }
-                }
-                None => bail!("{:?} has no Room.", current_room),
+            let room = world
+                .get::<Room>(current_room)
+                .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
+
+            if room.exits.contains_key(&direction) {
+                let message = format!("A room already exists {}.", direction.as_to_str());
+                queue_message(world, player, message);
+                return Ok(());
             }
         };
 
@@ -167,10 +168,10 @@ impl Action for Create {
                 .insert(direction, new_room_entity);
         }
 
-        let current_room_id = match world.get::<Room>(current_room).map(|room| room.id) {
-            Some(id) => id,
-            None => bail!("{:?} has no Room.", current_room),
-        };
+        let current_room_id = world
+            .get::<Room>(current_room)
+            .map(|room| room.id)
+            .ok_or_else(|| MissingComponent::new(current_room, "Room"))?;
 
         // Queue update
         let mut updates = world.get_resource_mut::<Updates>().unwrap();
@@ -207,15 +208,14 @@ struct Info {}
 
 impl Action for Info {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let room_entity = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let room = match world.get::<Room>(room_entity) {
-            Some(room) => room,
-            None => bail!("{:?} has no Room.", room_entity),
-        };
+        let room = world
+            .get::<Room>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
         let mut message = format!("Room {}", room.id);
 
@@ -241,20 +241,18 @@ impl Action for Info {
                     .map(|player| player.name.as_str())
             })
             .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
+
         message.push_str("\r\n  objects:");
-        match world.get::<Contents>(room_entity) {
-            Some(contents) => {
-                contents
-                    .objects
-                    .iter()
-                    .filter_map(|object| world.get::<Object>(*object))
-                    .map(|object| (object.id, object.short.as_str()))
-                    .for_each(|(id, name)| {
-                        message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
-                    });
-            }
-            None => bail!("{:?} has no Contents.", room_entity),
-        }
+        world
+            .get::<Contents>(room_entity)
+            .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+            .objects
+            .iter()
+            .filter_map(|object| world.get::<Object>(*object))
+            .map(|object| (object.id, object.short.as_str()))
+            .for_each(|(id, name)| {
+                message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
+            });
 
         queue_message(world, player, message);
 
@@ -281,17 +279,17 @@ impl Action for Link {
             return Ok(());
         };
 
-        let from_room = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let from_room = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let from_id = match world.get_mut::<Room>(from_room) {
-            Some(mut room) => {
-                room.exits.insert(self.direction, destination);
-                room.id
-            }
-            None => bail!("{:?} has no Room", from_room),
+        let from_id = {
+            let mut room = world
+                .get_mut::<Room>(from_room)
+                .ok_or_else(|| MissingComponent::new(from_room, "Room"))?;
+            room.exits.insert(self.direction, destination);
+            room.id
         };
 
         world
@@ -319,20 +317,21 @@ struct Update {
 
 impl Action for Update {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let room_entity = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let (room_id, description) = match world.get_mut::<Room>(room_entity) {
-            Some(mut room) => {
-                if self.description.is_some() {
-                    room.description = self.description.take().unwrap();
-                }
+        let (room_id, description) = {
+            let mut room = world
+                .get_mut::<Room>(room_entity)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
-                (room.id, room.description.clone())
+            if self.description.is_some() {
+                room.description = self.description.take().unwrap();
             }
-            None => bail!("{:?} has no Room.", room_entity),
+
+            (room.id, room.description.clone())
         };
 
         // Queue update
@@ -354,29 +353,32 @@ struct Remove {}
 
 impl Action for Remove {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let (player_id, room_entity) = match world.get::<Player>(player) {
-            Some(player) => (player.id, player.room),
-            None => bail!("{:?} has no Player.", player),
-        };
+        let (player_id, room_entity) = world
+            .get::<Player>(player)
+            .map(|player| (player.id, player.room))
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let (room_id, present_players, present_objects) = match world.get::<Room>(room_entity) {
-            Some(room) => {
-                if room.id == *VOID_ROOM_ID {
-                    let message = "You cannot delete the void room.".to_string();
-                    queue_message(world, player, message);
-                    return Ok(());
-                }
+        let (room_id, present_players, present_objects) = {
+            let room = world
+                .get::<Room>(room_entity)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
 
-                let players = room.players.iter().copied().collect_vec();
-                let objects = if let Some(contents) = world.get::<Contents>(room_entity) {
-                    contents.objects.iter().copied().collect_vec()
-                } else {
-                    bail!("{:?} has no Contents.", room_entity);
-                };
-
-                (room.id, players, objects)
+            if room.id == *VOID_ROOM_ID {
+                let message = "You cannot delete the void room.".to_string();
+                queue_message(world, player, message);
+                return Ok(());
             }
-            None => bail!("{:?} has no Room", room_entity),
+
+            let players = room.players.iter().copied().collect_vec();
+            let objects = world
+                .get::<Contents>(room_entity)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Contents"))?
+                .objects
+                .iter()
+                .copied()
+                .collect_vec();
+
+            (room.id, players, objects)
         };
 
         // Move all players and objects from this room to the void room.
@@ -453,17 +455,17 @@ struct Unlink {
 
 impl Action for Unlink {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()> {
-        let room_entity = match world.get::<Player>(player).map(|player| player.room) {
-            Some(room) => room,
-            None => bail!("{:?} has no Player.", player),
-        };
+        let room_entity = world
+            .get::<Player>(player)
+            .map(|player| player.room)
+            .ok_or_else(|| MissingComponent::new(player, "Player"))?;
 
-        let (room_id, removed) = match world.get_mut::<Room>(room_entity) {
-            Some(mut room) => {
-                let removed = room.exits.remove(&self.direction).is_some();
-                (room.id, removed)
-            }
-            None => bail!("{:?} has no Room.", room_entity),
+        let (room_id, removed) = {
+            let mut room = world
+                .get_mut::<Room>(room_entity)
+                .ok_or_else(|| MissingComponent::new(room_entity, "Room"))?;
+            let removed = room.exits.remove(&self.direction).is_some();
+            (room.id, removed)
         };
 
         let message = if removed {

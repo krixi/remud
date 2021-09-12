@@ -6,6 +6,8 @@ mod player;
 mod room;
 mod system;
 
+use std::fmt;
+
 use bevy_ecs::prelude::*;
 
 use crate::{
@@ -35,6 +37,26 @@ pub type DynAction = Box<dyn Action + Send>;
 pub trait Action {
     fn enact(&mut self, player: Entity, world: &mut World) -> anyhow::Result<()>;
 }
+
+#[derive(Debug)]
+pub struct MissingComponent {
+    entity: Entity,
+    component: &'static str,
+}
+
+impl MissingComponent {
+    pub fn new(entity: Entity, component: &'static str) -> Self {
+        MissingComponent { entity, component }
+    }
+}
+
+impl fmt::Display for MissingComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} has no {}", self.entity, self.component)
+    }
+}
+
+impl std::error::Error for MissingComponent {}
 
 pub fn parse(input: &str) -> Result<DynAction, String> {
     if let Some(message) = input.strip_prefix('\'').map(ToString::to_string) {

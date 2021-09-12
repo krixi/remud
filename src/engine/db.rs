@@ -1,4 +1,6 @@
-use std::{borrow::Cow, collections::HashMap, convert::TryFrom, str::FromStr};
+use std::{
+    borrow::Cow, collections::HashMap, convert::TryFrom, ops::DerefMut, str::FromStr, sync::Arc,
+};
 
 use anyhow::bail;
 use bevy_ecs::prelude::*;
@@ -6,8 +8,10 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
+use tokio::sync::RwLock;
 
 use crate::world::{
+    action::MissingComponent,
     types::{
         object::{self, Object, Objects},
         player::{self, Player, PlayerBundle, Players},
@@ -240,7 +244,13 @@ impl Db {
         Ok(())
     }
 
-    pub async fn load_player(&self, world: &mut World, name: &str) -> anyhow::Result<Entity> {
+    pub async fn load_player(
+        &self,
+        world: Arc<RwLock<World>>,
+        name: &str,
+    ) -> anyhow::Result<Entity> {
+        let mut world = world.write().await;
+
         let player_row =
             sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
                 .bind(name)
@@ -275,17 +285,18 @@ impl Db {
             })
             .id();
 
-        match world.get_mut::<Room>(room) {
-            Some(mut room) => room.players.push(player),
-            None => bail!("{:?} has no Room.", room),
-        }
+        world
+            .get_mut::<Room>(room)
+            .ok_or_else(|| MissingComponent::new(room, "Room"))?
+            .players
+            .push(player);
 
         world
             .get_resource_mut::<Players>()
             .unwrap()
             .insert(player, name.to_string());
 
-        self.load_player_inventory(world, name).await?;
+        self.load_player_inventory(world.deref_mut(), name).await?;
 
         Ok(player)
     }
