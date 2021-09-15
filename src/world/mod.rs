@@ -7,7 +7,7 @@ use std::{
     collections::{HashMap, VecDeque},
     convert::TryFrom,
     ops::DerefMut,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use bevy_app::{EventReader, Events};
@@ -15,7 +15,6 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use rhai::{plugin::*, Scope, AST};
-use tokio::sync::RwLock;
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
@@ -53,8 +52,21 @@ pub enum PlayerEvent {
     Say { room: Entity, message: String },
 }
 
+#[derive(Debug, Clone)]
 pub enum TriggerData {
-    Player(PlayerEvent),
+    Player(Entity, PlayerEvent),
+}
+
+#[export_module]
+mod trigger_api {
+    use crate::world::TriggerData;
+
+    #[rhai_fn(get = "entity", pure)]
+    pub fn get_entity(trigger_data: &mut TriggerData) -> Dynamic {
+        match trigger_data {
+            TriggerData::Player(entity, _) => Dynamic::from(*entity),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -74,7 +86,20 @@ pub enum Trigger {
 }
 
 #[export_module]
-pub mod world_api {}
+pub mod world_api {
+    use std::sync::RwLock;
+
+    use rhai::Dynamic;
+
+    #[rhai_fn(pure)]
+    pub fn player_name(world: &mut Arc<RwLock<World>>, player: Entity) -> Dynamic {
+        if let Some(player) = world.read().unwrap().get::<Player>(player) {
+            Dynamic::from(player.name.clone())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+}
 
 fn player_action_events(
     mut commands: Commands,
@@ -105,15 +130,21 @@ fn player_action_events(
 
             if let Ok(mut executions) = executions_query.get_mut(object_entity) {
                 for script in scripts {
-                    executions
-                        .runs
-                        .push((TriggerData::Player(action.event.clone()), script.clone()));
+                    executions.runs.push((
+                        TriggerData::Player(action.player, action.event.clone()),
+                        script.clone(),
+                    ));
                 }
             } else {
                 let executions = {
                     let runs = scripts
                         .into_iter()
-                        .map(|script| (TriggerData::Player(action.event.clone()), script.clone()))
+                        .map(|script| {
+                            (
+                                TriggerData::Player(action.player, action.event.clone()),
+                                script.clone(),
+                            )
+                        })
                         .collect_vec();
                     ScriptExecutions { runs }
                 };
@@ -178,10 +209,15 @@ impl GameWorld {
         let mut engine = rhai::Engine::default();
         engine.register_type_with_name::<Arc<RwLock<World>>>("World");
         engine.register_global_module(exported_module!(world_api).into());
+        engine.register_global_module(exported_module!(trigger_api).into());
 
         let mut scripts = HashMap::new();
 
-        let script = r#"let output = "Hello there.";"#;
+        let script = r#"
+        let player = TRIGGER.entity;
+        let name = WORLD.player_name(player);
+        let output = `Hello there, ${name}.`;
+        "#;
         let compiled = engine.compile(script).unwrap();
 
         scripts.insert(Script("say_hi".to_string()), compiled);
@@ -195,10 +231,11 @@ impl GameWorld {
     }
 
     pub async fn run(&mut self) {
-        self.schedule.run_once(self.world.write().await.deref_mut());
+        self.schedule
+            .run_once(self.world.write().unwrap().deref_mut());
 
         let executions = {
-            let mut world = self.world.write().await;
+            let mut world = self.world.write().unwrap();
             let entities = world
                 .query_filtered::<Entity, With<ScriptExecutions>>()
                 .iter(&world)
@@ -222,7 +259,9 @@ impl GameWorld {
             for (trigger, script) in execution.runs {
                 if let Some(ast) = self.scripts.get(&script) {
                     let mut scope = Scope::new();
+                    scope.push_constant("SELF", entity);
                     scope.push_constant("WORLD", self.world.clone());
+                    scope.push_constant("TRIGGER", trigger);
                     self.engine.consume_ast_with_scope(&mut scope, ast).unwrap();
                     let output = scope.get_value::<String>("output");
                     tracing::info!("script output: {:?}", output);
@@ -234,7 +273,7 @@ impl GameWorld {
     pub async fn should_shutdown(&self) -> bool {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Configuration>()
             .map_or(true, |configuration| configuration.shutdown)
     }
@@ -242,7 +281,7 @@ impl GameWorld {
     pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         self.player_action(player, Box::new(Logout {})).await;
 
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         let (name, room) = world
             .get::<Player>(player)
@@ -268,7 +307,7 @@ impl GameWorld {
     }
 
     pub async fn player_action(&mut self, player: Entity, mut action: DynAction) {
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         match world.get_mut::<Messages>(player) {
             Some(mut messages) => messages.received_input = true,
@@ -289,7 +328,7 @@ impl GameWorld {
     pub async fn player_online(&self, name: &str) -> bool {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Players>()
             .unwrap()
             .by_name(name)
@@ -299,14 +338,14 @@ impl GameWorld {
     pub async fn spawn_room(&self) -> room::Id {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Configuration>()
             .unwrap()
             .spawn_room
     }
 
     pub async fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         let players_with_messages = world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
@@ -335,7 +374,7 @@ impl GameWorld {
     pub async fn updates(&mut self) -> Vec<DynUpdate> {
         self.world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<Updates>()
             .unwrap()
             .take()

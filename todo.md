@@ -17,3 +17,11 @@
 - allow agents to wander around regions
 
 - consider refactoring player actions to events + systems
+
+- refactor player.name and object.short to Named component
+
+- refactor object.long room.description to Description component
+
+- refactor player.room to Location component
+
+- refactor object.container to Location and Container components
