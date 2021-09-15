@@ -1146,12 +1146,38 @@ dependencies = [
  "lazy_static",
  "rand",
  "regex",
+ "rhai",
  "sqlx",
  "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rhai"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffe77a5cb19d8925c19c4f93fe002801eb3697cf19f714ae230364ef3518310a"
+dependencies = [
+ "ahash",
+ "instant",
+ "num-traits",
+ "rhai_codegen",
+ "smallvec",
+ "smartstring",
+]
+
+[[package]]
+name = "rhai_codegen"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a340b02636b22e61d94ee53e6bcc2d01d339958766b2003b860d178ccf5ae5e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1265,6 +1291,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 
 [[package]]
+name = "smartstring"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31aa6a31c0c2b21327ce875f7e8952322acfcfd0c27569a6e18a647281352c9b"
+dependencies = [
+ "static_assertions",
+]
+
+[[package]]
 name = "sqlformat"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1359,6 +1394,12 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stringprep"

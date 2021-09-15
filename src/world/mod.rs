@@ -3,12 +3,18 @@
 pub mod action;
 pub mod types;
 
-use std::{collections::VecDeque, convert::TryFrom, ops::DerefMut, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::TryFrom,
+    ops::DerefMut,
+    sync::Arc,
+};
 
 use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use rhai::{plugin::*, Scope, AST};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -16,6 +22,7 @@ use crate::{
     world::{
         action::{queue_message, DynAction, Logout},
         types::{
+            object::Object,
             player::{Messages, Player, Players},
             room::{self, Room, Rooms},
             Configuration, Contents,
@@ -28,31 +35,105 @@ lazy_static! {
 }
 
 #[derive(Debug)]
-pub struct PlayerEvent {
+pub struct PlayerAction {
     player: Entity,
-    event: PlayerEventKind,
+    event: PlayerEvent,
 }
 
-#[derive(Debug)]
-pub enum PlayerEventKind {
+impl PlayerAction {
+    fn trigger(&self) -> Trigger {
+        match self.event {
+            PlayerEvent::Say { .. } => Trigger::Say,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PlayerEvent {
     Say { room: Entity, message: String },
 }
 
-fn player_events(mut events: EventReader<PlayerEvent>) {
-    for event in events.iter() {
-        tracing::info!("Player event: {:?}", event);
+pub enum TriggerData {
+    Player(PlayerEvent),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Script(pub String);
+
+pub struct ScriptExecutions {
+    runs: Vec<(TriggerData, Script)>,
+}
+
+pub struct ScriptTriggers {
+    list: Vec<(Trigger, Script)>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    Say,
+}
+
+#[export_module]
+pub mod world_api {}
+
+fn player_action_events(
+    mut commands: Commands,
+    mut actions: EventReader<PlayerAction>,
+    objects_query: Query<(Entity, &Object, &ScriptTriggers)>,
+    mut executions_query: Query<&mut ScriptExecutions>,
+) {
+    for action in actions.iter() {
+        let room = match action.event {
+            PlayerEvent::Say { room, .. } => Some(room),
+        };
+
+        for (object_entity, object, script_triggers) in objects_query.iter() {
+            if let Some(room) = room {
+                if object.container != room {
+                    continue;
+                }
+            }
+
+            let trigger = action.trigger();
+
+            let scripts = script_triggers
+                .list
+                .iter()
+                .filter(|(script_trigger, _)| trigger == *script_trigger)
+                .map(|(_, script)| script)
+                .collect_vec();
+
+            if let Ok(mut executions) = executions_query.get_mut(object_entity) {
+                for script in scripts {
+                    executions
+                        .runs
+                        .push((TriggerData::Player(action.event.clone()), script.clone()));
+                }
+            } else {
+                let executions = {
+                    let runs = scripts
+                        .into_iter()
+                        .map(|script| (TriggerData::Player(action.event.clone()), script.clone()))
+                        .collect_vec();
+                    ScriptExecutions { runs }
+                };
+                commands.entity(object_entity).insert(executions);
+            };
+        }
     }
 }
 
 pub struct GameWorld {
     world: Arc<RwLock<World>>,
     schedule: Schedule,
+    engine: rhai::Engine,
+    scripts: HashMap<Script, AST>,
 }
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Add events
-        world.insert_resource(Events::<PlayerEvent>::default());
+        world.insert_resource(Events::<PlayerAction>::default());
 
         // Add resources
         world.insert_resource(Updates::default());
@@ -83,10 +164,10 @@ impl GameWorld {
         // Create schedule
         let mut schedule = Schedule::default();
         let mut first = SystemStage::parallel();
-        first.add_system(Events::<PlayerEvent>::update_system.system());
+        first.add_system(Events::<PlayerAction>::update_system.system());
 
         let mut update = SystemStage::parallel();
-        update.add_system(player_events.system());
+        update.add_system(player_action_events.system());
 
         // Add fun systems
         schedule.add_stage("first", first);
@@ -94,11 +175,60 @@ impl GameWorld {
 
         let world = Arc::new(RwLock::new(world));
 
-        GameWorld { world, schedule }
+        let mut engine = rhai::Engine::default();
+        engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+        engine.register_global_module(exported_module!(world_api).into());
+
+        let mut scripts = HashMap::new();
+
+        let script = r#"let output = "Hello there.";"#;
+        let compiled = engine.compile(script).unwrap();
+
+        scripts.insert(Script("say_hi".to_string()), compiled);
+
+        GameWorld {
+            world,
+            schedule,
+            engine,
+            scripts,
+        }
     }
 
     pub async fn run(&mut self) {
         self.schedule.run_once(self.world.write().await.deref_mut());
+
+        let executions = {
+            let mut world = self.world.write().await;
+            let entities = world
+                .query_filtered::<Entity, With<ScriptExecutions>>()
+                .iter(&world)
+                .collect_vec();
+
+            entities
+                .into_iter()
+                .map(|entity| {
+                    (
+                        entity,
+                        world
+                            .entity_mut(entity)
+                            .remove::<ScriptExecutions>()
+                            .unwrap(),
+                    )
+                })
+                .collect_vec()
+        };
+
+        for (entity, execution) in executions {
+            for (trigger, script) in execution.runs {
+                if let Some(ast) = self.scripts.get(&script) {
+                    let mut scope = Scope::new();
+                    scope.push_constant("WORLD", self.world.clone());
+                    self.engine.consume_ast_with_scope(&mut scope, ast).unwrap();
+                    let output = scope.get_value::<String>("output");
+                    tracing::info!("script output: {:?}", output);
+                }
+            }
+        }
     }
 
     pub async fn should_shutdown(&self) -> bool {

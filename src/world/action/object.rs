@@ -18,6 +18,7 @@ use crate::{
             room::Room,
             Contents,
         },
+        Script, ScriptTriggers, Trigger,
     },
 };
 
@@ -159,6 +160,9 @@ impl Action for Create {
             .map(|player| player.room)
             .ok_or(action::Error::MissingComponent(player, "Player"))?;
         let id = world.get_resource_mut::<Objects>().unwrap().next_id();
+        let triggers = ScriptTriggers {
+            list: vec![(Trigger::Say, Script("say_hi".to_string()))],
+        };
         let object_entity = world
             .spawn()
             .insert(Object {
@@ -169,6 +173,7 @@ impl Action for Create {
                 short: DEFAULT_OBJECT_SHORT.to_string(),
                 long: DEFAULT_OBJECT_LONG.to_string(),
             })
+            .insert(triggers)
             .id();
 
         world

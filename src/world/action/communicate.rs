@@ -10,7 +10,7 @@ use crate::{
             player::{Player, Players},
             room::Room,
         },
-        PlayerEvent, PlayerEventKind,
+        PlayerAction, PlayerEvent,
     },
 };
 
@@ -99,11 +99,11 @@ impl Action for Say {
         queue_message(world, player, message);
 
         world
-            .get_resource_mut::<Events<PlayerEvent>>()
+            .get_resource_mut::<Events<PlayerAction>>()
             .unwrap()
-            .send(PlayerEvent {
+            .send(PlayerAction {
                 player,
-                event: PlayerEventKind::Say {
+                event: PlayerEvent::Say {
                     room: room_entity,
                     message: self.message.clone(),
                 },
