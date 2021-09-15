@@ -5,6 +5,7 @@ pub mod types;
 
 use std::{collections::VecDeque, convert::TryFrom, ops::DerefMut, sync::Arc};
 
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -26,6 +27,23 @@ lazy_static! {
     pub static ref VOID_ROOM_ID: room::Id = room::Id::try_from(0).unwrap();
 }
 
+#[derive(Debug)]
+pub struct PlayerEvent {
+    player: Entity,
+    event: PlayerEventKind,
+}
+
+#[derive(Debug)]
+pub enum PlayerEventKind {
+    Say { room: Entity, message: String },
+}
+
+fn player_events(mut events: EventReader<PlayerEvent>) {
+    for event in events.iter() {
+        tracing::info!("Player event: {:?}", event);
+    }
+}
+
 pub struct GameWorld {
     world: Arc<RwLock<World>>,
     schedule: Schedule,
@@ -33,6 +51,9 @@ pub struct GameWorld {
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
+        // Add events
+        world.insert_resource(Events::<PlayerEvent>::default());
+
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
@@ -61,9 +82,15 @@ impl GameWorld {
 
         // Create schedule
         let mut schedule = Schedule::default();
-        let update = SystemStage::parallel();
+        let mut first = SystemStage::parallel();
+        first.add_system(Events::<PlayerEvent>::update_system.system());
+
+        let mut update = SystemStage::parallel();
+        update.add_system(player_events.system());
+
         // Add fun systems
-        schedule.add_stage("update", update);
+        schedule.add_stage("first", first);
+        schedule.add_stage_after("first", "update", update);
 
         let world = Arc::new(RwLock::new(world));
 

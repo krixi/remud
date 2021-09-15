@@ -1,3 +1,4 @@
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -9,6 +10,7 @@ use crate::{
             player::{Player, Players},
             room::Room,
         },
+        PlayerEvent, PlayerEventKind,
     },
 };
 
@@ -95,6 +97,17 @@ impl Action for Say {
 
         let message = format!("You say \"{}\"", self.message);
         queue_message(world, player, message);
+
+        world
+            .get_resource_mut::<Events<PlayerEvent>>()
+            .unwrap()
+            .send(PlayerEvent {
+                player,
+                event: PlayerEventKind::Say {
+                    room: room_entity,
+                    message: self.message.clone(),
+                },
+            });
 
         Ok(())
     }

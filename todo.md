@@ -15,3 +15,5 @@
 - add agents
 
 - allow agents to wander around regions
+
+- consider refactoring player actions to events + systems
