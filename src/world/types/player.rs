@@ -6,7 +6,7 @@ use std::{
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::Contents;
+use crate::world::types::{self, Contents, Location, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -35,8 +35,12 @@ impl error::Error for IdParseError {}
 
 #[derive(Bundle)]
 pub struct PlayerBundle {
+    pub id: types::Id,
     pub player: Player,
+    pub name: Named,
+    pub location: Location,
     pub contents: Contents,
+    pub messages: Messages,
 }
 
 pub struct Player {
@@ -45,6 +49,7 @@ pub struct Player {
     pub room: Entity,
 }
 
+#[derive(Default)]
 pub struct Messages {
     pub received_input: bool,
     pub queue: VecDeque<String>,
@@ -61,7 +66,8 @@ impl Messages {
         }
     }
 
-    pub fn queue(&mut self, message: String) {
+    pub fn queue(&mut self, mut message: String) {
+        message.push_str("\r\n");
         self.queue.push_back(message);
     }
 }

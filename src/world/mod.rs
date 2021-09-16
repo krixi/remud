@@ -3,18 +3,46 @@
 pub mod action;
 pub mod types;
 
-use std::{collections::VecDeque, convert::TryFrom, ops::DerefMut, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::TryFrom,
+    ops::DerefMut,
+    sync::{Arc, RwLock},
+};
 
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use tokio::sync::RwLock;
+use rhai::{plugin::*, Scope, AST};
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
     world::{
-        action::{queue_message, DynAction, Logout},
+        action::{
+            communicate::{emote_system, say_system, send_system},
+            immortal::{
+                object::{
+                    object_clear_flags_system, object_create_system, object_info_system,
+                    object_remove_system, object_set_flags_system,
+                    object_update_description_system, object_update_keywords_system,
+                    object_update_name_system,
+                },
+                player::player_info_system,
+                room::{
+                    room_create_system, room_info_system, room_link_system, room_remove_system,
+                    room_unlink_system, room_update_description_system,
+                },
+            },
+            movement::{move_system, teleport_system},
+            object::{drop_system, get_system, inventory_system},
+            observe::{exits_system, look_at_system, look_system, who_system},
+            queue_message,
+            system::{login_system, logout_system, shutdown_system, Logout},
+            ActionEvent, DynAction,
+        },
         types::{
+            object::Object,
             player::{Messages, Player, Players},
             room::{self, Room, Rooms},
             Configuration, Contents,
@@ -26,13 +54,140 @@ lazy_static! {
     pub static ref VOID_ROOM_ID: room::Id = room::Id::try_from(0).unwrap();
 }
 
+#[derive(Debug)]
+pub struct PlayerAction {
+    player: Entity,
+    event: PlayerEvent,
+}
+
+impl PlayerAction {
+    fn trigger(&self) -> Trigger {
+        match self.event {
+            PlayerEvent::Say { .. } => Trigger::Say,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PlayerEvent {
+    Say { room: Entity, message: String },
+}
+
+#[derive(Debug, Clone)]
+pub enum TriggerData {
+    Player(Entity, PlayerEvent),
+}
+
+#[export_module]
+mod trigger_api {
+    use crate::world::TriggerData;
+
+    #[rhai_fn(get = "entity", pure)]
+    pub fn get_entity(trigger_data: &mut TriggerData) -> Dynamic {
+        match trigger_data {
+            TriggerData::Player(entity, _) => Dynamic::from(*entity),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Script(pub String);
+
+pub struct ScriptExecutions {
+    runs: Vec<(TriggerData, Script)>,
+}
+
+pub struct ScriptTriggers {
+    list: Vec<(Trigger, Script)>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    Say,
+}
+
+#[export_module]
+pub mod world_api {
+    use std::sync::RwLock;
+
+    use rhai::Dynamic;
+
+    #[rhai_fn(pure)]
+    pub fn player_name(world: &mut Arc<RwLock<World>>, player: Entity) -> Dynamic {
+        if let Some(player) = world.read().unwrap().get::<Player>(player) {
+            Dynamic::from(player.name.clone())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+}
+
+fn player_action_events(
+    mut commands: Commands,
+    mut actions: EventReader<PlayerAction>,
+    objects_query: Query<(Entity, &Object, &ScriptTriggers)>,
+    mut executions_query: Query<&mut ScriptExecutions>,
+) {
+    for action in actions.iter() {
+        let room = match action.event {
+            PlayerEvent::Say { room, .. } => Some(room),
+        };
+
+        for (object_entity, object, script_triggers) in objects_query.iter() {
+            if let Some(room) = room {
+                if object.container != room {
+                    continue;
+                }
+            }
+
+            let trigger = action.trigger();
+
+            let scripts = script_triggers
+                .list
+                .iter()
+                .filter(|(script_trigger, _)| trigger == *script_trigger)
+                .map(|(_, script)| script)
+                .collect_vec();
+
+            if let Ok(mut executions) = executions_query.get_mut(object_entity) {
+                for script in scripts {
+                    executions.runs.push((
+                        TriggerData::Player(action.player, action.event.clone()),
+                        script.clone(),
+                    ));
+                }
+            } else {
+                let executions = {
+                    let runs = scripts
+                        .into_iter()
+                        .map(|script| {
+                            (
+                                TriggerData::Player(action.player, action.event.clone()),
+                                script.clone(),
+                            )
+                        })
+                        .collect_vec();
+                    ScriptExecutions { runs }
+                };
+                commands.entity(object_entity).insert(executions);
+            };
+        }
+    }
+}
+
 pub struct GameWorld {
     world: Arc<RwLock<World>>,
     schedule: Schedule,
+    engine: rhai::Engine,
+    scripts: HashMap<Script, AST>,
 }
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
+        // Add events
+        world.insert_resource(Events::<PlayerAction>::default());
+        world.insert_resource(Events::<ActionEvent>::default());
+
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
@@ -61,23 +216,118 @@ impl GameWorld {
 
         // Create schedule
         let mut schedule = Schedule::default();
-        let update = SystemStage::parallel();
+        let mut first = SystemStage::parallel();
+        first.add_system(Events::<PlayerAction>::update_system.system());
+        first.add_system(Events::<ActionEvent>::update_system.system());
+
+        let mut update = SystemStage::parallel();
+        update.add_system(player_action_events.system());
+
+        update.add_system(drop_system.system());
+        update.add_system(emote_system.system());
+        update.add_system(exits_system.system());
+        update.add_system(get_system.system());
+        update.add_system(inventory_system.system());
+        update.add_system(login_system.system());
+        update.add_system(logout_system.system());
+        update.add_system(look_system.system());
+        update.add_system(look_at_system.system());
+        update.add_system(move_system.system());
+        update.add_system(object_clear_flags_system.system());
+        update.add_system(object_create_system.system());
+        update.add_system(object_info_system.system());
+        update.add_system(object_update_description_system.system());
+        update.add_system(object_update_keywords_system.system());
+        update.add_system(object_update_name_system.system());
+        update.add_system(object_remove_system.system());
+        update.add_system(object_set_flags_system.system());
+        update.add_system(player_info_system.system());
+        update.add_system(room_create_system.system());
+        update.add_system(room_info_system.system());
+        update.add_system(room_link_system.system());
+        update.add_system(room_update_description_system.system());
+        update.add_system(room_unlink_system.system());
+        update.add_system(room_remove_system.system());
+        update.add_system(say_system.system());
+        update.add_system(send_system.system());
+        update.add_system(shutdown_system.system());
+        update.add_system(teleport_system.system());
+        update.add_system(who_system.system());
+
         // Add fun systems
-        schedule.add_stage("update", update);
+        schedule.add_stage("first", first);
+        schedule.add_stage_after("first", "update", update);
 
         let world = Arc::new(RwLock::new(world));
 
-        GameWorld { world, schedule }
+        let mut engine = rhai::Engine::default();
+        engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+        engine.register_global_module(exported_module!(world_api).into());
+        engine.register_global_module(exported_module!(trigger_api).into());
+
+        let mut scripts = HashMap::new();
+
+        let script = r#"
+        let player = TRIGGER.entity;
+        let name = WORLD.player_name(player);
+        let output = `Hello there, ${name}.`;
+        "#;
+        let compiled = engine.compile(script).unwrap();
+
+        scripts.insert(Script("say_hi".to_string()), compiled);
+
+        GameWorld {
+            world,
+            schedule,
+            engine,
+            scripts,
+        }
     }
 
     pub async fn run(&mut self) {
-        self.schedule.run_once(self.world.write().await.deref_mut());
+        self.schedule
+            .run_once(self.world.write().unwrap().deref_mut());
+
+        let executions = {
+            let mut world = self.world.write().unwrap();
+            let entities = world
+                .query_filtered::<Entity, With<ScriptExecutions>>()
+                .iter(&world)
+                .collect_vec();
+
+            entities
+                .into_iter()
+                .map(|entity| {
+                    (
+                        entity,
+                        world
+                            .entity_mut(entity)
+                            .remove::<ScriptExecutions>()
+                            .unwrap(),
+                    )
+                })
+                .collect_vec()
+        };
+
+        for (entity, execution) in executions {
+            for (trigger, script) in execution.runs {
+                if let Some(ast) = self.scripts.get(&script) {
+                    let mut scope = Scope::new();
+                    scope.push_constant("SELF", entity);
+                    scope.push_constant("WORLD", self.world.clone());
+                    scope.push_constant("TRIGGER", trigger);
+                    self.engine.consume_ast_with_scope(&mut scope, ast).unwrap();
+                    let output = scope.get_value::<String>("output");
+                    tracing::info!("script output: {:?}", output);
+                }
+            }
+        }
     }
 
     pub async fn should_shutdown(&self) -> bool {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Configuration>()
             .map_or(true, |configuration| configuration.shutdown)
     }
@@ -85,7 +335,7 @@ impl GameWorld {
     pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         self.player_action(player, Box::new(Logout {})).await;
 
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         let (name, room) = world
             .get::<Player>(player)
@@ -111,7 +361,7 @@ impl GameWorld {
     }
 
     pub async fn player_action(&mut self, player: Entity, mut action: DynAction) {
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         match world.get_mut::<Messages>(player) {
             Some(mut messages) => messages.received_input = true,
@@ -132,7 +382,7 @@ impl GameWorld {
     pub async fn player_online(&self, name: &str) -> bool {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Players>()
             .unwrap()
             .by_name(name)
@@ -142,14 +392,14 @@ impl GameWorld {
     pub async fn spawn_room(&self) -> room::Id {
         self.world
             .read()
-            .await
+            .unwrap()
             .get_resource::<Configuration>()
             .unwrap()
             .spawn_room
     }
 
     pub async fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
-        let mut world = self.world.write().await;
+        let mut world = self.world.write().unwrap();
 
         let players_with_messages = world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
@@ -159,17 +409,22 @@ impl GameWorld {
         let mut outgoing = Vec::new();
 
         for player in players_with_messages {
-            if let Some(messages) = world.get::<Messages>(player) {
-                if messages.queue.is_empty() {
-                    continue;
-                }
+            let mut messages = world.get_mut::<Messages>(player).unwrap();
+
+            if messages.queue.is_empty() {
+                continue;
             }
-            if let Some(mut messages) = world.entity_mut(player).remove::<Messages>() {
-                if !messages.received_input {
-                    messages.queue.push_front("\r\n".to_string());
-                }
-                outgoing.push((player, messages.queue));
+
+            let mut queue = VecDeque::new();
+            std::mem::swap(&mut queue, &mut messages.queue);
+
+            if !messages.received_input {
+                queue.push_front("\r\n".to_string());
             }
+
+            messages.received_input = false;
+
+            outgoing.push((player, queue));
         }
 
         outgoing
@@ -178,7 +433,7 @@ impl GameWorld {
     pub async fn updates(&mut self) -> Vec<DynUpdate> {
         self.world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<Updates>()
             .unwrap()
             .take()

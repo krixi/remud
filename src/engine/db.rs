@@ -1,5 +1,9 @@
 use std::{
-    borrow::Cow, collections::HashMap, convert::TryFrom, ops::DerefMut, str::FromStr, sync::Arc,
+    borrow::Cow,
+    collections::HashMap,
+    convert::TryFrom,
+    str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 use anyhow::bail;
@@ -8,16 +12,15 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
-use tokio::sync::RwLock;
 
 use crate::world::{
     action::{self},
     types::{
         self,
-        object::{self, Object, Objects},
-        player::{self, Player, PlayerBundle, Players},
+        object::{self, Object, ObjectBundle, Objects},
+        player::{self, Messages, Player, PlayerBundle, Players},
         room::{self, Direction, Room, RoomBundle, Rooms},
-        Configuration, Contents,
+        Configuration, Container, Contents, Description, Keywords, Location, Named,
     },
     VOID_ROOM_ID,
 };
@@ -149,6 +152,10 @@ impl Db {
             let entity = world
                 .spawn()
                 .insert_bundle(RoomBundle {
+                    id: types::Id::Room(room::Id::try_from(id)?),
+                    description: Description {
+                        text: room.description.clone(),
+                    },
                     room: Room::try_from(room)?,
                     contents: Contents::default(),
                 })
@@ -218,16 +225,34 @@ impl Db {
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
-            let object = Object::new(
-                id,
-                types::object::Flags::from_bits_truncate(object_row.flags),
-                room_entity,
-                object_row.keywords(),
-                object_row.short,
-                object_row.long,
-            );
+            let bundle = ObjectBundle {
+                id: types::Id::Object(id),
+                flags: types::Flags {
+                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                },
+                container: Container {
+                    entity: room_entity,
+                },
+                name: Named {
+                    name: object_row.short.clone(),
+                },
+                description: Description {
+                    text: object_row.long.clone(),
+                },
+                keywords: Keywords {
+                    list: object_row.keywords(),
+                },
+                object: Object::new(
+                    id,
+                    types::object::Flags::from_bits_truncate(object_row.flags),
+                    room_entity,
+                    object_row.keywords(),
+                    object_row.short,
+                    object_row.long,
+                ),
+            };
 
-            let object_entity = world.spawn().insert(object).id();
+            let object_entity = world.spawn().insert_bundle(bundle).id();
             match world.get_mut::<Contents>(room_entity) {
                 Some(mut contents) => contents.objects.push(object_entity),
                 None => bail!("Failed to retrieve Room for room {:?}", room_entity),
@@ -251,59 +276,73 @@ impl Db {
         world: Arc<RwLock<World>>,
         name: &str,
     ) -> anyhow::Result<Entity> {
-        let mut world = world.write().await;
+        let player = {
+            let player_row =
+                sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
+                    .bind(name)
+                    .fetch_one(&self.pool)
+                    .await?;
 
-        let player_row =
-            sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
-                .bind(name)
-                .fetch_one(&self.pool)
-                .await?;
+            let mut world = world.write().unwrap();
 
-        let id = match player::Id::try_from(player_row.id) {
-            Ok(id) => id,
-            Err(_) => bail!("Failed to deserialize object ID: {}", player_row.id),
+            let id = match player::Id::try_from(player_row.id) {
+                Ok(id) => id,
+                Err(_) => bail!("Failed to deserialize object ID: {}", player_row.id),
+            };
+
+            let room = room::Id::try_from(player_row.room)
+                .ok()
+                .and_then(|id| world.get_resource::<Rooms>().unwrap().by_id(id))
+                .unwrap_or_else(|| {
+                    world
+                        .get_resource::<Rooms>()
+                        .unwrap()
+                        .by_id(*VOID_ROOM_ID)
+                        .unwrap()
+                });
+
+            let player = world
+                .spawn()
+                .insert_bundle(PlayerBundle {
+                    name: Named {
+                        name: name.to_string(),
+                    },
+                    location: Location { room },
+                    player: Player {
+                        id,
+                        name: name.to_string(),
+                        room,
+                    },
+                    contents: Contents::default(),
+                    messages: Messages::default(),
+                    id: types::Id::Player(id),
+                })
+                .id();
+
+            world
+                .get_mut::<Room>(room)
+                .ok_or(action::Error::MissingComponent(room, "Room"))?
+                .players
+                .push(player);
+
+            world
+                .get_resource_mut::<Players>()
+                .unwrap()
+                .insert(player, name.to_string());
+
+            player
         };
 
-        let room = room::Id::try_from(player_row.room)
-            .ok()
-            .and_then(|id| world.get_resource::<Rooms>().unwrap().by_id(id))
-            .unwrap_or_else(|| {
-                world
-                    .get_resource::<Rooms>()
-                    .unwrap()
-                    .by_id(*VOID_ROOM_ID)
-                    .unwrap()
-            });
-
-        let player = world
-            .spawn()
-            .insert_bundle(PlayerBundle {
-                player: Player {
-                    id,
-                    name: name.to_string(),
-                    room,
-                },
-                contents: Contents::default(),
-            })
-            .id();
-
-        world
-            .get_mut::<Room>(room)
-            .ok_or(action::Error::MissingComponent(room, "Room"))?
-            .players
-            .push(player);
-
-        world
-            .get_resource_mut::<Players>()
-            .unwrap()
-            .insert(player, name.to_string());
-
-        self.load_player_inventory(world.deref_mut(), name).await?;
+        self.load_player_inventory(world, name).await?;
 
         Ok(player)
     }
 
-    async fn load_player_inventory(&self, world: &mut World, name: &str) -> anyhow::Result<()> {
+    async fn load_player_inventory(
+        &self,
+        world: Arc<RwLock<World>>,
+        name: &str,
+    ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, flags, player_id AS container, keywords, short, long
                 FROM objects
@@ -315,6 +354,7 @@ impl Db {
         .fetch(&self.pool);
 
         while let Some(object_row) = results.try_next().await? {
+            let mut world = world.write().unwrap();
             let player_entity = match world.get_resource::<Players>().unwrap().by_name(name) {
                 Some(room) => room,
                 None => bail!("Failed to retrieve Player {}.", name),
@@ -325,16 +365,34 @@ impl Db {
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
-            let object = Object::new(
-                id,
-                types::object::Flags::from_bits_truncate(object_row.flags),
-                player_entity,
-                object_row.keywords(),
-                object_row.short,
-                object_row.long,
-            );
+            let bundle = ObjectBundle {
+                id: types::Id::Object(id),
+                flags: types::Flags {
+                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                },
+                container: Container {
+                    entity: player_entity,
+                },
+                name: Named {
+                    name: object_row.short.clone(),
+                },
+                description: Description {
+                    text: object_row.long.clone(),
+                },
+                keywords: Keywords {
+                    list: object_row.keywords(),
+                },
+                object: Object::new(
+                    id,
+                    types::object::Flags::from_bits_truncate(object_row.flags),
+                    player_entity,
+                    object_row.keywords(),
+                    object_row.short,
+                    object_row.long,
+                ),
+            };
 
-            let object_entity = world.spawn().insert(object).id();
+            let object_entity = world.spawn().insert_bundle(bundle).id();
             world
                 .get_mut::<Contents>(player_entity)
                 .unwrap()

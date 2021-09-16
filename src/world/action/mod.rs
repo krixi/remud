@@ -1,10 +1,9 @@
-mod communicate;
-mod movement;
-mod object;
-mod observe;
-mod player;
-mod room;
-mod system;
+pub mod communicate;
+pub mod immortal;
+pub mod movement;
+pub mod object;
+pub mod observe;
+pub mod system;
 
 use bevy_ecs::prelude::*;
 use thiserror::Error;
@@ -19,12 +18,13 @@ use crate::{
             observe::{parse_look, Exits, Who},
             system::Shutdown,
         },
-        types::{player::Messages, room::Direction},
+        types::{
+            self,
+            player::Messages,
+            room::{self, Direction},
+        },
     },
 };
-
-pub use observe::Look;
-pub use system::{Login, Logout};
 
 pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
@@ -33,8 +33,127 @@ pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely unintere
 
 pub type DynAction = Box<dyn Action + Send>;
 
+pub enum ActionEvent {
+    Drop {
+        entity: Entity,
+        keywords: Vec<String>,
+    },
+    Emote {
+        entity: Entity,
+        message: String,
+    },
+    Exits {
+        entity: Entity,
+    },
+    Get {
+        entity: Entity,
+        keywords: Vec<String>,
+    },
+    Inventory {
+        entity: Entity,
+    },
+    Login {
+        entity: Entity,
+    },
+    Logout {
+        entity: Entity,
+    },
+    Look {
+        entity: Entity,
+        direction: Option<Direction>,
+    },
+    LookAt {
+        entity: Entity,
+        keywords: Vec<String>,
+    },
+    Move {
+        entity: Entity,
+        direction: Direction,
+    },
+    ObjectClearFlags {
+        entity: Entity,
+        id: types::object::Id,
+        flags: Vec<String>,
+    },
+    ObjectCreate {
+        entity: Entity,
+    },
+    ObjectInfo {
+        entity: Entity,
+        id: types::object::Id,
+    },
+    ObjectRemove {
+        entity: Entity,
+        id: types::object::Id,
+    },
+    ObjectSetFlags {
+        entity: Entity,
+        id: types::object::Id,
+        flags: Vec<String>,
+    },
+    ObjectUpdateDescription {
+        entity: Entity,
+        id: types::object::Id,
+        description: String,
+    },
+    ObjectUpdateKeywords {
+        entity: Entity,
+        id: types::object::Id,
+        keywords: Vec<String>,
+    },
+    ObjectUpdateName {
+        entity: Entity,
+        id: types::object::Id,
+        name: String,
+    },
+    PlayerInfo {
+        entity: Entity,
+        name: String,
+    },
+    RoomCreate {
+        entity: Entity,
+        direction: Option<Direction>,
+    },
+    RoomInfo {
+        entity: Entity,
+    },
+    RoomLink {
+        entity: Entity,
+        direction: Direction,
+        id: room::Id,
+    },
+    RoomUpdateDescription {
+        entity: Entity,
+        description: String,
+    },
+    RoomRemove {
+        entity: Entity,
+    },
+    RoomUnlink {
+        entity: Entity,
+        direction: Direction,
+    },
+    Say {
+        entity: Entity,
+        message: String,
+    },
+    Send {
+        entity: Entity,
+        recipient: String,
+        message: String,
+    },
+    Shutdown,
+    Teleport {
+        entity: Entity,
+        room_id: room::Id,
+    },
+    Who {
+        entity: Entity,
+    },
+}
+
 pub trait Action {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), Error>;
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), Error>;
 }
 
 #[derive(Error, Debug)]
@@ -70,9 +189,9 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "look" => parse_look(tokenizer),
             "me" => parse_me(tokenizer),
             "north" => Ok(Move::new(Direction::North)),
-            "object" => object::parse(tokenizer),
-            "player" => player::parse(tokenizer),
-            "room" => room::parse(tokenizer),
+            "object" => immortal::object::parse(tokenizer),
+            "player" => immortal::player::parse(tokenizer),
+            "room" => immortal::room::parse(tokenizer),
             "say" => parse_say(tokenizer),
             "send" => parse_send(tokenizer),
             "shutdown" => Ok(Box::new(Shutdown {})),

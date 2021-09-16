@@ -4,6 +4,8 @@ use bevy_ecs::prelude::*;
 use bitflags::bitflags;
 use thiserror::Error;
 
+use crate::world::types::{self, Container, Description, Keywords, Named};
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct Id(i64);
@@ -79,6 +81,18 @@ pub struct FlagsParseError {
     invalid_flag: String,
 }
 
+#[derive(Debug, Bundle)]
+pub struct ObjectBundle {
+    pub object: Object,
+    pub id: types::Id,
+    pub flags: types::Flags,
+    pub container: Container,
+    pub name: Named,
+    pub description: Description,
+    pub keywords: Keywords,
+}
+
+#[derive(Debug)]
 pub struct Object {
     pub id: Id,
     pub flags: Flags,
@@ -120,6 +134,10 @@ impl Objects {
 
     pub fn insert(&mut self, id: Id, entity: Entity) {
         self.by_id.insert(id, entity);
+    }
+
+    pub fn remove(&mut self, id: Id) {
+        self.by_id.remove(&id);
     }
 
     pub fn by_id(&self, id: Id) -> Option<Entity> {
