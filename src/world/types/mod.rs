@@ -4,6 +4,13 @@ pub mod object;
 pub mod player;
 pub mod room;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Id {
+    Player(player::Id),
+    Object(object::Id),
+    Room(room::Id),
+}
+
 // Components
 #[derive(Default)]
 pub struct Contents {
@@ -18,17 +25,17 @@ pub struct Location {
     pub room: Entity,
 }
 
-// pub struct Container {
-//     pub entity: Entity,
-// }
+pub struct Container {
+    pub entity: Entity,
+}
 
 // pub struct Description {
 //     pub text: String,
 // }
 
-// pub struct Keywords {
-//     pub list: Vec<String>,
-// }
+pub struct Keywords {
+    pub list: Vec<String>,
+}
 
 impl Contents {
     pub fn remove(&mut self, object: Entity) {

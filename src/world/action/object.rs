@@ -1,3 +1,4 @@
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -5,8 +6,14 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{self, queue_message, Action, DynAction},
-        types::{self, object::Object, player::Player, room::Room, Contents},
+        action::{self, queue_message, Action, ActionEvent, DynAction},
+        types::{
+            self,
+            object::Object,
+            player::{Messages, Player},
+            room::Room,
+            Container, Contents, Id, Keywords, Location, Named,
+        },
     },
 };
 
@@ -30,66 +37,97 @@ pub struct Drop {
 }
 
 impl Action for Drop {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let pos = world
-            .get::<Contents>(player)
-            .ok_or(action::Error::MissingComponent(player, "Contents"))?
-            .objects
-            .iter()
-            .position(|object| {
-                world
-                    .get::<Object>(*object)
-                    .map(|object| {
-                        {
-                            self.keywords
-                                .iter()
-                                .all(|keyword| object.keywords.contains(keyword))
-                        }
-                    })
-                    .unwrap_or(false)
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Drop {
+                entity,
+                keywords: self.keywords.clone(),
             });
+        Ok(())
+    }
+}
 
-        let message = if let Some(pos) = pos {
-            let (player_id, room_entity) = world
-                .get::<Player>(player)
-                .map(|player| (player.id, player.room))
-                .ok_or(action::Error::MissingComponent(player, "Player"))?;
+pub fn drop_system(
+    mut events: EventReader<ActionEvent>,
+    mut updates: ResMut<Updates>,
+    mut dropping_query: Query<(&Id, &Location, &mut Contents)>,
+    mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
+    mut room_query: Query<(&Room, &mut Contents)>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Drop { entity, keywords } = event {
+            // Find entity to drop in contents of dropping entity, if it exists. Grab some other data as well.
+            let (entity_id, room_entity, pos) =
+                if let Ok((id, location, contents)) = dropping_query.get_mut(*entity) {
+                    let pos = contents.objects.iter().position(|object| {
+                        object_query
+                            .get_mut(*object)
+                            .map(|(_, _, object_keywords, _)| {
+                                {
+                                    keywords
+                                        .iter()
+                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                }
+                            })
+                            .unwrap_or(false)
+                    });
+                    (*id, location.room, pos)
+                } else {
+                    tracing::warn!("Entity {:?} cannot drop an item without Contents.", entity);
+                    continue;
+                };
 
-            let object_entity = world
-                .get_mut::<Contents>(player)
-                .unwrap()
-                .objects
-                .remove(pos);
+            let message = if let Some(pos) = pos {
+                let object_entity = dropping_query
+                    .get_mut(*entity)
+                    .map(|(_, _, mut contents)| contents.objects.remove(pos))
+                    .unwrap();
 
-            world
-                .get_mut::<Contents>(room_entity)
-                .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
-                .objects
-                .push(object_entity);
+                let room_id = {
+                    let (room, mut contents) = room_query
+                        .get_mut(room_entity)
+                        .expect("Location has valid Room");
 
-            let (object_id, short) = {
-                let mut object = world.get_mut::<Object>(object_entity).unwrap();
-                object.container = room_entity;
-                (object.id, object.short.clone())
+                    contents.objects.push(object_entity);
+                    room.id
+                };
+
+                let (object_id, name) = {
+                    let (id, named, _, mut container) =
+                        object_query.get_mut(object_entity).unwrap();
+                    container.entity = room_entity;
+
+                    let id = if let Id::Object(id) = id {
+                        *id
+                    } else {
+                        tracing::warn!("Object {:?} does not have an object ID.", object_entity);
+                        continue;
+                    };
+
+                    (id, named.name.as_str())
+                };
+
+                match entity_id {
+                    Id::Player(player_id) => {
+                        updates.queue(persist::player::RemoveObject::new(player_id, object_id))
+                    }
+                    Id::Object(_) => todo!(),
+                    Id::Room(_) => todo!(),
+                }
+                updates.queue(persist::room::AddObject::new(room_id, object_id));
+
+                format!("You drop {}.", name)
+            } else {
+                format!("You don't have \"{}\".", keywords.join(" "))
             };
 
-            let room_id = world
-                .get::<Room>(room_entity)
-                .map(|room| room.id)
-                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-
-            let mut updates = world.get_resource_mut::<Updates>().unwrap();
-            updates.queue(persist::player::RemoveObject::new(player_id, object_id));
-            updates.queue(persist::room::AddObject::new(room_id, object_id));
-
-            format!("You drop {}.", short)
-        } else {
-            format!("You don't have \"{}\".", self.keywords.join(" "))
+            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                messages.queue(message);
+            }
         };
-
-        queue_message(world, player, message);
-
-        Ok(())
     }
 }
 

@@ -19,7 +19,14 @@ use rhai::{plugin::*, Scope, AST};
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
     world::{
-        action::{queue_message, DynAction, Logout},
+        action::{
+            communicate::{emote_system, say_system, send_system},
+            movement::{move_system, teleport_system},
+            object::drop_system,
+            queue_message,
+            system::Logout,
+            DynAction,
+        },
         types::{
             object::Object,
             player::{Messages, Player, Players},
@@ -199,6 +206,13 @@ impl GameWorld {
 
         let mut update = SystemStage::parallel();
         update.add_system(player_action_events.system());
+
+        update.add_system(drop_system.system());
+        update.add_system(emote_system.system());
+        update.add_system(move_system.system());
+        update.add_system(say_system.system());
+        update.add_system(send_system.system());
+        update.add_system(teleport_system.system());
 
         // Add fun systems
         schedule.add_stage("first", first);

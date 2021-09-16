@@ -21,7 +21,7 @@ use crate::{
         db::Db,
     },
     world::{
-        action::{parse, Login, Look},
+        action::{observe::Look, parse, system::Login},
         GameWorld,
     },
     ClientId,

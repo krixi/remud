@@ -1,9 +1,9 @@
-mod communicate;
-mod immortal;
-mod movement;
-mod object;
-mod observe;
-mod system;
+pub mod communicate;
+pub mod immortal;
+pub mod movement;
+pub mod object;
+pub mod observe;
+pub mod system;
 
 use bevy_ecs::prelude::*;
 use thiserror::Error;
@@ -18,12 +18,12 @@ use crate::{
             observe::{parse_look, Exits, Who},
             system::Shutdown,
         },
-        types::{player::Messages, room::Direction},
+        types::{
+            player::Messages,
+            room::{self, Direction},
+        },
     },
 };
-
-pub use observe::Look;
-pub use system::{Login, Logout};
 
 pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
@@ -33,9 +33,17 @@ pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely unintere
 pub type DynAction = Box<dyn Action + Send>;
 
 pub enum ActionEvent {
+    Drop {
+        entity: Entity,
+        keywords: Vec<String>,
+    },
     Emote {
         entity: Entity,
         message: String,
+    },
+    Move {
+        entity: Entity,
+        direction: Direction,
     },
     Say {
         entity: Entity,
@@ -45,6 +53,10 @@ pub enum ActionEvent {
         entity: Entity,
         recipient: String,
         message: String,
+    },
+    Teleport {
+        entity: Entity,
+        room_id: room::Id,
     },
 }
 

@@ -1,3 +1,4 @@
+use bevy_app::{EventReader, EventWriter, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -5,10 +6,11 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{self, queue_message, Action, DynAction, Look},
+        action::{self, observe::Look, Action, ActionEvent, DynAction},
         types::{
-            player::Player,
+            player::Messages,
             room::{self, Direction, Room, Rooms},
+            Id, Location, Named,
         },
     },
 };
@@ -24,85 +26,141 @@ impl Move {
 }
 
 impl Action for Move {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let (player_id, name, current_room) = world
-            .get::<Player>(player)
-            .map(|player| (player.id, player.name.clone(), player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Move {
+                entity,
+                direction: self.direction,
+            });
 
-        let (destination, present_players) = {
-            let room = world
-                .get::<Room>(current_room)
-                .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
+        Ok(())
+    }
+}
 
-            let destination = if let Some(destination) = room.exits.get(&self.direction) {
-                *destination
-            } else {
-                let message = format!("There is no exit {}.", self.direction.as_to_str());
-                queue_message(world, player, message);
-                return Ok(());
+pub fn move_system(
+    mut events: EventReader<ActionEvent>,
+    mut event_writer: EventWriter<ActionEvent>,
+    mut updates: ResMut<Updates>,
+    mut moving_query: Query<(&Id, &Named, &mut Location)>,
+    mut room_query: Query<&mut Room>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Move {
+            entity: moving_entity,
+            direction,
+        } = event
+        {
+            // Retrieve information about the moving entity.
+            let (id, name, mut location) =
+                if let Ok((id, named, location)) = moving_query.get_mut(*moving_entity) {
+                    (id, named.name.as_str(), location)
+                } else {
+                    tracing::warn!(
+                        "Cannot move {:?} without Named and Location.",
+                        moving_entity
+                    );
+                    continue;
+                };
+
+            // Retrieve information about the origin/current room.
+            let (destination, origin_players) = {
+                let room = room_query
+                    .get_mut(location.room)
+                    .expect("Location contains a valid room.");
+
+                if let Some(destination) = room.exits.get(&direction) {
+                    (
+                        *destination,
+                        room.players
+                            .iter()
+                            .filter(|present_player| **present_player != *moving_entity)
+                            .copied()
+                            .collect_vec(),
+                    )
+                } else {
+                    if let Ok(mut messages) = messages_query.get_mut(*moving_entity) {
+                        messages.queue(format!("There is no exit {}.", direction.as_to_str()));
+                    }
+                    continue;
+                }
             };
 
-            let present_players = room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec();
+            // Notify players in the origin room that something is leaving.
+            let leave_message = format!("{} leaves {}.", name, direction.as_to_str());
+            for player in origin_players {
+                messages_query
+                    .get_mut(player)
+                    .unwrap_or_else(|_| panic!("Player {:?} has Messages.", player))
+                    .queue(leave_message.clone());
+            }
 
-            (destination, present_players)
-        };
+            // Retrieve information about the destination room.
+            let (destination_id, from_direction, destination_players) = {
+                let room = room_query
+                    .get_mut(destination)
+                    .expect("Destinations are valid rooms.");
 
-        let leave_message = format!("{} leaves {}.", name, self.direction.as_to_str());
-        for present_player in present_players {
-            queue_message(world, present_player, leave_message.clone());
+                let direction = room
+                    .exits
+                    .iter()
+                    .find(|(_, room)| **room == location.room)
+                    .map(|(direction, _)| direction)
+                    .copied();
+
+                let present_players = room
+                    .players
+                    .iter()
+                    .filter(|present_player| **present_player != *moving_entity)
+                    .copied()
+                    .collect_vec();
+
+                (room.id, direction, present_players)
+            };
+
+            // Move the entity.
+            match id {
+                Id::Player(_) => {
+                    room_query
+                        .get_mut(location.room)
+                        .unwrap()
+                        .remove_player(*moving_entity);
+                    room_query
+                        .get_mut(destination)
+                        .unwrap()
+                        .players
+                        .push(*moving_entity);
+                }
+                Id::Object(_) => todo!(),
+                Id::Room(_) => todo!(),
+            }
+
+            location.room = destination;
+
+            // Notify players in the destination room that something has arrived.
+            let arrive_message = from_direction.map_or_else(
+                || format!("{} appears.", name),
+                |from| format!("{} arrives {}.", name, from.as_from_str()),
+            );
+            for player in destination_players {
+                messages_query
+                    .get_mut(player)
+                    .unwrap_or_else(|_| panic!("Player {:?} has Messages.", player))
+                    .queue(arrive_message.clone());
+            }
+
+            // Dispatch a storage update to the new location.
+            match id {
+                Id::Player(id) => {
+                    updates.queue(persist::player::Room::new(*id, destination_id));
+                    // event_writer.send(ActionEvent::Look {})
+                }
+                Id::Object(_) => todo!(),
+                Id::Room(_) => todo!(),
+            }
         }
-
-        world
-            .get_mut::<Room>(current_room)
-            .unwrap()
-            .remove_player(player);
-        world.get_mut::<Player>(player).unwrap().room = destination;
-        world
-            .get_mut::<Room>(destination)
-            .ok_or(action::Error::MissingComponent(destination, "Room"))?
-            .players
-            .push(player);
-
-        let (destination_id, from_direction, present_players) = {
-            let room = world.get::<Room>(destination).unwrap();
-
-            let direction = room
-                .exits
-                .iter()
-                .find(|(_, room)| **room == current_room)
-                .map(|(direction, _)| direction)
-                .copied();
-
-            let present_players = room
-                .players
-                .iter()
-                .filter(|present_player| **present_player != player)
-                .copied()
-                .collect_vec();
-
-            (room.id, direction, present_players)
-        };
-
-        let message = from_direction.map_or_else(
-            || format!("{} appears.", name),
-            |from| format!("{} arrives {}.", name, from.as_from_str()),
-        );
-        for present_player in present_players {
-            queue_message(world, present_player, message.clone());
-        }
-
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::player::Room::new(player_id, destination_id));
-
-        Look::here().enact(player, world)
     }
 }
 
@@ -128,67 +186,127 @@ impl Teleport {
 }
 
 impl Action for Teleport {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let destination =
-            if let Some(room) = world.get_resource::<Rooms>().unwrap().by_id(self.room_id) {
-                room
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Teleport {
+                entity,
+                room_id: self.room_id,
+            });
+
+        Ok(())
+    }
+}
+
+pub fn teleport_system(
+    mut events: EventReader<ActionEvent>,
+    mut event_writer: EventWriter<ActionEvent>,
+    rooms: Res<Rooms>,
+    mut updates: ResMut<Updates>,
+    mut moving_query: Query<(&Id, &Named, &mut Location)>,
+    mut room_query: Query<&mut Room>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Teleport {
+            entity: teleporting_entity,
+            room_id: destination_id,
+        } = event
+        {
+            let destination = if let Some(entity) = rooms.by_id(*destination_id) {
+                entity
             } else {
-                let message = format!("Room {} doesn't exist.", self.room_id);
-                queue_message(world, player, message);
-                return Ok(());
+                if let Ok(mut messages) = messages_query.get_mut(*teleporting_entity) {
+                    messages.queue(format!("Room {} doesn't exist.", destination_id));
+                }
+                continue;
             };
 
-        let (player_id, name, current_room) = world
-            .get::<Player>(player)
-            .map(|player| (player.id, player.name.clone(), player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
+            // Retrieve information about the moving entity.
+            let (id, name, mut location) =
+                if let Ok((id, named, location)) = moving_query.get_mut(*teleporting_entity) {
+                    (id, named.name.as_str(), location)
+                } else {
+                    tracing::warn!(
+                        "Cannot teleport {:?} without Named and Location.",
+                        teleporting_entity
+                    );
+                    continue;
+                };
 
-        let present_players = world
-            .get::<Room>(current_room)
-            .ok_or(action::Error::MissingComponent(current_room, "Room"))?
-            .players
-            .iter()
-            .filter(|present_player| **present_player != player)
-            .copied()
-            .collect_vec();
+            // Retrieve information about the origin/current room.
+            let origin_players = room_query
+                .get_mut(location.room)
+                .expect("Location contains a valid room.")
+                .players
+                .iter()
+                .filter(|present_player| **present_player != *teleporting_entity)
+                .copied()
+                .collect_vec();
 
-        let message = format!("{} disappears in the blink of an eye.", name);
-        for present_player in present_players {
-            queue_message(world, present_player, message.clone());
+            // Notify players in the origin room that something is leaving.
+            let leave_message = format!("{} disappears in the blink of an eye.", name);
+            for player in origin_players {
+                messages_query
+                    .get_mut(player)
+                    .unwrap_or_else(|_| panic!("Player {:?} has Messages.", player))
+                    .queue(leave_message.clone());
+            }
+
+            // Retrieve information about the destination room.
+            let (destination_id, destination_players) = {
+                let room = room_query
+                    .get_mut(destination)
+                    .expect("Destinations are valid rooms.");
+
+                let present_players = room
+                    .players
+                    .iter()
+                    .filter(|present_player| **present_player != *teleporting_entity)
+                    .copied()
+                    .collect_vec();
+
+                (room.id, present_players)
+            };
+
+            // Move the entity.
+            match id {
+                Id::Player(_) => {
+                    room_query
+                        .get_mut(location.room)
+                        .unwrap()
+                        .remove_player(*teleporting_entity);
+                    room_query
+                        .get_mut(destination)
+                        .unwrap()
+                        .players
+                        .push(*teleporting_entity);
+                }
+                Id::Object(_) => todo!(),
+                Id::Room(_) => todo!(),
+            }
+
+            location.room = destination;
+
+            // Notify players in the destination room that something has arrived.
+            let arrive_message = format!("{} appears in a flash of light.", name);
+            for player in destination_players {
+                messages_query
+                    .get_mut(player)
+                    .unwrap_or_else(|_| panic!("Player {:?} has Messages.", player))
+                    .queue(arrive_message.clone());
+            }
+
+            // Dispatch a storage update to the new location.
+            match id {
+                Id::Player(id) => {
+                    updates.queue(persist::player::Room::new(*id, destination_id));
+                    // event_writer.send(ActionEvent::Look {})
+                }
+                Id::Object(_) => todo!(),
+                Id::Room(_) => todo!(),
+            }
         }
-
-        world
-            .get_mut::<Room>(current_room)
-            .unwrap()
-            .remove_player(player);
-        world.get_mut::<Player>(player).unwrap().room = destination;
-        let destination_id = {
-            let mut room = world
-                .get_mut::<Room>(destination)
-                .ok_or(action::Error::MissingComponent(destination, "Room"))?;
-            room.players.push(player);
-            room.id
-        };
-
-        let present_players = world
-            .get::<Room>(destination)
-            .unwrap()
-            .players
-            .iter()
-            .filter(|present_player| **present_player != player)
-            .copied()
-            .collect_vec();
-
-        let message = format!("{} appears in a flash of light.", name);
-        for present_player in present_players {
-            queue_message(world, present_player, message.clone());
-        }
-
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::player::Room::new(player_id, destination_id));
-
-        Look::here().enact(player, world)
     }
 }
