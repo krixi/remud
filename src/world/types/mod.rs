@@ -12,29 +12,39 @@ pub enum Id {
 }
 
 // Components
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Contents {
     pub objects: Vec<Entity>,
 }
 
+#[derive(Debug)]
 pub struct Named {
     pub name: String,
 }
 
+#[derive(Debug)]
 pub struct Location {
     pub room: Entity,
 }
 
+#[derive(Debug)]
 pub struct Container {
     pub entity: Entity,
 }
 
+#[derive(Debug)]
 pub struct Description {
     pub text: String,
 }
 
+#[derive(Debug)]
 pub struct Keywords {
     pub list: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Flags {
+    pub flags: object::Flags,
 }
 
 impl Contents {

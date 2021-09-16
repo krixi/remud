@@ -6,7 +6,7 @@ use std::{
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::Contents;
+use crate::world::types::{self, Contents, Location, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -35,7 +35,10 @@ impl error::Error for IdParseError {}
 
 #[derive(Bundle)]
 pub struct PlayerBundle {
+    pub id: types::Id,
     pub player: Player,
+    pub name: Named,
+    pub location: Location,
     pub contents: Contents,
     pub messages: Messages,
 }

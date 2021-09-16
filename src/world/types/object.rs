@@ -4,6 +4,8 @@ use bevy_ecs::prelude::*;
 use bitflags::bitflags;
 use thiserror::Error;
 
+use crate::world::types::{self, Container, Description, Keywords, Named};
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct Id(i64);
@@ -77,6 +79,16 @@ impl TryFrom<&[String]> for Flags {
 #[error("Invalid object flag: {invalid_flag}. Valid flags: fixed, subtle.")]
 pub struct FlagsParseError {
     invalid_flag: String,
+}
+
+#[derive(Debug, Bundle)]
+pub struct ObjectBundle {
+    id: types::Id,
+    flags: types::Flags,
+    container: Container,
+    name: Named,
+    description: Description,
+    keywords: Keywords,
 }
 
 pub struct Object {

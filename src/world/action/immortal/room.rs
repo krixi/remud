@@ -14,7 +14,7 @@ use crate::{
             object::Object,
             player::Player,
             room::{self, Direction, Room, RoomBundle, Rooms},
-            Contents,
+            Contents, Description,
         },
         VOID_ROOM_ID,
     },
@@ -142,6 +142,9 @@ impl Action for Create {
         let new_room_id = world.get_resource_mut::<Rooms>().unwrap().next_id();
         let room = RoomBundle {
             room: Room::new(new_room_id, DEFAULT_ROOM_DESCRIPTION.to_string()),
+            description: Description {
+                text: DEFAULT_ROOM_DESCRIPTION.to_string(),
+            },
             contents: Contents::default(),
         };
         let new_room_entity = world.spawn().insert_bundle(room).id();

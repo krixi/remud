@@ -2,11 +2,12 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::Contents;
+use crate::world::types::{Contents, Description};
 
 #[derive(Bundle)]
 pub struct RoomBundle {
     pub room: Room,
+    pub description: Description,
     pub contents: Contents,
 }
 
