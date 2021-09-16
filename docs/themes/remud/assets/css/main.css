@@ -33,10 +33,14 @@ article {
   background-color: #303030;
 }
 
-code, article code {
+code,
+article code {
   @apply bg-soft-gray text-white rounded font-normal p-1;
 }
 
-code::before, article code::before, code::after, article code::after {
+code::before,
+article code::before,
+code::after,
+article code::after {
   content: "";
 }

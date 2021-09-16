@@ -7,34 +7,66 @@ author: "krixi"
 tags: ["immortals", "help"]
 ---
 
-Immortals are given special powers in CitySix: 
+Immortals are given special powers in CitySix. 
 
+# Server 
 ## `shutdown`
-## `teleport`
+This immediately shuts down the CitySix server. All connected citizens will be disconnected.
+
+# Movement
+## `teleport <room_id>`
+Teleports you instantly to the room with the specified id.
+
+# Objects
+## `object new`
+## `object <id> set <flags>` / `object <id> unset <flags>`
+Sets or unsets flags on the object. `<flags>` is a space separated list of strings:
+- `fixed` - cannot be picked up
+- `subtle` - does not show up in `look` command
+
+## `object <id> info`
+Shows info about the object.
+
+## `object <id> name <text>`
+Sets the object's name to the specified text. 
+The name given should start with a lowercase letter (unless it's a proper noun), 
+and should not end with punctuation. 
 
 
-## Object management
-all commands are `object <id> <subcommand>` except for `object new`, which will return the ID of the newly created object
+## `object <id> desc <text>`
+Sets the object's description to the specified text. This field is treated as prose,
+so should consist of complete sentences and may contain paragraphs.
 
-### `new`
-### `set` / `unset` (flags)
-### `info`
-### `name`
-### `desc`
-### `keywords`
-### `remove`
+## `object <id> keywords <comma separated list>`
+Sets the object's list of keywords. These keywords should be referenced in the object's
+name and description.
 
-## Player
-### `info`
+## `object <id> remove`
+Removes the specified object.
 
+# Players
+## `<name> info`
+Shows info about the player with the given name
 
-## Room management
+# Rooms
+These commands implicitly assume the current room as the ID of the room you wish to act upon. 
 
-always assumes current room
+## `info`
+Shows info about current room.
 
-### `info`
-### `new` (dir)
-### `desc`
-### `link` (dir) (id to link to)
-### `unlink` (dir) 
-### `remove`
+## `new` / `new <dir>`
+Creates a new room, optionally in the specified direction. If you specify a direction, links
+from the current room to the new room (and back) will automatically be created. 
+
+## `desc <text>`
+Sets the description of the room. This field is treated as prose,
+so should consist of complete sentences and may contain paragraphs.
+
+## `link <dir> <id to link to>`
+Links the current room to the given room via the given direction.
+
+## `unlink <dir>` 
+Unlinks the current room from the specified direction.
+
+## `remove`
+Removes the current room. You'll be teleported to the void room. 
