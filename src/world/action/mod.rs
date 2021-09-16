@@ -51,6 +51,12 @@ pub enum ActionEvent {
     Inventory {
         entity: Entity,
     },
+    Login {
+        entity: Entity,
+    },
+    Logout {
+        entity: Entity,
+    },
     Look {
         entity: Entity,
         direction: Option<Direction>,
@@ -72,6 +78,7 @@ pub enum ActionEvent {
         recipient: String,
         message: String,
     },
+    Shutdown,
     Teleport {
         entity: Entity,
         room_id: room::Id,

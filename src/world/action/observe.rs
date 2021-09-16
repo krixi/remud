@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::{
     text::{word_list, Tokenizer},
     world::{
-        action::{self, queue_message, Action, ActionEvent, DynAction},
+        action::{self, Action, ActionEvent, DynAction},
         types::{
             self,
             object::Object,
@@ -87,7 +87,7 @@ impl Action for Look {
 
 pub fn look_system(
     mut events: EventReader<ActionEvent>,
-    looker_query: Query<&Location>,
+    looker_query: Query<&Location, With<Player>>,
     room_query: Query<(&Room, &Description, &Contents)>,
     player_query: Query<&Named>,
     object_query: Query<(&Named, &Object)>,
@@ -95,12 +95,10 @@ pub fn look_system(
 ) {
     for event in events.iter() {
         if let ActionEvent::Look { entity, direction } = event {
-            let current_room = if let Ok(location) = looker_query.get(*entity) {
-                location.room
-            } else {
-                tracing::warn!("Looker {:?} cannot look without a Location.", entity);
-                continue;
-            };
+            let current_room = looker_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
 
             let target_room = if let Some(direction) = direction {
                 if let Some(room) = room_query
@@ -169,7 +167,7 @@ pub fn look_system(
 
 pub fn look_at_system(
     mut events: EventReader<ActionEvent>,
-    looker_query: Query<&Location>,
+    looker_query: Query<&Location, With<Player>>,
     contents_query: Query<&Contents>,
     object_query: Query<(&Description, &Keywords)>,
     mut messages_query: Query<&mut Messages>,
@@ -225,18 +223,16 @@ impl Action for Exits {
 
 pub fn exits_system(
     mut events: EventReader<ActionEvent>,
-    exiter_query: Query<&Location>,
+    exiter_query: Query<&Location, With<Player>>,
     room_query: Query<&Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
         if let ActionEvent::Exits { entity } = event {
-            let current_room = if let Ok(location) = exiter_query.get(*entity) {
-                location.room
-            } else {
-                tracing::warn!("Looker {:?} cannot find exits without a Location.", entity);
-                continue;
-            };
+            let current_room = exiter_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
 
             let exits = room_query
                 .get(current_room)

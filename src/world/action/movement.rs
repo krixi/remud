@@ -6,7 +6,7 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{self, observe::Look, Action, ActionEvent, DynAction},
+        action::{self, Action, ActionEvent, DynAction},
         types::{
             player::Messages,
             room::{self, Direction, Room, Rooms},
@@ -48,20 +48,13 @@ pub fn move_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Move {
-            entity: moving_entity,
-            direction,
-        } = event
-        {
+        if let ActionEvent::Move { entity, direction } = event {
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
-                if let Ok((id, named, location)) = moving_query.get_mut(*moving_entity) {
+                if let Ok((id, named, location)) = moving_query.get_mut(*entity) {
                     (id, named.name.as_str(), location)
                 } else {
-                    tracing::warn!(
-                        "Cannot move {:?} without Named and Location.",
-                        moving_entity
-                    );
+                    tracing::warn!("Cannot move {:?} without Named and Location.", entity);
                     continue;
                 };
 
@@ -76,12 +69,12 @@ pub fn move_system(
                         *destination,
                         room.players
                             .iter()
-                            .filter(|present_player| **present_player != *moving_entity)
+                            .filter(|present_player| **present_player != *entity)
                             .copied()
                             .collect_vec(),
                     )
                 } else {
-                    if let Ok(mut messages) = messages_query.get_mut(*moving_entity) {
+                    if let Ok(mut messages) = messages_query.get_mut(*entity) {
                         messages.queue(format!("There is no exit {}.", direction.as_to_str()));
                     }
                     continue;
@@ -113,7 +106,7 @@ pub fn move_system(
                 let present_players = room
                     .players
                     .iter()
-                    .filter(|present_player| **present_player != *moving_entity)
+                    .filter(|present_player| **present_player != *entity)
                     .copied()
                     .collect_vec();
 
@@ -126,12 +119,12 @@ pub fn move_system(
                     room_query
                         .get_mut(location.room)
                         .unwrap()
-                        .remove_player(*moving_entity);
+                        .remove_player(*entity);
                     room_query
                         .get_mut(destination)
                         .unwrap()
                         .players
-                        .push(*moving_entity);
+                        .push(*entity);
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
@@ -155,7 +148,10 @@ pub fn move_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    // event_writer.send(ActionEvent::Look {})
+                    event_writer.send(ActionEvent::Look {
+                        entity: *entity,
+                        direction: None,
+                    })
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
@@ -210,14 +206,14 @@ pub fn teleport_system(
 ) {
     for event in events.iter() {
         if let ActionEvent::Teleport {
-            entity: teleporting_entity,
+            entity,
             room_id: destination_id,
         } = event
         {
             let destination = if let Some(entity) = rooms.by_id(*destination_id) {
                 entity
             } else {
-                if let Ok(mut messages) = messages_query.get_mut(*teleporting_entity) {
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
                     messages.queue(format!("Room {} doesn't exist.", destination_id));
                 }
                 continue;
@@ -225,13 +221,10 @@ pub fn teleport_system(
 
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
-                if let Ok((id, named, location)) = moving_query.get_mut(*teleporting_entity) {
+                if let Ok((id, named, location)) = moving_query.get_mut(*entity) {
                     (id, named.name.as_str(), location)
                 } else {
-                    tracing::warn!(
-                        "Cannot teleport {:?} without Named and Location.",
-                        teleporting_entity
-                    );
+                    tracing::warn!("Cannot teleport {:?} without Named and Location.", entity);
                     continue;
                 };
 
@@ -241,7 +234,7 @@ pub fn teleport_system(
                 .expect("Location contains a valid room.")
                 .players
                 .iter()
-                .filter(|present_player| **present_player != *teleporting_entity)
+                .filter(|present_player| **present_player != *entity)
                 .copied()
                 .collect_vec();
 
@@ -263,7 +256,7 @@ pub fn teleport_system(
                 let present_players = room
                     .players
                     .iter()
-                    .filter(|present_player| **present_player != *teleporting_entity)
+                    .filter(|present_player| **present_player != *entity)
                     .copied()
                     .collect_vec();
 
@@ -276,12 +269,12 @@ pub fn teleport_system(
                     room_query
                         .get_mut(location.room)
                         .unwrap()
-                        .remove_player(*teleporting_entity);
+                        .remove_player(*entity);
                     room_query
                         .get_mut(destination)
                         .unwrap()
                         .players
-                        .push(*teleporting_entity);
+                        .push(*entity);
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
@@ -302,7 +295,10 @@ pub fn teleport_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    // event_writer.send(ActionEvent::Look {})
+                    event_writer.send(ActionEvent::Look {
+                        entity: *entity,
+                        direction: None,
+                    })
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),

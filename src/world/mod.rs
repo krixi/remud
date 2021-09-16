@@ -25,7 +25,7 @@ use crate::{
             object::{drop_system, get_system, inventory_system},
             observe::{exits_system, look_at_system, look_system, who_system},
             queue_message,
-            system::Logout,
+            system::{login_system, logout_system, shutdown_system, Logout},
             ActionEvent, DynAction,
         },
         types::{
@@ -215,11 +215,14 @@ impl GameWorld {
         update.add_system(exits_system.system());
         update.add_system(get_system.system());
         update.add_system(inventory_system.system());
+        update.add_system(login_system.system());
+        update.add_system(logout_system.system());
         update.add_system(look_system.system());
         update.add_system(look_at_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
         update.add_system(send_system.system());
+        update.add_system(shutdown_system.system());
         update.add_system(teleport_system.system());
         update.add_system(who_system.system());
 
