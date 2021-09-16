@@ -27,3 +27,5 @@
 - refactor object.container to Location and Container components
 
 - dedupe object set/clear flags
+
+- add some pizzaz for players who are teleported on room deletion so they have some idea about what is happening

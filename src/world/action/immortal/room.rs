@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -7,14 +8,13 @@ use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
     world::{
-        action::{
-            self, movement::Teleport, queue_message, Action, DynAction, DEFAULT_ROOM_DESCRIPTION,
-        },
+        action::{self, Action, ActionEvent, DynAction, DEFAULT_ROOM_DESCRIPTION},
         types::{
+            self,
             object::Object,
-            player::Player,
+            player::{Messages, Player},
             room::{self, Direction, Room, RoomBundle, Rooms},
-            Contents, Description,
+            Container, Contents, Description, Location, Named,
         },
         VOID_ROOM_ID,
     },
@@ -119,146 +119,180 @@ struct Create {
 }
 
 impl Action for Create {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let current_room = world
-            .get::<Player>(player)
-            .map(|player| player.room)
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        // Confirm a room does not already exist in this direction
-        if let Some(direction) = self.direction {
-            let room = world
-                .get::<Room>(current_room)
-                .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
-
-            if room.exits.contains_key(&direction) {
-                let message = format!("A room already exists {}.", direction.as_to_str());
-                queue_message(world, player, message);
-                return Ok(());
-            }
-        };
-
-        // Create new room
-        let new_room_id = world.get_resource_mut::<Rooms>().unwrap().next_id();
-        let room = RoomBundle {
-            room: Room::new(new_room_id, DEFAULT_ROOM_DESCRIPTION.to_string()),
-            description: Description {
-                text: DEFAULT_ROOM_DESCRIPTION.to_string(),
-            },
-            contents: Contents::default(),
-        };
-        let new_room_entity = world.spawn().insert_bundle(room).id();
-
-        // Add reverse lookup
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get_resource_mut::<Rooms>()
+            .get_resource_mut::<Events<ActionEvent>>()
             .unwrap()
-            .insert(new_room_id, new_room_entity);
-
-        // Create links
-        if let Some(direction) = self.direction {
-            world
-                .get_mut::<Room>(new_room_entity)
-                .unwrap()
-                .exits
-                .insert(direction.opposite(), current_room);
-
-            world
-                .get_mut::<Room>(current_room)
-                .unwrap()
-                .exits
-                .insert(direction, new_room_entity);
-        }
-
-        let current_room_id = world
-            .get::<Room>(current_room)
-            .map(|room| room.id)
-            .ok_or(action::Error::MissingComponent(current_room, "Room"))?;
-
-        // Queue update
-        let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(persist::room::New::new(
-            new_room_id,
-            DEFAULT_ROOM_DESCRIPTION.to_string(),
-        ));
-        if let Some(direction) = self.direction {
-            updates.queue(persist::room::AddExit::new(
-                current_room_id,
-                new_room_id,
-                direction,
-            ));
-            updates.queue(persist::room::AddExit::new(
-                new_room_id,
-                current_room_id,
-                direction.opposite(),
-            ));
-        }
-
-        let mut message = format!("Created room {}", new_room_id);
-        if let Some(direction) = self.direction {
-            message.push(' ');
-            message.push_str(direction.as_to_str());
-        }
-        message.push('.');
-        queue_message(world, player, message);
+            .send(ActionEvent::RoomCreate {
+                entity,
+                direction: self.direction,
+            });
 
         Ok(())
+    }
+}
+
+pub fn room_create_system(
+    mut commands: Commands,
+    mut events: EventReader<ActionEvent>,
+    mut rooms: ResMut<Rooms>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<&mut Room>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomCreate { entity, direction } = event {
+            let current_room_entity =
+                if let Ok(room) = player_query.get(*entity).map(|location| location.room) {
+                    room
+                } else {
+                    tracing::info!("Player {:?} cannot create a room from nowhere.", entity);
+                    continue;
+                };
+
+            if let Some(direction) = direction {
+                if room_query
+                    .get_mut(current_room_entity)
+                    .unwrap()
+                    .exits
+                    .contains_key(direction)
+                {
+                    if let Ok(mut messages) = message_query.get_mut(*entity) {
+                        messages.queue(format!("A room already exists {}.", direction.as_to_str()));
+                    }
+                    continue;
+                }
+            }
+
+            let new_room_id = rooms.next_id();
+            let new_room_entity = commands
+                .spawn_bundle(RoomBundle {
+                    id: types::Id::Room(new_room_id),
+                    room: Room::new(new_room_id, DEFAULT_ROOM_DESCRIPTION.to_string()),
+                    description: Description {
+                        text: DEFAULT_ROOM_DESCRIPTION.to_string(),
+                    },
+                    contents: Contents::default(),
+                })
+                .id();
+
+            rooms.insert(new_room_id, new_room_entity);
+
+            if let Some(direction) = direction {
+                room_query
+                    .get_mut(new_room_entity)
+                    .unwrap()
+                    .exits
+                    .insert(direction.opposite(), current_room_entity);
+
+                room_query
+                    .get_mut(current_room_entity)
+                    .unwrap()
+                    .exits
+                    .insert(*direction, new_room_entity);
+            }
+
+            let current_room_id = room_query.get_mut(current_room_entity).unwrap().id;
+            updates.queue(persist::room::New::new(
+                new_room_id,
+                DEFAULT_ROOM_DESCRIPTION.to_string(),
+            ));
+            if let Some(direction) = direction {
+                updates.queue(persist::room::AddExit::new(
+                    current_room_id,
+                    new_room_id,
+                    *direction,
+                ));
+                updates.queue(persist::room::AddExit::new(
+                    new_room_id,
+                    current_room_id,
+                    direction.opposite(),
+                ));
+            }
+
+            let mut message = format!("Created room {}", new_room_id);
+            if let Some(direction) = direction {
+                message.push(' ');
+                message.push_str(direction.as_to_str());
+            }
+            message.push('.');
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(message);
+            }
+        }
     }
 }
 
 struct Info {}
 
 impl Action for Info {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let room_entity = world
-            .get::<Player>(player)
-            .map(|player| player.room)
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let room = world
-            .get::<Room>(room_entity)
-            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-
-        let mut message = format!("Room {}", room.id);
-
-        message.push_str("\r\n  description: ");
-        message.push_str(room.description.as_str());
-
-        message.push_str("\r\n  exits:");
-        room.exits
-            .iter()
-            .filter_map(|(direction, room)| {
-                world.get::<Room>(*room).map(|room| (direction, room.id))
-            })
-            .for_each(|(direction, room_id)| {
-                message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
-            });
-
-        message.push_str("\r\n  players:");
-        room.players
-            .iter()
-            .filter_map(|player| {
-                world
-                    .get::<Player>(*player)
-                    .map(|player| player.name.as_str())
-            })
-            .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
-
-        message.push_str("\r\n  objects:");
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get::<Contents>(room_entity)
-            .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
-            .objects
-            .iter()
-            .filter_map(|object| world.get::<Object>(*object))
-            .map(|object| (object.id, object.short.as_str()))
-            .for_each(|(id, name)| {
-                message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
-            });
-
-        queue_message(world, player, message);
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::RoomInfo { entity });
 
         Ok(())
+    }
+}
+
+pub fn room_info_system(
+    mut events: EventReader<ActionEvent>,
+    player_query: Query<&Location, With<Player>>,
+    room_query: Query<(&Room, &Description, &Contents)>,
+    named_query: Query<&Named>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomInfo { entity } = event {
+            let room_entity =
+                if let Ok(room) = player_query.get(*entity).map(|location| location.room) {
+                    room
+                } else {
+                    tracing::info!("Player {:?} cannot create a room from nowhere.", entity);
+                    continue;
+                };
+
+            let (room, description, contents) = room_query.get(room_entity).unwrap();
+
+            let mut message = format!("Room {}", room.id);
+
+            message.push_str("\r\n  description: ");
+            message.push_str(description.text.as_str());
+
+            message.push_str("\r\n  exits:");
+            room.exits
+                .iter()
+                .filter_map(|(direction, room)| {
+                    room_query
+                        .get(*room)
+                        .map(|(room, _, _)| (direction, room.id))
+                        .ok()
+                })
+                .for_each(|(direction, room_id)| {
+                    message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
+                });
+
+            message.push_str("\r\n  players:");
+            room.players
+                .iter()
+                .filter_map(|player| named_query.get(*player).ok())
+                .map(|named| named.name.as_str())
+                .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
+
+            message.push_str("\r\n    objects:");
+            contents
+                .objects
+                .iter()
+                .filter_map(|object| named_query.get(*object).ok())
+                .map(|named| named.name.as_str())
+                .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(message);
+            }
+        }
     }
 }
 
@@ -268,48 +302,61 @@ struct Link {
 }
 
 impl Action for Link {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let destination = if let Some(room) = world
-            .get_resource::<Rooms>()
-            .unwrap()
-            .by_id(self.destination)
-        {
-            room
-        } else {
-            let message = format!("Room {} does not exist.", self.destination);
-            queue_message(world, player, message);
-            return Ok(());
-        };
-
-        let from_room = world
-            .get::<Player>(player)
-            .map(|player| player.room)
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let from_id = {
-            let mut room = world
-                .get_mut::<Room>(from_room)
-                .ok_or(action::Error::MissingComponent(from_room, "Room"))?;
-            room.exits.insert(self.direction, destination);
-            room.id
-        };
-
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get_resource_mut::<Updates>()
+            .get_resource_mut::<Events<ActionEvent>>()
             .unwrap()
-            .queue(persist::room::AddExit::new(
-                from_id,
-                self.destination,
-                self.direction,
-            ));
-
-        let message = format!(
-            "Linked {} exit to room {}.",
-            self.direction, self.destination
-        );
-        queue_message(world, player, message);
+            .send(ActionEvent::RoomLink {
+                entity,
+                direction: self.direction,
+                id: self.destination,
+            });
 
         Ok(())
+    }
+}
+
+pub fn room_link_system(
+    mut events: EventReader<ActionEvent>,
+    rooms: Res<Rooms>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<&mut Room>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomLink {
+            entity,
+            direction,
+            id,
+        } = event
+        {
+            let to_room_entity = if let Some(room) = rooms.by_id(*id) {
+                room
+            } else {
+                if let Ok(mut messages) = message_query.get_mut(*entity) {
+                    messages.queue(format!("Room {} does not exist.", id));
+                }
+                continue;
+            };
+
+            let from_room_entity = player_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            let from_room_id = {
+                let mut from_room = room_query.get_mut(from_room_entity).unwrap();
+                from_room.exits.insert(*direction, to_room_entity);
+                from_room.id
+            };
+
+            updates.queue(persist::room::AddExit::new(from_room_id, *id, *direction));
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(format!("Linked {} exit to room {}.", direction, id));
+            }
+        }
     }
 }
 
@@ -318,97 +365,134 @@ struct Update {
 }
 
 impl Action for Update {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let room_entity = world
-            .get::<Player>(player)
-            .map(|player| player.room)
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let (room_id, description) = {
-            let mut room = world
-                .get_mut::<Room>(room_entity)
-                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-
-            if self.description.is_some() {
-                room.description = self.description.take().unwrap();
-            }
-
-            (room.id, room.description.clone())
-        };
-
-        // Queue update
-        if self.description.is_some() {
-            world
-                .get_resource_mut::<Updates>()
-                .unwrap()
-                .queue(persist::room::Update::new(room_id, description));
-        }
-
-        let message = format!("Updated room {}.", room_id);
-        queue_message(world, player, message);
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::RoomUpdateDescription {
+                entity,
+                description: self.description.take().unwrap(),
+            });
 
         Ok(())
+    }
+}
+
+pub fn room_update_description_system(
+    mut events: EventReader<ActionEvent>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<(&Room, &mut Description)>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomUpdateDescription {
+            entity,
+            description: new_description,
+        } = event
+        {
+            let room_entity = player_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            let room_id = {
+                let (room, mut description) = room_query.get_mut(room_entity).unwrap();
+                description.text = new_description.clone();
+                room.id
+            };
+
+            updates.queue(persist::room::Update::new(room_id, new_description.clone()));
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(format!("Updated room {} description.", room_id));
+            }
+        }
     }
 }
 
 struct Remove {}
 
 impl Action for Remove {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let (player_id, room_entity) = world
-            .get::<Player>(player)
-            .map(|player| (player.id, player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let (room_id, present_players, present_objects) = {
-            let room = world
-                .get::<Room>(room_entity)
-                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-
-            if room.id == *VOID_ROOM_ID {
-                let message = "You cannot delete the void room.".to_string();
-                queue_message(world, player, message);
-                return Ok(());
-            }
-
-            let players = room.players.iter().copied().collect_vec();
-            let objects = world
-                .get::<Contents>(room_entity)
-                .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
-                .objects
-                .iter()
-                .copied()
-                .collect_vec();
-
-            (room.id, players, objects)
-        };
-
-        // Move all players and objects from this room to the void room.
-        let mut emergency_teleport = Teleport::new(*VOID_ROOM_ID);
-        for present_player in present_players.iter() {
-            emergency_teleport.enact(*present_player, world)?;
-        }
-
-        let void_room_entity = world
-            .get_resource::<Rooms>()
-            .unwrap()
-            .by_id(*VOID_ROOM_ID)
-            .unwrap();
-        {
-            let mut void_contents = world.get_mut::<Contents>(void_room_entity).unwrap();
-            for object in &present_objects {
-                void_contents.objects.push(*object);
-            }
-        }
-
-        // Remove the room
-        world.get_resource_mut::<Rooms>().unwrap().remove(room_id);
-        world.despawn(room_entity);
-
-        // Find and remove all exits to the room (FKs handle this in the DB)
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .query::<(Entity, &mut Room)>()
-            .for_each_mut(world, |(room_entity, mut room)| {
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::RoomRemove { entity });
+
+        Ok(())
+    }
+}
+
+pub fn room_remove_system(
+    mut commands: Commands,
+    mut events: EventReader<ActionEvent>,
+    mut rooms: ResMut<Rooms>,
+    mut updates: ResMut<Updates>,
+    remover_query: Query<&Location, With<Player>>,
+    mut room_query: Query<(&mut Room, &mut Contents)>,
+    mut player_query: Query<(&Player, &mut Location)>,
+    mut object_query: Query<(&Object, &mut Container)>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomRemove { entity } = event {
+            let room_entity = remover_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            // Retrieve information about the current room.
+            let (room_id, present_players, present_objects) = {
+                let (mut room, mut contents) = room_query.get_mut(room_entity).unwrap();
+
+                if room.id == *VOID_ROOM_ID {
+                    if let Ok(mut messages) = message_query.get_mut(*entity) {
+                        messages.queue("You cannot remove the void room.".to_string())
+                    }
+                    continue;
+                }
+
+                let players = room.players.drain(..).collect_vec();
+                let objects = contents.objects.drain(..).collect_vec();
+
+                (room.id, players, objects)
+            };
+
+            // Move all objects and players to the void room.
+            let void_room_entity = rooms.by_id(*VOID_ROOM_ID).unwrap();
+            {
+                let (mut room, mut contents) = room_query.get_mut(void_room_entity).unwrap();
+                for player in present_players.iter() {
+                    room.players.push(*player);
+                }
+                for object in present_objects.iter() {
+                    contents.objects.push(*object);
+                }
+            }
+
+            for player in present_players.iter() {
+                player_query
+                    .get_mut(*player)
+                    .map(|(_, location)| location)
+                    .unwrap()
+                    .room = void_room_entity;
+            }
+
+            for object in present_objects.iter() {
+                object_query
+                    .get_mut(*object)
+                    .map(|(_, container)| container)
+                    .unwrap()
+                    .entity = void_room_entity;
+            }
+
+            // Remove the room
+            rooms.remove(room_id);
+            commands.entity(room_entity).despawn();
+
+            // Find and remove all exits to the room
+            for (mut room, _) in room_query.iter_mut() {
                 let to_remove = room
                     .exits
                     .iter()
@@ -419,35 +503,42 @@ impl Action for Remove {
                 for direction in to_remove {
                     room.exits.remove(&direction);
                 }
-            });
+            }
 
-        let present_player_ids = present_players
-            .iter()
-            .filter_map(|entity| world.get::<Player>(*entity).map(|player| player.id))
-            .collect_vec();
+            let present_player_ids = present_players
+                .iter()
+                .filter_map(|player| {
+                    player_query
+                        .get_mut(*player)
+                        .map(|(player, _)| player.id)
+                        .ok()
+                })
+                .collect_vec();
 
-        let present_object_ids = present_objects
-            .iter()
-            .filter_map(|entity| world.get::<Object>(*entity).map(|object| object.id))
-            .collect_vec();
+            let present_object_ids = present_objects
+                .iter()
+                .filter_map(|object| {
+                    object_query
+                        .get_mut(*object)
+                        .map(|(object, _)| object.id)
+                        .ok()
+                })
+                .collect_vec();
 
-        // Persist the changes
-        let mut updates = world.get_resource_mut::<Updates>().unwrap();
-        updates.queue(persist::room::Remove::new(room_id));
+            updates.queue(persist::room::Remove::new(room_id));
 
-        updates.queue(persist::player::Room::new(player_id, *VOID_ROOM_ID));
-        for id in present_player_ids {
-            updates.queue(persist::player::Room::new(id, *VOID_ROOM_ID));
+            for id in present_player_ids {
+                updates.queue(persist::player::Room::new(id, *VOID_ROOM_ID));
+            }
+
+            for id in present_object_ids {
+                updates.queue(persist::room::AddObject::new(*VOID_ROOM_ID, id));
+            }
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(format!("Room {} removed.", room_id));
+            }
         }
-
-        for id in present_object_ids {
-            updates.queue(persist::room::AddObject::new(*VOID_ROOM_ID, id));
-        }
-
-        let message = format!("Room {} removed.", room_id);
-        queue_message(world, player, message);
-
-        Ok(())
     }
 }
 
@@ -456,33 +547,50 @@ struct Unlink {
 }
 
 impl Action for Unlink {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let room_entity = world
-            .get::<Player>(player)
-            .map(|player| player.room)
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let (room_id, removed) = {
-            let mut room = world
-                .get_mut::<Room>(room_entity)
-                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-            let removed = room.exits.remove(&self.direction).is_some();
-            (room.id, removed)
-        };
-
-        let message = if removed {
-            format!("Removed exit {}.", self.direction.as_to_str())
-        } else {
-            format!("There is no exit {}.", self.direction.as_to_str())
-        };
-
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get_resource_mut::<Updates>()
+            .get_resource_mut::<Events<ActionEvent>>()
             .unwrap()
-            .queue(persist::room::RemoveExit::new(room_id, self.direction));
-
-        queue_message(world, player, message);
+            .send(ActionEvent::RoomUnlink {
+                entity,
+                direction: self.direction,
+            });
 
         Ok(())
+    }
+}
+
+pub fn room_unlink_system(
+    mut events: EventReader<ActionEvent>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<&mut Room>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::RoomUnlink { entity, direction } = event {
+            let room_entity = player_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            let (room_id, removed) = {
+                let mut room = room_query.get_mut(room_entity).unwrap();
+                let removed = room.exits.remove(direction).is_some();
+                (room.id, removed)
+            };
+
+            updates.queue(persist::room::RemoveExit::new(room_id, *direction));
+
+            let message = if removed {
+                format!("Removed exit {}.", direction.as_to_str())
+            } else {
+                format!("There is no exit {}.", direction.as_to_str())
+            };
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(message);
+            }
+        }
     }
 }

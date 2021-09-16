@@ -175,12 +175,6 @@ pub struct Teleport {
     room_id: room::Id,
 }
 
-impl Teleport {
-    pub fn new(room_id: room::Id) -> Box<Self> {
-        Box::new(Teleport { room_id })
-    }
-}
-
 impl Action for Teleport {
     fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world

@@ -152,6 +152,7 @@ impl Db {
             let entity = world
                 .spawn()
                 .insert_bundle(RoomBundle {
+                    id: types::Id::Room(room::Id::try_from(id)?),
                     description: Description {
                         text: room.description.clone(),
                     },

@@ -21,10 +21,17 @@ use crate::{
     world::{
         action::{
             communicate::{emote_system, say_system, send_system},
-            immortal::object::{
-                object_clear_flags_system, object_create_system, object_info_system,
-                object_remove_system, object_set_flags_system, object_update_description_system,
-                object_update_keywords_system, object_update_name_system,
+            immortal::{
+                object::{
+                    object_clear_flags_system, object_create_system, object_info_system,
+                    object_remove_system, object_set_flags_system,
+                    object_update_description_system, object_update_keywords_system,
+                    object_update_name_system,
+                },
+                room::{
+                    room_create_system, room_info_system, room_link_system, room_remove_system,
+                    room_unlink_system, room_update_description_system,
+                },
             },
             movement::{move_system, teleport_system},
             object::{drop_system, get_system, inventory_system},
@@ -233,6 +240,12 @@ impl GameWorld {
         update.add_system(object_update_name_system.system());
         update.add_system(object_remove_system.system());
         update.add_system(object_set_flags_system.system());
+        update.add_system(room_create_system.system());
+        update.add_system(room_info_system.system());
+        update.add_system(room_link_system.system());
+        update.add_system(room_update_description_system.system());
+        update.add_system(room_unlink_system.system());
+        update.add_system(room_remove_system.system());
         update.add_system(say_system.system());
         update.add_system(send_system.system());
         update.add_system(shutdown_system.system());
