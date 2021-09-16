@@ -4,7 +4,7 @@
       <h2 class="italic mb-3">{{ .Title | title }}</h2>
       <p>{{ .Content }}</p>
     </div>
-    {{ range .Pages.ByPublishDate.Reverse }}
+    {{ range .Pages.ByWeight }}
 
       <div
         class="
