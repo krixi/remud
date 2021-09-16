@@ -1,0 +1,17 @@
+{{ define "main" }}
+  <div class="container p-1 mx-auto rounded">
+    <p class="text-center mb-3">Select a category below:</p>
+    <div class="max-w-3xl bg-white mx-auto rounded p-5 text-black">
+      <ul class="pl-5">
+        {{ range .Data.Terms.Alphabetical }}
+          <li class="list-disc">
+            <a class="text-blue-500" href="{{ .Page.RelPermalink }}"
+              >{{ .Page.Title | title }}</a
+            >
+            ({{ .Count }})
+          </li>
+        {{ end }}
+      </ul>
+    </div>
+  </div>
+{{ end }}

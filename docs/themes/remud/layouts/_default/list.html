@@ -1,0 +1,75 @@
+{{ define "main" }}
+  <div class="container p-1 mx-auto rounded">
+    <div class="mb-3 text-center max-w-md md:max-w-3xl mx-auto">
+      <h2 class="italic mb-3">{{ .Title | title }}</h2>
+      <p>{{ .Content }}</p>
+    </div>
+    {{ range .Pages.ByPublishDate.Reverse }}
+
+      <div
+        class="
+      max-w-md
+      mx-auto
+      bg-white
+      rounded-xl
+      shadow-md
+      overflow-hidden
+      md:max-w-3xl
+      mb-5
+    "
+      >
+        <div class="md:flex">
+          <div class="md:flex-shrink-0">
+            {{ if .Params.thumbnail }}
+              {{ $summary := .Summary }}
+              {{ $src :=
+                .Resources.GetMatch (printf "*%s*" .Params.thumbnail)
+              }}
+              {{ if $src }}
+                {{ .Scratch.Set "thumb" ($src.Resize "448x") }}
+                {{ $thumb :=
+                  .Scratch.Get "thumb"
+                }}
+
+
+                <img
+                  class="h-48 w-full object-cover md:h-full md:w-48"
+                  src="{{ $thumb.RelPermalink }}"
+                  alt="{{ .Summary }}"
+                />
+              {{ end }}
+            {{ end }}
+          </div>
+          <div class="p-8">
+            <div
+              class="uppercase tracking-wide text-sm text-blue-500 font-semibold"
+            >
+              {{ $dateTime := .PublishDate.Format "2006-01-02" }}
+              {{ $dateFormat :=
+                .Site.Params.dateFormat | default "Jan 2, 2006"
+              }}
+              <time datetime="{{ $dateTime }}"
+                >{{ .PublishDate.Format $dateFormat }}</time
+              >
+            </div>
+            <a
+              href="{{ .RelPermalink }}"
+              class="
+            block
+            mt-1
+            text-lg
+            leading-tight
+            font-medium
+            text-black
+            hover:underline
+          "
+              >{{ .Title }}</a
+            >
+            <p class="mt-2 text-gray-700">{{ .Summary }}</p>
+            {{ partial "tags-line.html" . }}
+          </div>
+        </div>
+      </div>
+    {{ end }}
+  </div>
+{{ end }}
