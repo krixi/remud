@@ -409,17 +409,22 @@ impl GameWorld {
         let mut outgoing = Vec::new();
 
         for player in players_with_messages {
-            if let Some(messages) = world.get::<Messages>(player) {
-                if messages.queue.is_empty() {
-                    continue;
-                }
+            let mut messages = world.get_mut::<Messages>(player).unwrap();
+
+            if messages.queue.is_empty() {
+                continue;
             }
-            if let Some(mut messages) = world.entity_mut(player).remove::<Messages>() {
-                if !messages.received_input {
-                    messages.queue.push_front("\r\n".to_string());
-                }
-                outgoing.push((player, messages.queue));
+
+            let mut queue = VecDeque::new();
+            std::mem::swap(&mut queue, &mut messages.queue);
+
+            if !messages.received_input {
+                queue.push_front("\r\n".to_string());
             }
+
+            messages.received_input = false;
+
+            outgoing.push((player, queue));
         }
 
         outgoing

@@ -76,7 +76,7 @@ pub fn logout_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Login { entity } = event {
+        if let ActionEvent::Logout { entity } = event {
             let (name, room) = player_query
                 .get(*entity)
                 .map(|(named, location)| (named.name.as_str(), location.room))

@@ -66,7 +66,8 @@ impl Messages {
         }
     }
 
-    pub fn queue(&mut self, message: String) {
+    pub fn queue(&mut self, mut message: String) {
+        message.push_str("\r\n");
         self.queue.push_back(message);
     }
 }

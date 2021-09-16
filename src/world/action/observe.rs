@@ -10,10 +10,9 @@ use crate::{
         action::{self, Action, ActionEvent, DynAction},
         types::{
             self,
-            object::Object,
             player::{Messages, Player},
             room::{Direction, Room},
-            Contents, Description, Keywords, Location, Named,
+            Contents, Description, Flags, Keywords, Location, Named,
         },
     },
 };
@@ -90,7 +89,7 @@ pub fn look_system(
     looker_query: Query<&Location, With<Player>>,
     room_query: Query<(&Room, &Description, &Contents)>,
     player_query: Query<&Named>,
-    object_query: Query<(&Named, &Object)>,
+    object_query: Query<(&Named, &Flags)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
@@ -148,7 +147,7 @@ pub fn look_system(
                 .objects
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
-                .filter(|(_, object)| !object.flags.contains(types::object::Flags::SUBTLE))
+                .filter(|(_, flags)| !flags.flags.contains(types::object::Flags::SUBTLE))
                 .map(|(named, _)| named.name.clone())
                 .collect_vec();
 
@@ -179,7 +178,6 @@ pub fn look_at_system(
                 .ok()
                 .map(|location| location.room)
                 .and_then(|room| contents_query.get(room).ok())
-                .or_else(|| contents_query.get(*entity).ok())
                 .and_then(|contents| {
                     contents
                         .objects
@@ -191,6 +189,20 @@ pub fn look_at_system(
                                 .all(|keyword| object_keywords.list.contains(keyword))
                         })
                         .map(|(description, _)| description.text.as_str())
+                })
+                .or_else(|| {
+                    contents_query.get(*entity).ok().and_then(|contents| {
+                        contents
+                            .objects
+                            .iter()
+                            .filter_map(|object| object_query.get(*object).ok())
+                            .find(|(_, object_keywords)| {
+                                keywords
+                                    .iter()
+                                    .all(|keyword| object_keywords.list.contains(keyword))
+                            })
+                            .map(|(description, _)| description.text.as_str())
+                    })
                 });
 
             let message = if let Some(description) = description {

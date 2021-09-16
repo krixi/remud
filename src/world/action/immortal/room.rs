@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
@@ -165,11 +165,21 @@ pub fn room_create_system(
                 }
             }
 
+            let mut exits = HashMap::new();
+            if let Some(direction) = direction {
+                exits.insert(direction.opposite(), current_room_entity);
+            }
+
             let new_room_id = rooms.next_id();
             let new_room_entity = commands
                 .spawn_bundle(RoomBundle {
                     id: types::Id::Room(new_room_id),
-                    room: Room::new(new_room_id, DEFAULT_ROOM_DESCRIPTION.to_string()),
+                    room: Room {
+                        id: new_room_id,
+                        description: DEFAULT_ROOM_DESCRIPTION.to_string(),
+                        exits,
+                        players: Vec::new(),
+                    },
                     description: Description {
                         text: DEFAULT_ROOM_DESCRIPTION.to_string(),
                     },
@@ -180,12 +190,6 @@ pub fn room_create_system(
             rooms.insert(new_room_id, new_room_entity);
 
             if let Some(direction) = direction {
-                room_query
-                    .get_mut(new_room_entity)
-                    .unwrap()
-                    .exits
-                    .insert(direction.opposite(), current_room_entity);
-
                 room_query
                     .get_mut(current_room_entity)
                     .unwrap()
@@ -242,6 +246,7 @@ pub fn room_info_system(
     player_query: Query<&Location, With<Player>>,
     room_query: Query<(&Room, &Description, &Contents)>,
     named_query: Query<&Named>,
+    object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
@@ -281,13 +286,15 @@ pub fn room_info_system(
                 .map(|named| named.name.as_str())
                 .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
 
-            message.push_str("\r\n    objects:");
+            message.push_str("\r\n  objects:");
             contents
                 .objects
                 .iter()
-                .filter_map(|object| named_query.get(*object).ok())
-                .map(|named| named.name.as_str())
-                .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
+                .filter_map(|object| object_query.get(*object).ok())
+                .map(|(object, named)| (object.id, named.name.as_str()))
+                .for_each(|(id, name)| {
+                    message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
+                });
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {
                 messages.queue(message);
@@ -429,15 +436,18 @@ pub fn room_remove_system(
     mut events: EventReader<ActionEvent>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
-    remover_query: Query<&Location, With<Player>>,
+    mut player_queries: QuerySet<(
+        Query<&Location, With<Player>>,
+        Query<(&Player, &mut Location)>,
+    )>,
     mut room_query: Query<(&mut Room, &mut Contents)>,
-    mut player_query: Query<(&Player, &mut Location)>,
     mut object_query: Query<(&Object, &mut Container)>,
     mut message_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
         if let ActionEvent::RoomRemove { entity } = event {
-            let room_entity = remover_query
+            let room_entity = player_queries
+                .q0()
                 .get(*entity)
                 .map(|location| location.room)
                 .unwrap();
@@ -472,7 +482,8 @@ pub fn room_remove_system(
             }
 
             for player in present_players.iter() {
-                player_query
+                player_queries
+                    .q1_mut()
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
@@ -508,7 +519,8 @@ pub fn room_remove_system(
             let present_player_ids = present_players
                 .iter()
                 .filter_map(|player| {
-                    player_query
+                    player_queries
+                        .q1_mut()
                         .get_mut(*player)
                         .map(|(player, _)| player.id)
                         .ok()

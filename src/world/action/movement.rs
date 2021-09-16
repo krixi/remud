@@ -1,4 +1,4 @@
-use bevy_app::{EventReader, EventWriter, Events};
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -40,14 +40,15 @@ impl Action for Move {
 }
 
 pub fn move_system(
-    mut events: EventReader<ActionEvent>,
-    mut event_writer: EventWriter<ActionEvent>,
+    mut events: ResMut<Events<ActionEvent>>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
+    let mut events_to_send = Vec::new();
+
+    for event in events.get_reader().iter(&*events) {
         if let ActionEvent::Move { entity, direction } = event {
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
@@ -148,15 +149,19 @@ pub fn move_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    event_writer.send(ActionEvent::Look {
+                    events_to_send.push(ActionEvent::Look {
                         entity: *entity,
                         direction: None,
-                    })
+                    });
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
             }
         }
+    }
+
+    for event in events_to_send {
+        events.send(event);
     }
 }
 
@@ -190,15 +195,15 @@ impl Action for Teleport {
 }
 
 pub fn teleport_system(
-    mut events: EventReader<ActionEvent>,
-    mut event_writer: EventWriter<ActionEvent>,
+    mut events: ResMut<Events<ActionEvent>>,
     rooms: Res<Rooms>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
+    let mut events_to_send = Vec::new();
+    for event in events.get_reader().iter(&*events) {
         if let ActionEvent::Teleport {
             entity,
             room_id: destination_id,
@@ -289,7 +294,7 @@ pub fn teleport_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    event_writer.send(ActionEvent::Look {
+                    events_to_send.push(ActionEvent::Look {
                         entity: *entity,
                         direction: None,
                     })
@@ -298,5 +303,8 @@ pub fn teleport_system(
                 Id::Room(_) => todo!(),
             }
         }
+    }
+    for event in events_to_send {
+        events.send(event);
     }
 }

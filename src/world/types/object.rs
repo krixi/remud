@@ -136,6 +136,10 @@ impl Objects {
         self.by_id.insert(id, entity);
     }
 
+    pub fn remove(&mut self, id: Id) {
+        self.by_id.remove(&id);
+    }
+
     pub fn by_id(&self, id: Id) -> Option<Entity> {
         self.by_id.get(&id).copied()
     }

@@ -365,16 +365,34 @@ impl Db {
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
-            let object = Object::new(
-                id,
-                types::object::Flags::from_bits_truncate(object_row.flags),
-                player_entity,
-                object_row.keywords(),
-                object_row.short,
-                object_row.long,
-            );
+            let bundle = ObjectBundle {
+                id: types::Id::Object(id),
+                flags: types::Flags {
+                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                },
+                container: Container {
+                    entity: player_entity,
+                },
+                name: Named {
+                    name: object_row.short.clone(),
+                },
+                description: Description {
+                    text: object_row.long.clone(),
+                },
+                keywords: Keywords {
+                    list: object_row.keywords(),
+                },
+                object: Object::new(
+                    id,
+                    types::object::Flags::from_bits_truncate(object_row.flags),
+                    player_entity,
+                    object_row.keywords(),
+                    object_row.short,
+                    object_row.long,
+                ),
+            };
 
-            let object_entity = world.spawn().insert(object).id();
+            let object_entity = world.spawn().insert_bundle(bundle).id();
             world
                 .get_mut::<Contents>(player_entity)
                 .unwrap()

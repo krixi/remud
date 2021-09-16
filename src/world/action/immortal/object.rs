@@ -520,7 +520,7 @@ impl Action for Remove {
 pub fn object_remove_system(
     mut commands: Commands,
     mut events: EventReader<ActionEvent>,
-    objects: Res<Objects>,
+    mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
     container_query: Query<&Container>,
     mut contents_query: Query<&mut Contents>,
@@ -539,6 +539,7 @@ pub fn object_remove_system(
 
             let container = container_query.get(object_entity).unwrap().entity;
 
+            objects.remove(*id);
             commands.entity(object_entity).despawn();
             contents_query
                 .get_mut(container)

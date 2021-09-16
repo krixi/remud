@@ -7,7 +7,10 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{self, Action, ActionEvent, DynAction},
-        types::{player::Messages, room::Room, Container, Contents, Id, Keywords, Location, Named},
+        types::{
+            object, player::Messages, room::Room, Container, Contents, Flags, Id, Keywords,
+            Location, Named,
+        },
     },
 };
 
@@ -46,9 +49,9 @@ impl Action for Drop {
 pub fn drop_system(
     mut events: EventReader<ActionEvent>,
     mut updates: ResMut<Updates>,
-    mut dropping_query: Query<(&Id, &Location, &mut Contents)>,
+    mut dropping_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
     mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
-    mut room_query: Query<(&Room, &mut Contents)>,
+    mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
@@ -162,9 +165,10 @@ impl Action for Get {
 pub fn get_system(
     mut events: EventReader<ActionEvent>,
     mut updates: ResMut<Updates>,
-    mut getting_query: Query<(&Id, &Location, &mut Contents)>,
+    mut getting_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
     mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
-    mut room_query: Query<(&Room, &mut Contents)>,
+    flags_query: Query<&Flags>,
+    mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
@@ -200,9 +204,29 @@ pub fn get_system(
             let message = if let Some(pos) = pos {
                 // Move the object from the room to the entity
                 let (room_id, object_entity) = {
-                    let (room, mut contents) = room_query.get_mut(*entity).unwrap();
-                    let object = contents.objects.remove(pos);
-                    (room.id, object)
+                    let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
+
+                    let object_entity = contents.objects[pos];
+
+                    if flags_query
+                        .get(object_entity)
+                        .unwrap()
+                        .flags
+                        .contains(object::Flags::FIXED)
+                    {
+                        if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            let (_, named, _, _) = object_query.get_mut(object_entity).unwrap();
+                            messages.queue(format!(
+                                "Try as you might, you cannot pick up {}.",
+                                named.name
+                            ));
+                        }
+                        continue;
+                    }
+
+                    contents.objects.remove(pos);
+
+                    (room.id, object_entity)
                 };
 
                 getting_query
