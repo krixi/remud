@@ -13,7 +13,7 @@ below, organized by function.
 # Communication
 
 ## `emote <text>` / `; <text>`
-Express an emotion. Only others at your current location will see your emote.  
+Express an emotion. Only others at your current location will see your emote.
 
 ## `say <text>`  / `' <text>`
 Say something aloud. Only others at your current location will hear you.
