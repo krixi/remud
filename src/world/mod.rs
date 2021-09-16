@@ -22,10 +22,10 @@ use crate::{
         action::{
             communicate::{emote_system, say_system, send_system},
             movement::{move_system, teleport_system},
-            object::drop_system,
+            object::{drop_system, get_system, inventory_system},
             queue_message,
             system::Logout,
-            DynAction,
+            ActionEvent, DynAction,
         },
         types::{
             object::Object,
@@ -172,6 +172,7 @@ impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Add events
         world.insert_resource(Events::<PlayerAction>::default());
+        world.insert_resource(Events::<ActionEvent>::default());
 
         // Add resources
         world.insert_resource(Updates::default());
@@ -203,12 +204,15 @@ impl GameWorld {
         let mut schedule = Schedule::default();
         let mut first = SystemStage::parallel();
         first.add_system(Events::<PlayerAction>::update_system.system());
+        first.add_system(Events::<ActionEvent>::update_system.system());
 
         let mut update = SystemStage::parallel();
         update.add_system(player_action_events.system());
 
         update.add_system(drop_system.system());
         update.add_system(emote_system.system());
+        update.add_system(get_system.system());
+        update.add_system(inventory_system.system());
         update.add_system(move_system.system());
         update.add_system(say_system.system());
         update.add_system(send_system.system());

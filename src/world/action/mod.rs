@@ -41,6 +41,13 @@ pub enum ActionEvent {
         entity: Entity,
         message: String,
     },
+    Get {
+        entity: Entity,
+        keywords: Vec<String>,
+    },
+    Inventory {
+        entity: Entity,
+    },
     Move {
         entity: Entity,
         direction: Direction,

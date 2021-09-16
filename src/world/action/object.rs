@@ -81,6 +81,7 @@ pub fn drop_system(
                 };
 
             let message = if let Some(pos) = pos {
+                // Move the object from the entity to the room
                 let object_entity = dropping_query
                     .get_mut(*entity)
                     .map(|(_, _, mut contents)| contents.objects.remove(pos))
@@ -110,6 +111,7 @@ pub fn drop_system(
                     (id, named.name.as_str())
                 };
 
+                // Persist the changes for the object's position
                 match entity_id {
                     Id::Player(player_id) => {
                         updates.queue(persist::player::RemoveObject::new(player_id, object_id))
@@ -151,87 +153,106 @@ pub struct Get {
 }
 
 impl Action for Get {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let (player_id, room_entity) = world
-            .get::<Player>(player)
-            .map(|player| (player.id, player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let pos = world
-            .get::<Contents>(room_entity)
-            .ok_or(action::Error::MissingComponent(room_entity, "Contents"))?
-            .objects
-            .iter()
-            .position(|object| {
-                world
-                    .get::<Object>(*object)
-                    .map(|object| {
-                        {
-                            self.keywords
-                                .iter()
-                                .all(|keyword| object.keywords.contains(keyword))
-                        }
-                    })
-                    .unwrap_or(false)
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Get {
+                entity,
+                keywords: self.keywords.clone(),
             });
+        Ok(())
+    }
+}
 
-        let message = if let Some(pos) = pos {
-            let object_entity = world.get::<Contents>(room_entity).unwrap().objects[pos];
+pub fn get_system(
+    mut events: EventReader<ActionEvent>,
+    mut updates: ResMut<Updates>,
+    mut getting_query: Query<(&Id, &Location, &mut Contents)>,
+    mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
+    mut room_query: Query<(&Room, &mut Contents)>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Get { entity, keywords } = event {
+            // Get the room that entity is in.
+            let (entity_id, room_entity) =
+                if let Ok((id, location, _)) = getting_query.get_mut(*entity) {
+                    (*id, location.room)
+                } else {
+                    tracing::warn!("Entity {:?} without Contents cannot get an item.", entity);
+                    continue;
+                };
 
-            let (short, fixed) = world
-                .get::<Object>(object_entity)
-                .map(|object| {
-                    (
-                        object.short.clone(),
-                        object.flags.contains(types::object::Flags::FIXED),
-                    )
+            // Find a matching object in the room.
+            let pos = room_query
+                .get_mut(room_entity)
+                .map(|(_, contents)| {
+                    contents.objects.iter().position(|object| {
+                        object_query
+                            .get_mut(*object)
+                            .map(|(_, _, object_keywords, _)| {
+                                {
+                                    keywords
+                                        .iter()
+                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                }
+                            })
+                            .unwrap_or(false)
+                    })
                 })
-                .unwrap();
+                .expect("Location has a valid room.");
 
-            if fixed {
-                let message = format!("Try as you might, you cannot pick up {}.", short);
-                queue_message(world, player, message);
-                return Ok(());
-            }
+            let message = if let Some(pos) = pos {
+                // Move the object from the room to the entity
+                let (room_id, object_entity) = {
+                    let (room, mut contents) = room_query.get_mut(*entity).unwrap();
+                    let object = contents.objects.remove(pos);
+                    (room.id, object)
+                };
 
-            world
-                .get_mut::<Contents>(room_entity)
-                .unwrap()
-                .objects
-                .remove(pos);
+                getting_query
+                    .get_mut(*entity)
+                    .map(|(_, _, mut contents)| contents.objects.push(object_entity))
+                    .expect("Location has valid Room");
 
-            world
-                .get_mut::<Contents>(player)
-                .ok_or(action::Error::MissingComponent(player, "Contents"))?
-                .objects
-                .push(object_entity);
+                let (object_id, name) = {
+                    let (id, named, _, mut container) =
+                        object_query.get_mut(object_entity).unwrap();
+                    container.entity = *entity;
 
-            let object_id = {
-                let mut object = world.get_mut::<Object>(object_entity).unwrap();
-                object.container = player;
-                object.id
+                    let id = if let Id::Object(id) = id {
+                        *id
+                    } else {
+                        tracing::warn!("Object {:?} does not have an object ID.", object_entity);
+                        continue;
+                    };
+
+                    (id, named.name.as_str())
+                };
+
+                // Persist the changes for the object's position
+                match entity_id {
+                    Id::Player(player_id) => {
+                        updates.queue(persist::player::AddObject::new(player_id, object_id))
+                    }
+                    Id::Object(_) => todo!(),
+                    Id::Room(_) => todo!(),
+                }
+                updates.queue(persist::room::RemoveObject::new(room_id, object_id));
+
+                format!("You pick up {}.", name)
+            } else {
+                format!(
+                    "You find no object called \"{}\" to pick up.",
+                    keywords.join(" ")
+                )
             };
 
-            let room_id = world
-                .get::<Room>(room_entity)
-                .map(|room| room.id)
-                .ok_or(action::Error::MissingComponent(room_entity, "Room"))?;
-
-            let mut updates = world.get_resource_mut::<Updates>().unwrap();
-            updates.queue(persist::room::RemoveObject::new(room_id, object_id));
-            updates.queue(persist::player::AddObject::new(player_id, object_id));
-
-            format!("You pick up {}.", short)
-        } else {
-            format!(
-                "You find no object called \"{}\" to pick up.",
-                self.keywords.join(" ")
-            )
+            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                messages.queue(message);
+            }
         };
-
-        queue_message(world, player, message);
-
-        Ok(())
     }
 }
 
@@ -239,30 +260,53 @@ impl Action for Get {
 pub struct Inventory {}
 
 impl Action for Inventory {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let mut message = "You have".to_string();
-
-        let contents = world
-            .get::<Contents>(player)
-            .ok_or(action::Error::MissingComponent(player, "Contents"))?;
-
-        if contents.objects.is_empty() {
-            message.push_str(" nothing.");
-        } else {
-            message.push(':');
-            contents
-                .objects
-                .iter()
-                .filter_map(|object| world.get::<Object>(*object))
-                .map(|object| object.short.as_str())
-                .for_each(|desc| {
-                    message.push_str("\r\n  ");
-                    message.push_str(desc)
-                });
-        }
-
-        queue_message(world, player, message);
-
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Inventory { entity });
         Ok(())
+    }
+}
+
+pub fn inventory_system(
+    mut events: EventReader<ActionEvent>,
+    inventory_query: Query<&Contents>,
+    object_query: Query<&Named>,
+    mut messages: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Inventory { entity } = event {
+            let mut message = "You have".to_string();
+
+            let contents = if let Ok(contents) = inventory_query.get(*entity) {
+                contents
+            } else {
+                tracing::warn!(
+                    "Cannot request inventory of entity {:?} without Contents",
+                    entity
+                );
+                continue;
+            };
+
+            if contents.objects.is_empty() {
+                message.push_str(" nothing.");
+            } else {
+                message.push(':');
+                contents
+                    .objects
+                    .iter()
+                    .filter_map(|object| object_query.get(*object).ok())
+                    .map(|named| named.name.as_str())
+                    .for_each(|desc| {
+                        message.push_str("\r\n  ");
+                        message.push_str(desc)
+                    });
+            }
+
+            if let Ok(mut messages) = messages.get_mut(*entity) {
+                messages.queue(message);
+            }
+        }
     }
 }
