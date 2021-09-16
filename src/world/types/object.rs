@@ -83,14 +83,16 @@ pub struct FlagsParseError {
 
 #[derive(Debug, Bundle)]
 pub struct ObjectBundle {
-    id: types::Id,
-    flags: types::Flags,
-    container: Container,
-    name: Named,
-    description: Description,
-    keywords: Keywords,
+    pub object: Object,
+    pub id: types::Id,
+    pub flags: types::Flags,
+    pub container: Container,
+    pub name: Named,
+    pub description: Description,
+    pub keywords: Keywords,
 }
 
+#[derive(Debug)]
 pub struct Object {
     pub id: Id,
     pub flags: Flags,

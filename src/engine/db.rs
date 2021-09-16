@@ -17,10 +17,10 @@ use crate::world::{
     action::{self},
     types::{
         self,
-        object::{self, Object, Objects},
+        object::{self, Object, ObjectBundle, Objects},
         player::{self, Messages, Player, PlayerBundle, Players},
         room::{self, Direction, Room, RoomBundle, Rooms},
-        Configuration, Contents,
+        Configuration, Container, Contents, Description, Keywords, Location, Named,
     },
     VOID_ROOM_ID,
 };
@@ -152,6 +152,9 @@ impl Db {
             let entity = world
                 .spawn()
                 .insert_bundle(RoomBundle {
+                    description: Description {
+                        text: room.description.clone(),
+                    },
                     room: Room::try_from(room)?,
                     contents: Contents::default(),
                 })
@@ -221,16 +224,34 @@ impl Db {
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
-            let object = Object::new(
-                id,
-                types::object::Flags::from_bits_truncate(object_row.flags),
-                room_entity,
-                object_row.keywords(),
-                object_row.short,
-                object_row.long,
-            );
+            let bundle = ObjectBundle {
+                id: types::Id::Object(id),
+                flags: types::Flags {
+                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                },
+                container: Container {
+                    entity: room_entity,
+                },
+                name: Named {
+                    name: object_row.short.clone(),
+                },
+                description: Description {
+                    text: object_row.long.clone(),
+                },
+                keywords: Keywords {
+                    list: object_row.keywords(),
+                },
+                object: Object::new(
+                    id,
+                    types::object::Flags::from_bits_truncate(object_row.flags),
+                    room_entity,
+                    object_row.keywords(),
+                    object_row.short,
+                    object_row.long,
+                ),
+            };
 
-            let object_entity = world.spawn().insert(object).id();
+            let object_entity = world.spawn().insert_bundle(bundle).id();
             match world.get_mut::<Contents>(room_entity) {
                 Some(mut contents) => contents.objects.push(object_entity),
                 None => bail!("Failed to retrieve Room for room {:?}", room_entity),
@@ -282,6 +303,10 @@ impl Db {
             let player = world
                 .spawn()
                 .insert_bundle(PlayerBundle {
+                    name: Named {
+                        name: name.to_string(),
+                    },
+                    location: Location { room },
                     player: Player {
                         id,
                         name: name.to_string(),
@@ -289,6 +314,7 @@ impl Db {
                     },
                     contents: Contents::default(),
                     messages: Messages::default(),
+                    id: types::Id::Player(id),
                 })
                 .id();
 
