@@ -1,9 +1,8 @@
 mod communicate;
+mod immortal;
 mod movement;
 mod object;
 mod observe;
-mod player;
-mod room;
 mod system;
 
 use bevy_ecs::prelude::*;
@@ -33,8 +32,24 @@ pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely unintere
 
 pub type DynAction = Box<dyn Action + Send>;
 
+pub enum ActionEvent {
+    Emote {
+        entity: Entity,
+        message: String,
+    },
+    Say {
+        entity: Entity,
+        message: String,
+    },
+    Send {
+        entity: Entity,
+        recipient: String,
+        message: String,
+    },
+}
+
 pub trait Action {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), Error>;
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), Error>;
 }
 
 #[derive(Error, Debug)]
@@ -70,9 +85,9 @@ pub fn parse(input: &str) -> Result<DynAction, String> {
             "look" => parse_look(tokenizer),
             "me" => parse_me(tokenizer),
             "north" => Ok(Move::new(Direction::North)),
-            "object" => object::parse(tokenizer),
-            "player" => player::parse(tokenizer),
-            "room" => room::parse(tokenizer),
+            "object" => immortal::object::parse(tokenizer),
+            "player" => immortal::player::parse(tokenizer),
+            "room" => immortal::room::parse(tokenizer),
             "say" => parse_say(tokenizer),
             "send" => parse_send(tokenizer),
             "shutdown" => Ok(Box::new(Shutdown {})),

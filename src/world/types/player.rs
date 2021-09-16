@@ -37,6 +37,7 @@ impl error::Error for IdParseError {}
 pub struct PlayerBundle {
     pub player: Player,
     pub contents: Contents,
+    pub messages: Messages,
 }
 
 pub struct Player {
@@ -45,6 +46,7 @@ pub struct Player {
     pub room: Entity,
 }
 
+#[derive(Default)]
 pub struct Messages {
     pub received_input: bool,
     pub queue: VecDeque<String>,

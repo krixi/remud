@@ -1,14 +1,15 @@
-use bevy_app::Events;
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
     text::Tokenizer,
     world::{
-        action::{self, queue_message, Action, DynAction},
+        action::{self, queue_message, Action, ActionEvent, DynAction},
         types::{
-            player::{Player, Players},
+            player::{Messages, Player, Players},
             room::Room,
+            Location, Named,
         },
         PlayerAction, PlayerEvent,
     },
@@ -33,26 +34,46 @@ impl Emote {
 }
 
 impl Action for Emote {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let (name, room_entity) = world
-            .get::<Player>(player)
-            .map(|player| (player.name.as_str(), player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let present_players = world
-            .get::<Room>(room_entity)
-            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?
-            .players
-            .iter()
-            .copied()
-            .collect_vec();
-
-        let message = format!("{} {}", name, self.emote);
-        for present_player in present_players {
-            queue_message(world, present_player, message.clone());
-        }
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::Emote {
+                entity,
+                message: self.emote.clone(),
+            });
 
         Ok(())
+    }
+}
+
+pub fn emote_system(
+    mut events: EventReader<ActionEvent>,
+    emoting_query: Query<(&Named, &Location)>,
+    mut present_query: Query<&mut Messages, With<Player>>,
+    room_query: Query<&Room>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Emote { entity, message } = event {
+            let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*entity) {
+                (named.name.as_str(), location.room)
+            } else {
+                tracing::warn!("No name/location for emoting entity {:?}.", entity);
+                continue;
+            };
+
+            let message = format!("{} {}", name, message);
+
+            if let Ok(room) = room_query.get(room_entity) {
+                for player in &room.players {
+                    if let Ok(mut messages) = present_query.get_mut(*player) {
+                        messages.queue(message.clone());
+                    }
+                }
+            } else {
+                tracing::warn!("Can't emote into not-a-room {:?}.", room_entity);
+            }
+        }
     }
 }
 
@@ -74,39 +95,50 @@ impl Say {
     }
 }
 
-impl Action for Say {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let (name, room_entity) = world
-            .get::<Player>(player)
-            .map(|player| (player.name.as_str(), player.room))
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
+pub fn say_system(
+    mut events: EventReader<ActionEvent>,
+    saying_query: Query<(&Named, &Location)>,
+    mut present_query: Query<&mut Messages, With<Player>>,
+    room_query: Query<&Room>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Say { entity, message } = event {
+            let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*entity) {
+                (named.name.as_str(), location.room)
+            } else {
+                tracing::warn!("No name/location for saying entity {:?}.", entity);
+                continue;
+            };
 
-        let present_players = world
-            .get::<Room>(room_entity)
-            .ok_or(action::Error::MissingComponent(room_entity, "Room"))?
-            .players
-            .iter()
-            .filter(|present_player| **present_player != player)
-            .copied()
-            .collect_vec();
+            let other_message = format!("{} says \"{}\"", name, message);
 
-        let message = format!("{} says \"{}\"", name, self.message);
-        for present_player in present_players {
-            queue_message(world, present_player, message.clone());
+            if let Ok(room) = room_query.get(room_entity) {
+                for player in &room.players {
+                    if *player == *entity {
+                        if let Ok(mut messages) = present_query.get_mut(*player) {
+                            messages.queue(format!("You say \"{}\"", message));
+                        }
+                    } else {
+                        if let Ok(mut messages) = present_query.get_mut(*player) {
+                            messages.queue(other_message.clone());
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("Can't say into not-a-room {:?}.", room_entity);
+            }
         }
+    }
+}
 
-        let message = format!("You say \"{}\"", self.message);
-        queue_message(world, player, message);
-
+impl Action for Say {
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get_resource_mut::<Events<PlayerAction>>()
+            .get_resource_mut::<Events<ActionEvent>>()
             .unwrap()
-            .send(PlayerAction {
-                player,
-                event: PlayerEvent::Say {
-                    room: room_entity,
-                    message: self.message.clone(),
-                },
+            .send(ActionEvent::Say {
+                entity,
+                message: self.message.clone(),
             });
 
         Ok(())
@@ -134,47 +166,73 @@ struct SendMessage {
 }
 
 impl Action for SendMessage {
-    fn enact(&mut self, player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let recipient = if let Some(recipient) = world
-            .get_resource::<Players>()
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
             .unwrap()
-            .by_name(self.recipient.as_str())
-        {
-            recipient
-        } else {
-            let message = format!(
-                "Your term beeps in irritation: \"User '{}' not found.\"",
-                self.recipient
-            );
-            queue_message(world, player, message);
-            return Ok(());
-        };
-
-        if recipient == player {
-            let message = "Your term trills: \"Invalid recipient: Self.\"".to_string();
-            queue_message(world, player, message);
-            return Ok(());
-        }
-
-        let sender = world
-            .get::<Player>(player)
-            .map(|player| player.name.as_str())
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
-
-        let message = format!("{} sends \"{}\".", sender, self.message);
-        queue_message(world, recipient, message);
-
-        let recipient_name = world
-            .get::<Player>(recipient)
-            .map(|player| player.name.as_str())
-            .ok_or(action::Error::MissingComponent(recipient, "Player"))?;
-
-        let sent_message = format!(
-            "Your term chirps happily: \"Message sent to '{}'.\"",
-            recipient_name
-        );
-        queue_message(world, player, sent_message);
+            .send(ActionEvent::Send {
+                entity,
+                recipient: self.recipient.clone(),
+                message: self.message.clone(),
+            });
 
         Ok(())
+    }
+}
+
+fn send_system(
+    mut events: EventReader<ActionEvent>,
+    players: Res<Players>,
+    saying_query: Query<&Named>,
+    mut messages_query: Query<&mut Messages, With<Player>>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::Send {
+            entity,
+            recipient,
+            message,
+        } = event
+        {
+            let name = if let Ok(named) = saying_query.get(*entity) {
+                named.name.as_str()
+            } else {
+                tracing::warn!("Nameless entity {:?} cannot send a message.", entity);
+                continue;
+            };
+
+            let recipient = if let Some(recipient) = players.by_name(recipient.as_str()) {
+                recipient
+            } else {
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    messages.queue(format!(
+                        "Your term beeps in irritation: \"User '{}' not found.\"",
+                        recipient
+                    ));
+                };
+
+                continue;
+            };
+
+            if recipient == *entity {
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    messages.queue("Your term trills: \"Invalid recipient: Self.\"".to_string());
+                };
+
+                continue;
+            }
+
+            if let Ok(mut messages) = messages_query.get_mut(recipient) {
+                messages.queue(format!("{} sends \"{}\"", name, message));
+
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    messages.queue(format!("Your term chirps happily: \"Message sent.\"",));
+                };
+            } else {
+                tracing::warn!(
+                    "Failed to send message to recipient {:?} with no Messages.",
+                    recipient
+                );
+            }
+        }
     }
 }

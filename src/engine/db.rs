@@ -18,7 +18,7 @@ use crate::world::{
     types::{
         self,
         object::{self, Object, Objects},
-        player::{self, Player, PlayerBundle, Players},
+        player::{self, Messages, Player, PlayerBundle, Players},
         room::{self, Direction, Room, RoomBundle, Rooms},
         Configuration, Contents,
     },
@@ -288,6 +288,7 @@ impl Db {
                         room,
                     },
                     contents: Contents::default(),
+                    messages: Messages::default(),
                 })
                 .id();
 
