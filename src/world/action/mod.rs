@@ -19,6 +19,7 @@ use crate::{
             system::Shutdown,
         },
         types::{
+            self,
             player::Messages,
             room::{self, Direction},
         },
@@ -66,6 +67,65 @@ pub enum ActionEvent {
         keywords: Vec<String>,
     },
     Move {
+        entity: Entity,
+        direction: Direction,
+    },
+    ObjectClearFlags {
+        entity: Entity,
+        id: types::object::Id,
+        flags: Vec<String>,
+    },
+    ObjectCreate {
+        entity: Entity,
+    },
+    ObjectInfo {
+        entity: Entity,
+        id: types::object::Id,
+    },
+    ObjectRemove {
+        entity: Entity,
+        id: types::object::Id,
+    },
+    ObjectSetFlags {
+        entity: Entity,
+        id: types::object::Id,
+        flags: Vec<String>,
+    },
+    ObjectUpdateDescription {
+        entity: Entity,
+        id: types::object::Id,
+        description: String,
+    },
+    ObjectUpdateKeywords {
+        entity: Entity,
+        id: types::object::Id,
+        keywords: Vec<String>,
+    },
+    ObjectUpdateName {
+        entity: Entity,
+        id: types::object::Id,
+        name: String,
+    },
+    RoomCreate {
+        entity: Entity,
+        direction: Option<Direction>,
+    },
+    RoomInfo {
+        entity: Entity,
+    },
+    RoomLink {
+        entity: Entity,
+        direction: Direction,
+        id: room::Id,
+    },
+    RoomUpdateDescription {
+        entity: Entity,
+        description: String,
+    },
+    RoomRemove {
+        entity: Entity,
+    },
+    RoomUnlink {
         entity: Entity,
         direction: Direction,
     },

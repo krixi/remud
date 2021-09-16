@@ -25,3 +25,5 @@
 - refactor player.room to Location component
 
 - refactor object.container to Location and Container components
+
+- dedupe object set/clear flags
