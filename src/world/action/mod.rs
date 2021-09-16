@@ -41,12 +41,23 @@ pub enum ActionEvent {
         entity: Entity,
         message: String,
     },
+    Exits {
+        entity: Entity,
+    },
     Get {
         entity: Entity,
         keywords: Vec<String>,
     },
     Inventory {
         entity: Entity,
+    },
+    Look {
+        entity: Entity,
+        direction: Option<Direction>,
+    },
+    LookAt {
+        entity: Entity,
+        keywords: Vec<String>,
     },
     Move {
         entity: Entity,
@@ -64,6 +75,9 @@ pub enum ActionEvent {
     Teleport {
         entity: Entity,
         room_id: room::Id,
+    },
+    Who {
+        entity: Entity,
     },
 }
 

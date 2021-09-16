@@ -29,9 +29,9 @@ pub struct Container {
     pub entity: Entity,
 }
 
-// pub struct Description {
-//     pub text: String,
-// }
+pub struct Description {
+    pub text: String,
+}
 
 pub struct Keywords {
     pub list: Vec<String>,
