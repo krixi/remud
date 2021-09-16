@@ -1,14 +1,15 @@
-use bevy_ecs::prelude::{Entity, World};
+use bevy_app::{EventReader, Events};
+use bevy_ecs::prelude::*;
 
 use crate::{
     text::Tokenizer,
     world::{
-        action::{self, queue_message, Action, DynAction},
+        action::{self, Action, ActionEvent, DynAction},
         types::{
             object::Object,
-            player::{Player, Players},
+            player::{Messages, Players},
             room::Room,
-            Contents,
+            Contents, Location, Named,
         },
     },
 };
@@ -37,47 +38,63 @@ struct Info {
 }
 
 impl Action for Info {
-    fn enact(&mut self, asking_player: Entity, world: &mut World) -> Result<(), action::Error> {
-        let player_entity = match world
-            .get_resource::<Players>()
-            .unwrap()
-            .by_name(self.name.as_str())
-        {
-            Some(entity) => entity,
-            None => {
-                let message = format!("Player '{}' not found.", self.name);
-                queue_message(world, asking_player, message);
-                return Ok(());
-            }
-        };
-
-        let player = world
-            .get::<Player>(player_entity)
-            .ok_or(action::Error::MissingComponent(player_entity, "Player"))?;
-
-        let room = world
-            .get::<Room>(player.room)
-            .ok_or(action::Error::MissingComponent(player.room, "Room"))?;
-
-        let mut message = format!("Player {}", player.name);
-
-        message.push_str("\r\n  room: ");
-        message.push_str(room.id.to_string().as_str());
-
-        message.push_str("\r\n  objects:");
+    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
         world
-            .get::<Contents>(player_entity)
-            .ok_or(action::Error::MissingComponent(player_entity, "Contents"))?
-            .objects
-            .iter()
-            .filter_map(|object| world.get::<Object>(*object))
-            .map(|object| (object.id, object.short.as_str()))
-            .for_each(|(id, name)| {
-                message.push_str(format!("\r\n    object {}: {}", id, name).as_str());
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(ActionEvent::PlayerInfo {
+                entity,
+                name: self.name.clone(),
             });
 
-        queue_message(world, asking_player, message);
-
         Ok(())
+    }
+}
+
+pub fn player_info_system(
+    mut events: EventReader<ActionEvent>,
+    players: Res<Players>,
+    player_query: Query<(&Contents, &Location)>,
+    room_query: Query<&Room>,
+    object_query: Query<(&Object, &Named)>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::PlayerInfo { entity, name } = event {
+            let player = if let Some(entity) = players.by_name(name) {
+                entity
+            } else {
+                if let Ok(mut messages) = message_query.get_mut(*entity) {
+                    messages.queue(format!("Player '{}' not found.", name))
+                }
+                continue;
+            };
+
+            let (contents, location) = player_query.get(player).unwrap();
+            let room = room_query.get(location.room).unwrap();
+
+            let mut message = format!("Player {}", name);
+
+            message.push_str("\r\n  room: ");
+            message.push_str(room.id.to_string().as_str());
+
+            message.push_str("\r\n  inventory:");
+            contents
+                .objects
+                .iter()
+                .filter_map(|object| {
+                    object_query
+                        .get(*object)
+                        .map(|(object, named)| (object.id, named.name.as_str()))
+                        .ok()
+                })
+                .for_each(|(id, name)| {
+                    message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
+                });
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(message);
+            }
+        }
     }
 }

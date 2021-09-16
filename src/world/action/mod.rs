@@ -106,6 +106,10 @@ pub enum ActionEvent {
         id: types::object::Id,
         name: String,
     },
+    PlayerInfo {
+        entity: Entity,
+        name: String,
+    },
     RoomCreate {
         entity: Entity,
         direction: Option<Direction>,

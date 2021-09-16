@@ -28,6 +28,7 @@ use crate::{
                     object_update_description_system, object_update_keywords_system,
                     object_update_name_system,
                 },
+                player::player_info_system,
                 room::{
                     room_create_system, room_info_system, room_link_system, room_remove_system,
                     room_unlink_system, room_update_description_system,
@@ -240,6 +241,7 @@ impl GameWorld {
         update.add_system(object_update_name_system.system());
         update.add_system(object_remove_system.system());
         update.add_system(object_set_flags_system.system());
+        update.add_system(player_info_system.system());
         update.add_system(room_create_system.system());
         update.add_system(room_info_system.system());
         update.add_system(room_link_system.system());
