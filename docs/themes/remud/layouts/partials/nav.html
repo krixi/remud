@@ -1,0 +1,27 @@
+<div class="container mx-auto bg-dark-mode text-white rounded">
+  <nav class="flex flex-row justify-between p-2">
+    <div>
+      {{ $title := .Title }}
+      {{ $isHome := .IsHome }}
+      {{ range .Site.Menus.main }}
+
+        {{ $bg := "" }}
+        {{ if or (eq .Name $title) (and (eq .Name "Home") $isHome) }}
+          {{ $bg = "bg-gray-500" }}
+        {{ end }}
+        <div class="inline-block mx-1 px-4 hover:bg-gray-500 rounded {{ $bg }}">
+          <a href="{{ .URL }}">
+            {{ $text := print .Name | safeHTML }}
+            {{ $text }}
+          </a>
+        </div>
+      {{ end }}
+
+    </div>
+    <div>
+      <div class="inline-block mx-1 px-4 hover:bg-gray-500 rounded">
+        <a href="/">ReMUD</a>
+      </div>
+    </div>
+  </nav>
+</div>

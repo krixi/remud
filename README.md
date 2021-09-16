@@ -11,3 +11,10 @@ Technologies:
  - [Tokio](https://tokio.rs/)
  - [sqlx](https://github.com/launchbadge/sqlx) (currently backed by [SQLite](https://www.sqlite.org/))
  - [bevy_ecs](https://bevyengine.org/)
+
+
+Docs for this project are built using [Hugo](https://gohugo.io/) - to view them locally, install Hugo and run:
+```shell
+cd docs
+hugo serve -D
+```

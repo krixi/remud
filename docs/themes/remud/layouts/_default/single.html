@@ -1,0 +1,21 @@
+{{ define "main" }}
+  <div class="container mx-auto p-5 bg-white rounded max-w-3xl">
+    <article class="mx-auto">
+      <h1>{{ .Title }}</h1>
+      <span>
+        {{ with .Params.author }}Article by {{ . }},{{ end }}
+        {{ $dateTime
+          := .PublishDate.Format "2006-01-02"
+        }}
+        {{ $dateFormat :=
+          .Site.Params.dateFormat | default "Jan 2, 2006"
+        }}
+        <time datetime="{{ $dateTime }}"
+          >{{ .PublishDate.Format $dateFormat }}</time
+        >
+      </span>
+      {{ .Content }}
+      {{ partial "tags-line.html" . }}
+    </article>
+  </div>
+{{ end }}

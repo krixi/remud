@@ -1,0 +1,20 @@
+baseURL = "http://example.org/"
+languageCode = "en-us"
+title = "ReMUD"
+theme = "remud"
+
+
+[[menu.main]]
+name = "Guide"
+url = "/guide"
+weight = 1
+
+[[menu.main]]
+name = "Development"
+url = "/development"
+weight = 2
+
+[[menu.main]]
+name = "Tags"
+url = "/tags"
+weight = 3
