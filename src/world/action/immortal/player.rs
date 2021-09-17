@@ -35,6 +35,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PlayerInfo {
     pub entity: Entity,
     pub name: String,

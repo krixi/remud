@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
 pub struct Move {
     pub entity: Entity,
     pub direction: Direction,
@@ -163,6 +164,7 @@ pub fn parse_teleport(player: Entity, mut tokenizer: Tokenizer) -> Result<Action
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Teleport {
     pub entity: Entity,
     pub room_id: RoomId,

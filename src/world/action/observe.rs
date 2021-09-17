@@ -52,6 +52,7 @@ pub fn parse_look(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEven
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Look {
     pub entity: Entity,
     pub direction: Option<Direction>,
@@ -139,6 +140,7 @@ pub fn look_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct LookAt {
     pub entity: Entity,
     pub keywords: Vec<String>,
@@ -203,6 +205,7 @@ pub fn look_at_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Exits {
     pub entity: Entity,
 }
@@ -247,6 +250,7 @@ pub fn exits_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Who {
     pub entity: Entity,
 }

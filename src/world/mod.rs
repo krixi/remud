@@ -42,7 +42,8 @@ use crate::{
             ActionEvent,
         },
         scripting::{
-            post_script_system, pre_script_system, trigger_api, world_api, Script, ScriptExecutions,
+            post_script_system, pre_script_system, trigger_api, world_api, PostAction, PreAction,
+            Script, ScriptExecutions,
         },
         types::{
             player::{Messages, Player, Players},
@@ -66,7 +67,9 @@ pub struct GameWorld {
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Add events
+        world.insert_resource(Events::<PreAction>::default());
         world.insert_resource(Events::<ActionEvent>::default());
+        world.insert_resource(Events::<PostAction>::default());
 
         // Add resources
         world.insert_resource(Updates::default());
@@ -79,7 +82,9 @@ impl GameWorld {
         let mut schedule = Schedule::default();
 
         let mut first = SystemStage::parallel();
+        first.add_system(Events::<PreAction>::update_system.system());
         first.add_system(Events::<ActionEvent>::update_system.system());
+        first.add_system(Events::<PostAction>::update_system.system());
 
         let mut update = SystemStage::parallel();
         update.add_system(pre_script_system.exclusive_system());

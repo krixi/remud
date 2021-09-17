@@ -107,6 +107,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectUnsetFlags {
     pub entity: Entity,
     pub id: ObjectId,
@@ -160,6 +161,7 @@ pub fn object_clear_flags_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectCreate {
     pub entity: Entity,
 }
@@ -224,6 +226,7 @@ pub fn object_create_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectInfo {
     pub entity: Entity,
     pub id: ObjectId,
@@ -287,6 +290,7 @@ pub fn object_info_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectUpdateKeywords {
     pub entity: Entity,
     pub id: ObjectId,
@@ -335,6 +339,7 @@ pub fn object_update_keywords_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectUpdateDescription {
     pub entity: Entity,
     pub id: ObjectId,
@@ -384,6 +389,7 @@ pub fn object_update_description_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectUpdateName {
     pub entity: Entity,
     pub id: ObjectId,
@@ -427,6 +433,7 @@ pub fn object_update_name_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectRemove {
     pub entity: Entity,
     pub id: ObjectId,
@@ -472,6 +479,7 @@ pub fn object_remove_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectSetFlags {
     pub entity: Entity,
     pub id: ObjectId,

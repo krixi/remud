@@ -2,12 +2,44 @@
 
 use std::sync::Arc;
 
-use bevy_app::EventReader;
+use bevy_app::{EventReader, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use rhai::plugin::*;
 
-use crate::world::types::Container;
+use crate::world::{action::ActionEvent, types::Container};
+
+pub struct PreAction {
+    pub action: ActionEvent,
+}
+
+pub struct PostAction {
+    pub action: ActionEvent,
+}
+
+pub fn pre_script_system(world: &mut World) {
+    let world = world.cell();
+
+    let pre_action_events = world.get_resource_mut::<Events<PreAction>>().unwrap();
+    let mut action_events = world.get_resource_mut::<Events<ActionEvent>>().unwrap();
+
+    for PreAction { action } in pre_action_events.get_reader().iter(&*pre_action_events) {
+        action_events.send(action.clone());
+    }
+}
+
+pub fn post_script_system(world: &mut World) {
+    let world = world.cell();
+
+    let action_events = world.get_resource_mut::<Events<ActionEvent>>().unwrap();
+    let mut post_action_events = world.get_resource_mut::<Events<PostAction>>().unwrap();
+
+    for action in action_events.get_reader().iter(&*action_events) {
+        post_action_events.send(PostAction {
+            action: action.clone(),
+        });
+    }
+}
 
 #[derive(Debug)]
 pub struct PlayerAction {
@@ -131,6 +163,3 @@ fn player_action_events(
         }
     }
 }
-
-pub fn pre_script_system(_world: &mut World) {}
-pub fn post_script_system(_world: &mut World) {}

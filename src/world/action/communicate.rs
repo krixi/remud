@@ -25,6 +25,7 @@ pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, Str
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Emote {
     pub entity: Entity,
     pub emote: String,
@@ -76,6 +77,7 @@ pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, St
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Say {
     pub entity: Entity,
     pub message: String,
@@ -133,6 +135,7 @@ pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEven
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SendMessage {
     pub entity: Entity,
     pub recipient: String,

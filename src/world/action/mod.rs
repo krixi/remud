@@ -48,6 +48,7 @@ pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
 pub const DEFAULT_OBJECT_SHORT: &str = "an object";
 pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely uninteresting.";
 
+#[derive(Debug, Clone)]
 pub enum ActionEvent {
     Drop(Drop),
     Emote(Emote),

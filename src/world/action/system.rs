@@ -14,6 +14,7 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
 pub struct Login {
     pub entity: Entity,
 }
@@ -53,6 +54,7 @@ pub fn login_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Logout {
     pub entity: Entity,
 }
@@ -92,6 +94,7 @@ pub fn logout_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Shutdown {
     pub entity: Entity,
 }

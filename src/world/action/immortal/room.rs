@@ -122,6 +122,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomCreate {
     pub entity: Entity,
     pub direction: Option<Direction>,
@@ -224,6 +225,7 @@ pub fn room_create_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomInfo {
     pub entity: Entity,
 }
@@ -292,6 +294,7 @@ pub fn room_info_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomLink {
     pub entity: Entity,
     pub direction: Direction,
@@ -351,6 +354,7 @@ pub fn room_link_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomUpdateDescription {
     pub entity: Entity,
     pub description: String,
@@ -391,6 +395,7 @@ pub fn room_update_description_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomRemove {
     pub entity: Entity,
 }
@@ -520,6 +525,7 @@ pub fn room_remove_system(
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomUnlink {
     pub entity: Entity,
     pub direction: Direction,
