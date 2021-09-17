@@ -1,13 +1,14 @@
 use std::str::FromStr;
 
-use bevy_app::{EventReader, Events};
+use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
+    event_from_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{self, Action, ActionEvent, DynAction},
+        action::ActionEvent,
         types::{
             object::ObjectFlags,
             player::{Messages, Player},
@@ -17,7 +18,7 @@ use crate::{
     },
 };
 
-pub fn parse_look(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse_look(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     match tokenizer.next() {
         Some(token) => {
             if token == "at" {
@@ -31,58 +32,32 @@ pub fn parse_look(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                     .map(ToString::to_string)
                     .collect_vec();
 
-                Ok(Box::new(Look {
-                    at: Some(keywords),
-                    direction: None,
+                Ok(ActionEvent::from(LookAt {
+                    entity: player,
+                    keywords,
                 }))
             } else if let Ok(direction) = Direction::from_str(token) {
-                Ok(Box::new(Look {
-                    at: None,
+                Ok(ActionEvent::from(Look {
+                    entity: player,
                     direction: Some(direction),
                 }))
             } else {
                 Err(format!("I don't know how to look {}.", token))
             }
         }
-        None => Ok(Box::new(Look {
-            at: None,
+        None => Ok(ActionEvent::from(Look {
+            entity: player,
             direction: None,
         })),
     }
 }
 
-#[derive(Default)]
 pub struct Look {
-    at: Option<Vec<String>>,
-    direction: Option<Direction>,
+    pub entity: Entity,
+    pub direction: Option<Direction>,
 }
 
-impl Look {
-    pub fn here() -> Box<Self> {
-        Box::new(Look::default())
-    }
-}
-
-impl Action for Look {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        if let Some(keywords) = self.at.take() {
-            world
-                .get_resource_mut::<Events<ActionEvent>>()
-                .unwrap()
-                .send(ActionEvent::LookAt { entity, keywords });
-        } else {
-            world
-                .get_resource_mut::<Events<ActionEvent>>()
-                .unwrap()
-                .send(ActionEvent::Look {
-                    entity,
-                    direction: self.direction,
-                });
-        }
-
-        Ok(())
-    }
-}
+event_from_action!(Look);
 
 pub fn look_system(
     mut events: EventReader<ActionEvent>,
@@ -93,7 +68,7 @@ pub fn look_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Look { entity, direction } = event {
+        if let ActionEvent::Look(Look { entity, direction }) = event {
             let current_room = looker_query
                 .get(*entity)
                 .map(|location| location.room)
@@ -164,6 +139,13 @@ pub fn look_system(
     }
 }
 
+pub struct LookAt {
+    pub entity: Entity,
+    pub keywords: Vec<String>,
+}
+
+event_from_action!(LookAt);
+
 pub fn look_at_system(
     mut events: EventReader<ActionEvent>,
     looker_query: Query<&Location, With<Player>>,
@@ -172,7 +154,7 @@ pub fn look_at_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::LookAt { entity, keywords } = event {
+        if let ActionEvent::LookAt(LookAt { entity, keywords }) = event {
             let description = looker_query
                 .get(*entity)
                 .ok()
@@ -221,17 +203,11 @@ pub fn look_at_system(
     }
 }
 
-pub struct Exits {}
-
-impl Action for Exits {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Exits { entity });
-        Ok(())
-    }
+pub struct Exits {
+    pub entity: Entity,
 }
+
+event_from_action!(Exits);
 
 pub fn exits_system(
     mut events: EventReader<ActionEvent>,
@@ -240,7 +216,7 @@ pub fn exits_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Exits { entity } = event {
+        if let ActionEvent::Exits(Exits { entity }) = event {
             let current_room = exiter_query
                 .get(*entity)
                 .map(|location| location.room)
@@ -271,17 +247,11 @@ pub fn exits_system(
     }
 }
 
-pub struct Who {}
-
-impl Action for Who {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Who { entity });
-        Ok(())
-    }
+pub struct Who {
+    pub entity: Entity,
 }
+
+event_from_action!(Who);
 
 pub fn who_system(
     mut events: EventReader<ActionEvent>,
@@ -289,7 +259,7 @@ pub fn who_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Who { entity } = event {
+        if let ActionEvent::Who(Who { entity }) = event {
             let players = player_query
                 .iter()
                 .map(|named| format!("  {}", named.name))

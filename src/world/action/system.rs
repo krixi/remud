@@ -1,28 +1,24 @@
-use bevy_app::{EventReader, Events};
+use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::world::{
-    action::{self, Action, ActionEvent},
-    types::{
-        player::{Messages, Player},
-        room::Room,
-        Configuration, Location, Named,
+use crate::{
+    event_from_action,
+    world::{
+        action::ActionEvent,
+        types::{
+            player::{Messages, Player},
+            room::Room,
+            Configuration, Location, Named,
+        },
     },
 };
 
-pub struct Login {}
-
-impl Action for Login {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Login { entity });
-
-        Ok(())
-    }
+pub struct Login {
+    pub entity: Entity,
 }
+
+event_from_action!(Login);
 
 pub fn login_system(
     mut events: EventReader<ActionEvent>,
@@ -31,7 +27,7 @@ pub fn login_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Login { entity } = event {
+        if let ActionEvent::Login(Login { entity }) = event {
             let (name, room) = player_query
                 .get(*entity)
                 .map(|(named, location)| (named.name.as_str(), location.room))
@@ -57,17 +53,11 @@ pub fn login_system(
     }
 }
 
-pub struct Logout {}
-
-impl Action for Logout {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Logout { entity });
-        Ok(())
-    }
+pub struct Logout {
+    pub entity: Entity,
 }
+
+event_from_action!(Logout);
 
 pub fn logout_system(
     mut events: EventReader<ActionEvent>,
@@ -76,7 +66,7 @@ pub fn logout_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Logout { entity } = event {
+        if let ActionEvent::Logout(Logout { entity }) = event {
             let (name, room) = player_query
                 .get(*entity)
                 .map(|(named, location)| (named.name.as_str(), location.room))
@@ -102,21 +92,15 @@ pub fn logout_system(
     }
 }
 
-pub struct Shutdown {}
-
-impl Action for Shutdown {
-    fn enact(&mut self, _player: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Shutdown {});
-        Ok(())
-    }
+pub struct Shutdown {
+    pub entity: Entity,
 }
+
+event_from_action!(Shutdown);
 
 pub fn shutdown_system(mut events: EventReader<ActionEvent>, mut config: ResMut<Configuration>) {
     for event in events.iter() {
-        if let ActionEvent::Shutdown {} = event {
+        if let ActionEvent::Shutdown(Shutdown { .. }) = event {
             config.shutdown = true
         }
     }

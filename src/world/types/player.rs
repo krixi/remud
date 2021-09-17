@@ -54,16 +54,6 @@ pub struct Messages {
 }
 
 impl Messages {
-    pub fn new_with(message: String) -> Self {
-        let mut queue = VecDeque::new();
-        queue.push_back(message);
-
-        Messages {
-            received_input: false,
-            queue,
-        }
-    }
-
     pub fn queue(&mut self, mut message: String) {
         message.push_str("\r\n");
         self.queue.push_back(message);

@@ -1,17 +1,15 @@
 use std::{convert::TryFrom, str::FromStr};
 
-use bevy_app::{EventReader, Events};
+use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, Updates},
+    event_from_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{
-            self, Action, ActionEvent, DynAction, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG,
-            DEFAULT_OBJECT_SHORT,
-        },
+        action::{ActionEvent, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -29,10 +27,10 @@ use crate::{
 // object <id> short - sets an object's short description
 // object <id> long - sets an object's long description
 // object <id> remove - removes an object
-pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     if let Some(token) = tokenizer.next() {
         match token {
-            "new" => Ok(Box::new(Create {})),
+            "new" => Ok(ActionEvent::from(ObjectCreate { entity: player })),
             maybe_id => {
                 let id = match ObjectId::from_str(maybe_id) {
                     Ok(id) => id,
@@ -41,7 +39,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 
                 if let Some(token) = tokenizer.next() {
                     match token {
-                        "info" => Ok(Box::new(Info { id })),
+                        "info" => Ok(ActionEvent::from(ObjectInfo {entity: player, id })),
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a comma separated list of keywords.".to_string())
@@ -52,37 +50,40 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
-                                Ok(Box::new(UpdateKeywords {
+                                Ok(ActionEvent::from(ObjectUpdateKeywords {
+                                    entity: player,
                                     id,
                                     keywords,
                                 }))
                             }
                         }
-                        "long" => {
+                        "desc" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a long description.".to_string())
                             } else {
-                                Ok(Box::new(UpdateLongDescription {
+                                Ok(ActionEvent::from(ObjectUpdateDescription {
+                                    entity: player,
                                     id,
-                                    long: tokenizer.rest().to_string(),
+                                    description: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
-                        "remove" => Ok(Box::new(Remove { id })),
+                        "remove" => Ok(ActionEvent::from(ObjectRemove { entity: player, id })),
                         "set" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Box::new(SetFlags {id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(ActionEvent::from(ObjectSetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
-                        "short" => {
+                        "name" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a short description.".to_string())
                             } else {
-                                Ok(Box::new(UpdateShortDescription {
+                                Ok(ActionEvent::from(ObjectUpdateName {
+                                    entity: player,
                                     id,
-                                    short: tokenizer.rest().to_string(),
+                                    name: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
@@ -90,7 +91,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Box::new(ClearFlags {id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(ActionEvent::from(ObjectUnsetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
                         _ => Err("Enter a valid object subcommand: info, keywords, long, set, short, remove, or unset."
@@ -106,25 +107,13 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
-struct ClearFlags {
-    id: ObjectId,
-    flags: Vec<String>,
+pub struct ObjectUnsetFlags {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub flags: Vec<String>,
 }
 
-impl Action for ClearFlags {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectClearFlags {
-                entity,
-                id: self.id,
-                flags: self.flags.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectUnsetFlags);
 
 pub fn object_clear_flags_system(
     mut events: EventReader<ActionEvent>,
@@ -134,7 +123,7 @@ pub fn object_clear_flags_system(
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectClearFlags { entity, id, flags } = event {
+        if let ActionEvent::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -171,18 +160,11 @@ pub fn object_clear_flags_system(
     }
 }
 
-struct Create {}
-
-impl Action for Create {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectCreate { entity });
-
-        Ok(())
-    }
+pub struct ObjectCreate {
+    pub entity: Entity,
 }
+
+event_from_action!(ObjectCreate);
 
 pub fn object_create_system(
     mut commands: Commands,
@@ -194,7 +176,7 @@ pub fn object_create_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectCreate { entity } = event {
+        if let ActionEvent::ObjectCreate(ObjectCreate { entity }) = event {
             let room_entity = player_query
                 .get(*entity)
                 .map(|location| location.room)
@@ -242,23 +224,12 @@ pub fn object_create_system(
     }
 }
 
-struct Info {
-    id: ObjectId,
+pub struct ObjectInfo {
+    pub entity: Entity,
+    pub id: ObjectId,
 }
 
-impl Action for Info {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectInfo {
-                entity,
-                id: self.id,
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectInfo);
 
 pub fn object_info_system(
     mut events: EventReader<ActionEvent>,
@@ -276,7 +247,7 @@ pub fn object_info_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectInfo { entity, id } = event {
+        if let ActionEvent::ObjectInfo(ObjectInfo { entity, id }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -316,25 +287,13 @@ pub fn object_info_system(
     }
 }
 
-struct UpdateKeywords {
-    id: ObjectId,
-    keywords: Vec<String>,
+pub struct ObjectUpdateKeywords {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub keywords: Vec<String>,
 }
 
-impl Action for UpdateKeywords {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectUpdateKeywords {
-                entity,
-                id: self.id,
-                keywords: self.keywords.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectUpdateKeywords);
 
 pub fn object_update_keywords_system(
     mut events: EventReader<ActionEvent>,
@@ -344,11 +303,11 @@ pub fn object_update_keywords_system(
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectUpdateKeywords {
+        if let ActionEvent::ObjectUpdateKeywords(ObjectUpdateKeywords {
             entity,
             id,
             keywords,
-        } = event
+        }) = event
         {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
@@ -376,25 +335,13 @@ pub fn object_update_keywords_system(
     }
 }
 
-struct UpdateLongDescription {
-    id: ObjectId,
-    long: String,
+pub struct ObjectUpdateDescription {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub description: String,
 }
 
-impl Action for UpdateLongDescription {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectUpdateDescription {
-                entity,
-                id: self.id,
-                description: self.long.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectUpdateDescription);
 
 pub fn object_update_description_system(
     mut events: EventReader<ActionEvent>,
@@ -404,11 +351,11 @@ pub fn object_update_description_system(
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectUpdateDescription {
+        if let ActionEvent::ObjectUpdateDescription(ObjectUpdateDescription {
             entity,
             id,
             description,
-        } = event
+        }) = event
         {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
@@ -437,25 +384,13 @@ pub fn object_update_description_system(
     }
 }
 
-struct UpdateShortDescription {
-    id: ObjectId,
-    short: String,
+pub struct ObjectUpdateName {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub name: String,
 }
 
-impl Action for UpdateShortDescription {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectUpdateName {
-                entity,
-                id: self.id,
-                name: self.short.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectUpdateName);
 
 pub fn object_update_name_system(
     mut events: EventReader<ActionEvent>,
@@ -465,7 +400,7 @@ pub fn object_update_name_system(
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectUpdateName { entity, id, name } = event {
+        if let ActionEvent::ObjectUpdateName(ObjectUpdateName { entity, id, name }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -492,23 +427,12 @@ pub fn object_update_name_system(
     }
 }
 
-struct Remove {
-    id: ObjectId,
+pub struct ObjectRemove {
+    pub entity: Entity,
+    pub id: ObjectId,
 }
 
-impl Action for Remove {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectRemove {
-                entity,
-                id: self.id,
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(ObjectRemove);
 
 pub fn object_remove_system(
     mut commands: Commands,
@@ -520,7 +444,7 @@ pub fn object_remove_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectRemove { entity, id } = event {
+        if let ActionEvent::ObjectRemove(ObjectRemove { entity, id }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -548,24 +472,13 @@ pub fn object_remove_system(
     }
 }
 
-struct SetFlags {
-    id: ObjectId,
-    flags: Vec<String>,
+pub struct ObjectSetFlags {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub flags: Vec<String>,
 }
 
-impl Action for SetFlags {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::ObjectSetFlags {
-                entity,
-                id: self.id,
-                flags: self.flags.clone(),
-            });
-        Ok(())
-    }
-}
+event_from_action!(ObjectSetFlags);
 
 pub fn object_set_flags_system(
     mut events: EventReader<ActionEvent>,
@@ -575,7 +488,7 @@ pub fn object_set_flags_system(
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectSetFlags { entity, id, flags } = event {
+        if let ActionEvent::ObjectSetFlags(ObjectSetFlags { entity, id, flags }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {

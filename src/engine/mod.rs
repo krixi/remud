@@ -21,7 +21,7 @@ use crate::{
         db::Db,
     },
     world::{
-        action::{observe::Look, parse, system::Login},
+        action::{observe::Look, parse, system::Login, ActionEvent},
         GameWorld,
     },
     ClientId,
@@ -267,9 +267,14 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(player, Box::new(Login {}))
+                        .player_action(ActionEvent::from(Login { entity: player }))
                         .await;
-                    self.game_world.player_action(player, Look::here()).await;
+                    self.game_world
+                        .player_action(ActionEvent::from(Look {
+                            entity: player,
+                            direction: None,
+                        }))
+                        .await;
 
                     spawned_player = Some(player);
                 }
@@ -313,16 +318,21 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(player, Box::new(Login {}))
+                        .player_action(ActionEvent::from(Login { entity: player }))
                         .await;
-                    self.game_world.player_action(player, Look::here()).await;
+                    self.game_world
+                        .player_action(ActionEvent::from(Look {
+                            entity: player,
+                            direction: None,
+                        }))
+                        .await;
 
                     spawned_player = Some(player);
                 }
                 State::InGame { player } => {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
-                    match parse(&input) {
-                        Ok(action) => self.game_world.player_action(*player, action).await,
+                    match parse(*player, &input) {
+                        Ok(action) => self.game_world.player_action(action).await,
                         Err(message) => client.send(format!("{}\r\n> ", message).into()).await,
                     }
                 }

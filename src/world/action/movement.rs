@@ -4,9 +4,10 @@ use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, Updates},
+    event_from_action,
     text::Tokenizer,
     world::{
-        action::{self, Action, ActionEvent, DynAction},
+        action::{observe::Look, ActionEvent},
         types::{
             player::Messages,
             room::{Direction, Room, RoomId, Rooms},
@@ -16,28 +17,11 @@ use crate::{
 };
 
 pub struct Move {
-    direction: Direction,
+    pub entity: Entity,
+    pub direction: Direction,
 }
 
-impl Move {
-    pub fn new(direction: Direction) -> Box<Self> {
-        Box::new(Move { direction })
-    }
-}
-
-impl Action for Move {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Move {
-                entity,
-                direction: self.direction,
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(Move);
 
 pub fn move_system(
     mut events: ResMut<Events<ActionEvent>>,
@@ -49,7 +33,7 @@ pub fn move_system(
     let mut events_to_send = Vec::new();
 
     for event in events.get_reader().iter(&*events) {
-        if let ActionEvent::Move { entity, direction } = event {
+        if let ActionEvent::Move(Move { entity, direction }) = event {
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
                 if let Ok((id, named, location)) = moving_query.get_mut(*entity) {
@@ -149,10 +133,10 @@ pub fn move_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    events_to_send.push(ActionEvent::Look {
+                    events_to_send.push(ActionEvent::Look(Look {
                         entity: *entity,
                         direction: None,
-                    });
+                    }));
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
@@ -165,10 +149,13 @@ pub fn move_system(
     }
 }
 
-pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse_teleport(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     if let Some(destination) = tokenizer.next() {
         match destination.parse::<RoomId>() {
-            Ok(room_id) => Ok(Box::new(Teleport { room_id })),
+            Ok(room_id) => Ok(ActionEvent::from(Teleport {
+                entity: player,
+                room_id,
+            })),
             Err(e) => Err(e.to_string()),
         }
     } else {
@@ -177,22 +164,11 @@ pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 }
 
 pub struct Teleport {
-    room_id: RoomId,
+    pub entity: Entity,
+    pub room_id: RoomId,
 }
 
-impl Action for Teleport {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Teleport {
-                entity,
-                room_id: self.room_id,
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(Teleport);
 
 pub fn teleport_system(
     mut events: ResMut<Events<ActionEvent>>,
@@ -204,16 +180,12 @@ pub fn teleport_system(
 ) {
     let mut events_to_send = Vec::new();
     for event in events.get_reader().iter(&*events) {
-        if let ActionEvent::Teleport {
-            entity,
-            room_id: destination_id,
-        } = event
-        {
-            let destination = if let Some(entity) = rooms.by_id(*destination_id) {
+        if let ActionEvent::Teleport(Teleport { entity, room_id }) = event {
+            let destination = if let Some(entity) = rooms.by_id(*room_id) {
                 entity
             } else {
                 if let Ok(mut messages) = messages_query.get_mut(*entity) {
-                    messages.queue(format!("Room {} doesn't exist.", destination_id));
+                    messages.queue(format!("Room {} doesn't exist.", room_id));
                 }
                 continue;
             };
@@ -247,20 +219,14 @@ pub fn teleport_system(
             }
 
             // Retrieve information about the destination room.
-            let (destination_id, destination_players) = {
-                let room = room_query
-                    .get_mut(destination)
-                    .expect("Destinations are valid rooms.");
-
-                let present_players = room
-                    .players
-                    .iter()
-                    .filter(|present_player| **present_player != *entity)
-                    .copied()
-                    .collect_vec();
-
-                (room.id, present_players)
-            };
+            let destination_players = room_query
+                .get_mut(destination)
+                .expect("Destinations are valid rooms.")
+                .players
+                .iter()
+                .filter(|present_player| **present_player != *entity)
+                .copied()
+                .collect_vec();
 
             // Move the entity.
             match id {
@@ -293,11 +259,11 @@ pub fn teleport_system(
             // Dispatch a storage update to the new location.
             match id {
                 Id::Player(id) => {
-                    updates.queue(persist::player::Room::new(*id, destination_id));
-                    events_to_send.push(ActionEvent::Look {
+                    updates.queue(persist::player::Room::new(*id, *room_id));
+                    events_to_send.push(ActionEvent::Look(Look {
                         entity: *entity,
                         direction: None,
-                    })
+                    }))
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),

@@ -38,9 +38,8 @@ use crate::{
             movement::{move_system, teleport_system},
             object::{drop_system, get_system, inventory_system},
             observe::{exits_system, look_at_system, look_system, who_system},
-            queue_message,
             system::{login_system, logout_system, shutdown_system, Logout},
-            ActionEvent, DynAction,
+            ActionEvent,
         },
         scripting::{
             post_script_system, pre_script_system, trigger_api, world_api, Script, ScriptExecutions,
@@ -197,7 +196,8 @@ impl GameWorld {
     }
 
     pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        self.player_action(player, Box::new(Logout {})).await;
+        self.player_action(ActionEvent::from(Logout { entity: player }))
+            .await;
 
         let mut world = self.world.write().unwrap();
 
@@ -229,23 +229,23 @@ impl GameWorld {
         Ok(())
     }
 
-    pub async fn player_action(&mut self, player: Entity, mut action: DynAction) {
+    pub async fn player_action(&mut self, action: ActionEvent) {
         let mut world = self.world.write().unwrap();
 
-        match world.get_mut::<Messages>(player) {
+        match world.get_mut::<Messages>(action.enactor()) {
             Some(mut messages) => messages.received_input = true,
             None => {
-                world.entity_mut(player).insert(Messages {
+                world.entity_mut(action.enactor()).insert(Messages {
                     received_input: true,
                     queue: VecDeque::new(),
                 });
             }
         }
 
-        if let Err(e) = action.enact(player, &mut world) {
-            queue_message(&mut world, player, "Command failed.".to_string());
-            tracing::error!("Action error: {}", e);
-        };
+        world
+            .get_resource_mut::<Events<ActionEvent>>()
+            .unwrap()
+            .send(action);
     }
 
     pub async fn player_online(&self, name: &str) -> bool {

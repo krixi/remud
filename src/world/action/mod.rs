@@ -12,148 +12,110 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            communicate::{parse_me, parse_say, parse_send, Emote, Say},
-            movement::{parse_teleport, Move},
-            object::{parse_drop, parse_get, Inventory},
-            observe::{parse_look, Exits, Who},
-            system::Shutdown,
+            communicate::{parse_me, parse_say, parse_send, Emote, Say, SendMessage},
+            immortal::{
+                object::{
+                    ObjectCreate, ObjectInfo, ObjectRemove, ObjectSetFlags, ObjectUnsetFlags,
+                    ObjectUpdateDescription, ObjectUpdateKeywords, ObjectUpdateName,
+                },
+                player::PlayerInfo,
+                room::{
+                    RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
+                },
+            },
+            movement::{parse_teleport, Move, Teleport},
+            object::{parse_drop, parse_get, Drop, Get, Inventory},
+            observe::{parse_look, Exits, Look, LookAt, Who},
+            system::{Login, Logout, Shutdown},
         },
-        types::{
-            object::ObjectId,
-            player::Messages,
-            room::{Direction, RoomId},
-        },
+        types::room::Direction,
     },
 };
+
+#[macro_export]
+macro_rules! event_from_action {
+    ($action:tt) => {
+        impl From<$action> for ActionEvent {
+            fn from(value: $action) -> Self {
+                ActionEvent::$action(value)
+            }
+        }
+    };
+}
 
 pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
 pub const DEFAULT_OBJECT_SHORT: &str = "an object";
 pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely uninteresting.";
 
-pub type DynAction = Box<dyn Action + Send>;
-
 pub enum ActionEvent {
-    Drop {
-        entity: Entity,
-        keywords: Vec<String>,
-    },
-    Emote {
-        entity: Entity,
-        message: String,
-    },
-    Exits {
-        entity: Entity,
-    },
-    Get {
-        entity: Entity,
-        keywords: Vec<String>,
-    },
-    Inventory {
-        entity: Entity,
-    },
-    Login {
-        entity: Entity,
-    },
-    Logout {
-        entity: Entity,
-    },
-    Look {
-        entity: Entity,
-        direction: Option<Direction>,
-    },
-    LookAt {
-        entity: Entity,
-        keywords: Vec<String>,
-    },
-    Move {
-        entity: Entity,
-        direction: Direction,
-    },
-    ObjectClearFlags {
-        entity: Entity,
-        id: ObjectId,
-        flags: Vec<String>,
-    },
-    ObjectCreate {
-        entity: Entity,
-    },
-    ObjectInfo {
-        entity: Entity,
-        id: ObjectId,
-    },
-    ObjectRemove {
-        entity: Entity,
-        id: ObjectId,
-    },
-    ObjectSetFlags {
-        entity: Entity,
-        id: ObjectId,
-        flags: Vec<String>,
-    },
-    ObjectUpdateDescription {
-        entity: Entity,
-        id: ObjectId,
-        description: String,
-    },
-    ObjectUpdateKeywords {
-        entity: Entity,
-        id: ObjectId,
-        keywords: Vec<String>,
-    },
-    ObjectUpdateName {
-        entity: Entity,
-        id: ObjectId,
-        name: String,
-    },
-    PlayerInfo {
-        entity: Entity,
-        name: String,
-    },
-    RoomCreate {
-        entity: Entity,
-        direction: Option<Direction>,
-    },
-    RoomInfo {
-        entity: Entity,
-    },
-    RoomLink {
-        entity: Entity,
-        direction: Direction,
-        id: RoomId,
-    },
-    RoomUpdateDescription {
-        entity: Entity,
-        description: String,
-    },
-    RoomRemove {
-        entity: Entity,
-    },
-    RoomUnlink {
-        entity: Entity,
-        direction: Direction,
-    },
-    Say {
-        entity: Entity,
-        message: String,
-    },
-    Send {
-        entity: Entity,
-        recipient: String,
-        message: String,
-    },
-    Shutdown,
-    Teleport {
-        entity: Entity,
-        room_id: RoomId,
-    },
-    Who {
-        entity: Entity,
-    },
+    Drop(Drop),
+    Emote(Emote),
+    Exits(Exits),
+    Get(Get),
+    Inventory(Inventory),
+    Login(Login),
+    Logout(Logout),
+    Look(Look),
+    LookAt(LookAt),
+    Move(Move),
+    ObjectUnsetFlags(ObjectUnsetFlags),
+    ObjectCreate(ObjectCreate),
+    ObjectInfo(ObjectInfo),
+    ObjectRemove(ObjectRemove),
+    ObjectSetFlags(ObjectSetFlags),
+    ObjectUpdateDescription(ObjectUpdateDescription),
+    ObjectUpdateKeywords(ObjectUpdateKeywords),
+    ObjectUpdateName(ObjectUpdateName),
+    PlayerInfo(PlayerInfo),
+    RoomCreate(RoomCreate),
+    RoomInfo(RoomInfo),
+    RoomLink(RoomLink),
+    RoomUpdateDescription(RoomUpdateDescription),
+    RoomRemove(RoomRemove),
+    RoomUnlink(RoomUnlink),
+    Say(Say),
+    Send(SendMessage),
+    Shutdown(Shutdown),
+    Teleport(Teleport),
+    Who(Who),
 }
 
-pub trait Action {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), Error>;
+impl ActionEvent {
+    pub fn enactor(&self) -> Entity {
+        match self {
+            ActionEvent::Drop(action) => action.entity,
+            ActionEvent::Emote(action) => action.entity,
+            ActionEvent::Exits(action) => action.entity,
+            ActionEvent::Get(action) => action.entity,
+            ActionEvent::Inventory(action) => action.entity,
+            ActionEvent::Login(action) => action.entity,
+            ActionEvent::Logout(action) => action.entity,
+            ActionEvent::Look(action) => action.entity,
+            ActionEvent::LookAt(action) => action.entity,
+            ActionEvent::Move(action) => action.entity,
+            ActionEvent::ObjectUnsetFlags(action) => action.entity,
+            ActionEvent::ObjectCreate(action) => action.entity,
+            ActionEvent::ObjectInfo(action) => action.entity,
+            ActionEvent::ObjectRemove(action) => action.entity,
+            ActionEvent::ObjectSetFlags(action) => action.entity,
+            ActionEvent::ObjectUpdateDescription(action) => action.entity,
+            ActionEvent::ObjectUpdateKeywords(action) => action.entity,
+            ActionEvent::ObjectUpdateName(action) => action.entity,
+            ActionEvent::PlayerInfo(action) => action.entity,
+            ActionEvent::RoomCreate(action) => action.entity,
+            ActionEvent::RoomInfo(action) => action.entity,
+            ActionEvent::RoomLink(action) => action.entity,
+            ActionEvent::RoomUpdateDescription(action) => action.entity,
+            ActionEvent::RoomRemove(action) => action.entity,
+            ActionEvent::RoomUnlink(action) => action.entity,
+            ActionEvent::Say(action) => action.entity,
+            ActionEvent::Send(action) => action.entity,
+            ActionEvent::Shutdown(action) => action.entity,
+            ActionEvent::Teleport(action) => action.entity,
+            ActionEvent::Who(action) => action.entity,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -162,58 +124,71 @@ pub enum Error {
     MissingComponent(Entity, &'static str),
 }
 
-pub fn parse(input: &str) -> Result<DynAction, String> {
+pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
     if let Some(message) = input.strip_prefix('\'').map(ToString::to_string) {
         if message.is_empty() {
             return Err("Say what?".to_string());
         }
 
-        return Ok(Say::new(message));
+        return Ok(ActionEvent::from(Say {
+            entity: player,
+            message,
+        }));
     } else if let Some(emote) = input.strip_prefix(';').map(ToString::to_string) {
         if emote.is_empty() {
             return Err("Do what?".to_string());
         }
 
-        return Ok(Emote::new(emote));
+        return Ok(ActionEvent::from(Emote {
+            entity: player,
+            emote,
+        }));
     }
 
     let mut tokenizer = Tokenizer::new(input);
     if let Some(token) = tokenizer.next() {
         match token.to_lowercase().as_str() {
-            "down" => Ok(Move::new(Direction::Down)),
-            "drop" => parse_drop(tokenizer),
-            "east" => Ok(Move::new(Direction::East)),
-            "exits" => Ok(Box::new(Exits {})),
-            "get" => parse_get(tokenizer),
-            "inventory" => Ok(Box::new(Inventory {})),
-            "look" => parse_look(tokenizer),
-            "me" => parse_me(tokenizer),
-            "north" => Ok(Move::new(Direction::North)),
-            "object" => immortal::object::parse(tokenizer),
-            "player" => immortal::player::parse(tokenizer),
-            "room" => immortal::room::parse(tokenizer),
-            "say" => parse_say(tokenizer),
-            "send" => parse_send(tokenizer),
-            "shutdown" => Ok(Box::new(Shutdown {})),
-            "south" => Ok(Move::new(Direction::South)),
-            "teleport" => parse_teleport(tokenizer),
-            "up" => Ok(Move::new(Direction::Up)),
-            "west" => Ok(Move::new(Direction::West)),
-            "who" => Ok(Box::new(Who {})),
+            "down" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::Down,
+            })),
+            "drop" => parse_drop(player, tokenizer),
+            "east" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::East,
+            })),
+            "exits" => Ok(ActionEvent::from(Exits { entity: player })),
+            "get" => parse_get(player, tokenizer),
+            "inventory" => Ok(ActionEvent::from(Inventory { entity: player })),
+            "look" => parse_look(player, tokenizer),
+            "me" => parse_me(player, tokenizer),
+            "north" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::North,
+            })),
+            "object" => immortal::object::parse(player, tokenizer),
+            "player" => immortal::player::parse(player, tokenizer),
+            "room" => immortal::room::parse(player, tokenizer),
+            "say" => parse_say(player, tokenizer),
+            "send" => parse_send(player, tokenizer),
+            "shutdown" => Ok(ActionEvent::from(Shutdown { entity: player })),
+            "south" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::South,
+            })),
+            "teleport" => parse_teleport(player, tokenizer),
+            "up" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::Up,
+            })),
+            "west" => Ok(ActionEvent::from(Move {
+                entity: player,
+                direction: Direction::West,
+            })),
+            "who" => Ok(ActionEvent::from(Who { entity: player })),
             _ => Err("I don't know what that means.".to_string()),
         }
     } else {
         Err("Go on, then.".to_string())
-    }
-}
-
-pub fn queue_message(world: &mut World, player: Entity, mut message: String) {
-    message.push_str("\r\n");
-
-    match world.get_mut::<Messages>(player) {
-        Some(mut messages) => messages.queue(message),
-        None => {
-            world.entity_mut(player).insert(Messages::new_with(message));
-        }
     }
 }

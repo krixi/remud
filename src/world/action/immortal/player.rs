@@ -1,10 +1,11 @@
-use bevy_app::{EventReader, Events};
+use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 
 use crate::{
+    event_from_action,
     text::Tokenizer,
     world::{
-        action::{self, Action, ActionEvent, DynAction},
+        action::ActionEvent,
         types::{
             object::Object,
             player::{Messages, Players},
@@ -16,11 +17,12 @@ use crate::{
 
 // Valid shapes:
 // player <name> info - displays information about the player
-pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     if let Some(name) = tokenizer.next() {
         if let Some(token) = tokenizer.next() {
             match token {
-                "info" => Ok(Box::new(Info {
+                "info" => Ok(ActionEvent::from(PlayerInfo {
+                    entity: player,
                     name: name.to_string(),
                 })),
                 _ => Err("Enter a valid player subcommand: info.".to_string()),
@@ -33,23 +35,12 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
-struct Info {
-    name: String,
+pub struct PlayerInfo {
+    pub entity: Entity,
+    pub name: String,
 }
 
-impl Action for Info {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::PlayerInfo {
-                entity,
-                name: self.name.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(PlayerInfo);
 
 pub fn player_info_system(
     mut events: EventReader<ActionEvent>,
@@ -60,7 +51,7 @@ pub fn player_info_system(
     mut message_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::PlayerInfo { entity, name } = event {
+        if let ActionEvent::PlayerInfo(PlayerInfo { entity, name }) = event {
             let player = if let Some(entity) = players.by_name(name) {
                 entity
             } else {

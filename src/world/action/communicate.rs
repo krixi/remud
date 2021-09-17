@@ -1,10 +1,11 @@
-use bevy_app::{EventReader, Events};
+use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 
 use crate::{
+    event_from_action,
     text::Tokenizer,
     world::{
-        action::{self, Action, ActionEvent, DynAction},
+        action::ActionEvent,
         types::{
             player::{Messages, Players},
             room::Room,
@@ -13,37 +14,23 @@ use crate::{
     },
 };
 
-pub fn parse_me(tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     if tokenizer.rest().is_empty() {
         Err("Do what?".to_string())
     } else {
-        Ok(Emote::new(tokenizer.rest().to_string()))
+        Ok(ActionEvent::from(Emote {
+            entity: player,
+            emote: tokenizer.rest().to_string(),
+        }))
     }
 }
 
 pub struct Emote {
-    emote: String,
+    pub entity: Entity,
+    pub emote: String,
 }
 
-impl Emote {
-    pub fn new(emote: String) -> Box<Self> {
-        Box::new(Emote { emote })
-    }
-}
-
-impl Action for Emote {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Emote {
-                entity,
-                message: self.emote.clone(),
-            });
-
-        Ok(())
-    }
-}
+event_from_action!(Emote);
 
 pub fn emote_system(
     mut events: EventReader<ActionEvent>,
@@ -52,7 +39,7 @@ pub fn emote_system(
     room_query: Query<&Room>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Emote { entity, message } = event {
+        if let ActionEvent::Emote(Emote { entity, emote }) = event {
             let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*entity) {
                 (named.name.as_str(), location.room)
             } else {
@@ -63,7 +50,7 @@ pub fn emote_system(
                 continue;
             };
 
-            let message = format!("{} {}", name, message);
+            let message = format!("{} {}", name, emote);
 
             let room = room_query
                 .get(room_entity)
@@ -78,23 +65,23 @@ pub fn emote_system(
     }
 }
 
-pub fn parse_say(tokenizer: Tokenizer) -> Result<DynAction, String> {
+pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
     if tokenizer.rest().is_empty() {
         Err("Say what?".to_string())
     } else {
-        Ok(Say::new(tokenizer.rest().to_string()))
+        Ok(ActionEvent::from(Say {
+            entity: player,
+            message: tokenizer.rest().to_string(),
+        }))
     }
 }
 
 pub struct Say {
-    message: String,
+    pub entity: Entity,
+    pub message: String,
 }
 
-impl Say {
-    pub fn new(message: String) -> Box<Self> {
-        Box::new(Say { message })
-    }
-}
+event_from_action!(Say);
 
 pub fn say_system(
     mut events: EventReader<ActionEvent>,
@@ -103,7 +90,7 @@ pub fn say_system(
     room_query: Query<&Room>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Say { entity, message } = event {
+        if let ActionEvent::Say(Say { entity, message }) = event {
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*entity) {
                 (named.name.as_str(), location.room)
             } else {
@@ -130,27 +117,14 @@ pub fn say_system(
     }
 }
 
-impl Action for Say {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Say {
-                entity,
-                message: self.message.clone(),
-            });
-
-        Ok(())
-    }
-}
-
-pub fn parse_send(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
-    if let Some(player) = tokenizer.next() {
+pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+    if let Some(target) = tokenizer.next() {
         if tokenizer.rest().is_empty() {
-            Err(format!("Send what to {}?", player))
+            Err(format!("Send what to {}?", target))
         } else {
-            Ok(Box::new(SendMessage {
-                recipient: player.to_string(),
+            Ok(ActionEvent::from(SendMessage {
+                entity: player,
+                recipient: target.to_string(),
                 message: tokenizer.rest().to_string(),
             }))
         }
@@ -159,23 +133,15 @@ pub fn parse_send(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     }
 }
 
-struct SendMessage {
-    recipient: String,
-    message: String,
+pub struct SendMessage {
+    pub entity: Entity,
+    pub recipient: String,
+    pub message: String,
 }
 
-impl Action for SendMessage {
-    fn enact(&mut self, entity: Entity, world: &mut World) -> Result<(), action::Error> {
-        world
-            .get_resource_mut::<Events<ActionEvent>>()
-            .unwrap()
-            .send(ActionEvent::Send {
-                entity,
-                recipient: self.recipient.clone(),
-                message: self.message.clone(),
-            });
-
-        Ok(())
+impl From<SendMessage> for ActionEvent {
+    fn from(value: SendMessage) -> Self {
+        ActionEvent::Send(value)
     }
 }
 
@@ -186,11 +152,11 @@ pub fn send_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::Send {
+        if let ActionEvent::Send(SendMessage {
             entity,
             recipient,
             message,
-        } = event
+        }) = event
         {
             let name = if let Ok(named) = saying_query.get(*entity) {
                 named.name.as_str()
