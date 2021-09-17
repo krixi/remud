@@ -6,36 +6,36 @@ use std::{
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::{self, Contents, Location, Named};
+use crate::world::types::{Contents, Id, Location, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct Id(i64);
+pub struct PlayerId(i64);
 
-impl TryFrom<i64> for Id {
-    type Error = IdParseError;
+impl TryFrom<i64> for PlayerId {
+    type Error = PlayerIdParseError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value >= 0 {
-            Ok(Id(value))
+            Ok(PlayerId(value))
         } else {
-            Err(IdParseError {})
+            Err(PlayerIdParseError {})
         }
     }
 }
 
 #[derive(Debug)]
-pub struct IdParseError {}
-impl fmt::Display for IdParseError {
+pub struct PlayerIdParseError {}
+impl fmt::Display for PlayerIdParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Player IDs must be a non-negative integers.")
     }
 }
-impl error::Error for IdParseError {}
+impl error::Error for PlayerIdParseError {}
 
 #[derive(Bundle)]
 pub struct PlayerBundle {
-    pub id: types::Id,
+    pub id: Id,
     pub player: Player,
     pub name: Named,
     pub location: Location,
@@ -44,9 +44,7 @@ pub struct PlayerBundle {
 }
 
 pub struct Player {
-    pub id: Id,
-    pub name: String,
-    pub room: Entity,
+    pub id: PlayerId,
 }
 
 #[derive(Default)]

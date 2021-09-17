@@ -1,14 +1,20 @@
 use bevy_ecs::prelude::Entity;
 
+use crate::world::types::{
+    object::{ObjectFlags, ObjectId},
+    player::PlayerId,
+    room::RoomId,
+};
+
 pub mod object;
 pub mod player;
 pub mod room;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Id {
-    Player(player::Id),
-    Object(object::Id),
-    Room(room::Id),
+    Player(PlayerId),
+    Object(ObjectId),
+    Room(RoomId),
 }
 
 // Components
@@ -44,7 +50,7 @@ pub struct Keywords {
 
 #[derive(Debug)]
 pub struct Flags {
-    pub flags: object::Flags,
+    pub flags: ObjectFlags,
 }
 
 impl Contents {
@@ -58,5 +64,5 @@ impl Contents {
 // Resources
 pub struct Configuration {
     pub shutdown: bool,
-    pub spawn_room: room::Id,
+    pub spawn_room: RoomId,
 }

@@ -1,4 +1,5 @@
 // #![warn(clippy::pedantic)]
+#![allow(clippy::too_many_arguments)]
 
 mod engine;
 mod telnet;

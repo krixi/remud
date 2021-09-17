@@ -3,20 +3,16 @@ use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::{
-        object::{self},
-        player::{self},
-        room,
-    },
+    world::types::{object::ObjectId, player::PlayerId, room::RoomId},
 };
 
 pub struct AddObject {
-    player_id: player::Id,
-    object_id: object::Id,
+    player_id: PlayerId,
+    object_id: ObjectId,
 }
 
 impl AddObject {
-    pub fn new(player_id: player::Id, object_id: object::Id) -> Box<Self> {
+    pub fn new(player_id: PlayerId, object_id: ObjectId) -> Box<Self> {
         Box::new(AddObject {
             player_id,
             object_id,
@@ -38,12 +34,12 @@ impl Persist for AddObject {
 }
 
 pub struct RemoveObject {
-    player_id: player::Id,
-    object_id: object::Id,
+    player_id: PlayerId,
+    object_id: ObjectId,
 }
 
 impl RemoveObject {
-    pub fn new(player_id: player::Id, object_id: object::Id) -> Box<Self> {
+    pub fn new(player_id: PlayerId, object_id: ObjectId) -> Box<Self> {
         Box::new(RemoveObject {
             player_id,
             object_id,
@@ -65,12 +61,12 @@ impl Persist for RemoveObject {
 }
 
 pub struct Room {
-    player_id: player::Id,
-    room_id: room::Id,
+    player_id: PlayerId,
+    room_id: RoomId,
 }
 
 impl Room {
-    pub fn new(player_id: player::Id, room_id: room::Id) -> Box<Self> {
+    pub fn new(player_id: PlayerId, room_id: RoomId) -> Box<Self> {
         Box::new(Room { player_id, room_id })
     }
 }

@@ -122,10 +122,8 @@ pub fn say_system(
                     if let Ok(mut messages) = present_query.get_mut(*player) {
                         messages.queue(format!("You say \"{}\"", message));
                     }
-                } else {
-                    if let Ok(mut messages) = present_query.get_mut(*player) {
-                        messages.queue(other_message.clone());
-                    }
+                } else if let Ok(mut messages) = present_query.get_mut(*player) {
+                    messages.queue(other_message.clone());
                 }
             }
         }
@@ -228,7 +226,7 @@ pub fn send_system(
                 .queue(format!("{} sends \"{}\"", name, message));
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
-                messages.queue(format!("Your term chirps happily: \"Message sent.\"",));
+                messages.queue("Your term chirps happily: \"Message sent.\"".to_string());
             };
         }
     }

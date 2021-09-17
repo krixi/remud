@@ -19,9 +19,9 @@ use crate::{
             system::Shutdown,
         },
         types::{
-            self,
+            object::ObjectId,
             player::Messages,
-            room::{self, Direction},
+            room::{Direction, RoomId},
         },
     },
 };
@@ -72,7 +72,7 @@ pub enum ActionEvent {
     },
     ObjectClearFlags {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
         flags: Vec<String>,
     },
     ObjectCreate {
@@ -80,30 +80,30 @@ pub enum ActionEvent {
     },
     ObjectInfo {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
     },
     ObjectRemove {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
     },
     ObjectSetFlags {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
         flags: Vec<String>,
     },
     ObjectUpdateDescription {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
         description: String,
     },
     ObjectUpdateKeywords {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
         keywords: Vec<String>,
     },
     ObjectUpdateName {
         entity: Entity,
-        id: types::object::Id,
+        id: ObjectId,
         name: String,
     },
     PlayerInfo {
@@ -120,7 +120,7 @@ pub enum ActionEvent {
     RoomLink {
         entity: Entity,
         direction: Direction,
-        id: room::Id,
+        id: RoomId,
     },
     RoomUpdateDescription {
         entity: Entity,
@@ -145,7 +145,7 @@ pub enum ActionEvent {
     Shutdown,
     Teleport {
         entity: Entity,
-        room_id: room::Id,
+        room_id: RoomId,
     },
     Who {
         entity: Entity,

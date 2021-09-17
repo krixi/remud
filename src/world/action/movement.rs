@@ -9,7 +9,7 @@ use crate::{
         action::{self, Action, ActionEvent, DynAction},
         types::{
             player::Messages,
-            room::{self, Direction, Room, Rooms},
+            room::{Direction, Room, RoomId, Rooms},
             Id, Location, Named,
         },
     },
@@ -65,7 +65,7 @@ pub fn move_system(
                     .get_mut(location.room)
                     .expect("Location contains a valid room.");
 
-                if let Some(destination) = room.exits.get(&direction) {
+                if let Some(destination) = room.exits.get(direction) {
                     (
                         *destination,
                         room.players
@@ -167,7 +167,7 @@ pub fn move_system(
 
 pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
     if let Some(destination) = tokenizer.next() {
-        match destination.parse::<room::Id>() {
+        match destination.parse::<RoomId>() {
             Ok(room_id) => Ok(Box::new(Teleport { room_id })),
             Err(e) => Err(e.to_string()),
         }
@@ -177,7 +177,7 @@ pub fn parse_teleport(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 }
 
 pub struct Teleport {
-    room_id: room::Id,
+    room_id: RoomId,
 }
 
 impl Action for Teleport {

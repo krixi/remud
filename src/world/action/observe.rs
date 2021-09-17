@@ -9,7 +9,7 @@ use crate::{
     world::{
         action::{self, Action, ActionEvent, DynAction},
         types::{
-            self,
+            object::ObjectFlags,
             player::{Messages, Player},
             room::{Direction, Room},
             Contents, Description, Flags, Keywords, Location, Named,
@@ -147,7 +147,7 @@ pub fn look_system(
                 .objects
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
-                .filter(|(_, flags)| !flags.flags.contains(types::object::Flags::SUBTLE))
+                .filter(|(_, flags)| !flags.flags.contains(ObjectFlags::SUBTLE))
                 .map(|(named, _)| named.name.clone())
                 .collect_vec();
 

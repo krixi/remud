@@ -8,8 +8,8 @@ use crate::{
     world::{
         action::{self, Action, ActionEvent, DynAction},
         types::{
-            object, player::Messages, room::Room, Container, Contents, Flags, Id, Keywords,
-            Location, Named,
+            object::ObjectFlags, player::Messages, room::Room, Container, Contents, Flags, Id,
+            Keywords, Location, Named,
         },
     },
 };
@@ -212,7 +212,7 @@ pub fn get_system(
                         .get(object_entity)
                         .unwrap()
                         .flags
-                        .contains(object::Flags::FIXED)
+                        .contains(ObjectFlags::FIXED)
                     {
                         if let Ok(mut messages) = messages_query.get_mut(*entity) {
                             let (_, named, _, _) = object_query.get_mut(object_entity).unwrap();

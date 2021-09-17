@@ -10,11 +10,10 @@ use crate::{
     world::{
         action::{self, Action, ActionEvent, DynAction, DEFAULT_ROOM_DESCRIPTION},
         types::{
-            self,
             object::Object,
             player::{Messages, Player},
-            room::{self, Direction, Room, RoomBundle, Rooms},
-            Container, Contents, Description, Location, Named,
+            room::{Direction, Room, RoomBundle, RoomId, Rooms},
+            Container, Contents, Description, Id, Location, Named,
         },
         VOID_ROOM_ID,
     },
@@ -70,7 +69,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
                     };
 
                     if let Some(destination) = tokenizer.next() {
-                        let destination = match destination.parse::<room::Id>() {
+                        let destination = match destination.parse::<RoomId>() {
                             Ok(destination) => destination,
                             Err(e) => return Err(e.to_string()),
                         };
@@ -173,10 +172,9 @@ pub fn room_create_system(
             let new_room_id = rooms.next_id();
             let new_room_entity = commands
                 .spawn_bundle(RoomBundle {
-                    id: types::Id::Room(new_room_id),
+                    id: Id::Room(new_room_id),
                     room: Room {
                         id: new_room_id,
-                        description: DEFAULT_ROOM_DESCRIPTION.to_string(),
                         exits,
                         players: Vec::new(),
                     },
@@ -305,7 +303,7 @@ pub fn room_info_system(
 
 struct Link {
     direction: Direction,
-    destination: room::Id,
+    destination: RoomId,
 }
 
 impl Action for Link {

@@ -4,18 +4,18 @@ use sqlx::SqlitePool;
 use crate::{
     engine::persist::Persist,
     world::types::{
-        object::{self},
-        room::{self, Direction},
+        object::ObjectId,
+        room::{Direction, RoomId},
     },
 };
 
 pub struct AddObject {
-    room_id: room::Id,
-    object_id: object::Id,
+    room_id: RoomId,
+    object_id: ObjectId,
 }
 
 impl AddObject {
-    pub fn new(room_id: room::Id, object_id: object::Id) -> Box<Self> {
+    pub fn new(room_id: RoomId, object_id: ObjectId) -> Box<Self> {
         Box::new(AddObject { room_id, object_id })
     }
 }
@@ -34,12 +34,12 @@ impl Persist for AddObject {
 }
 
 pub struct New {
-    id: room::Id,
+    id: RoomId,
     description: String,
 }
 
 impl New {
-    pub fn new(id: room::Id, description: String) -> Box<Self> {
+    pub fn new(id: RoomId, description: String) -> Box<Self> {
         Box::new(New { id, description })
     }
 }
@@ -58,11 +58,11 @@ impl Persist for New {
 }
 
 pub struct Remove {
-    id: room::Id,
+    id: RoomId,
 }
 
 impl Remove {
-    pub fn new(id: room::Id) -> Box<Self> {
+    pub fn new(id: RoomId) -> Box<Self> {
         Box::new(Remove { id })
     }
 }
@@ -80,12 +80,12 @@ impl Persist for Remove {
 }
 
 pub struct RemoveObject {
-    room_id: room::Id,
-    object_id: object::Id,
+    room_id: RoomId,
+    object_id: ObjectId,
 }
 
 impl RemoveObject {
-    pub fn new(room_id: room::Id, object_id: object::Id) -> Box<Self> {
+    pub fn new(room_id: RoomId, object_id: ObjectId) -> Box<Self> {
         Box::new(RemoveObject { room_id, object_id })
     }
 }
@@ -104,12 +104,12 @@ impl Persist for RemoveObject {
 }
 
 pub struct Update {
-    id: room::Id,
+    id: RoomId,
     description: String,
 }
 
 impl Update {
-    pub fn new(id: room::Id, description: String) -> Box<Self> {
+    pub fn new(id: RoomId, description: String) -> Box<Self> {
         Box::new(Update { id, description })
     }
 }
@@ -128,13 +128,13 @@ impl Persist for Update {
 }
 
 pub struct AddExit {
-    from_id: room::Id,
-    to_id: room::Id,
+    from_id: RoomId,
+    to_id: RoomId,
     direction: Direction,
 }
 
 impl AddExit {
-    pub fn new(from_id: room::Id, to_id: room::Id, direction: Direction) -> Box<Self> {
+    pub fn new(from_id: RoomId, to_id: RoomId, direction: Direction) -> Box<Self> {
         Box::new(AddExit {
             from_id,
             to_id,
@@ -158,12 +158,12 @@ impl Persist for AddExit {
 }
 
 pub struct RemoveExit {
-    id: room::Id,
+    id: RoomId,
     direction: Direction,
 }
 
 impl RemoveExit {
-    pub fn new(id: room::Id, direction: Direction) -> Box<Self> {
+    pub fn new(id: RoomId, direction: Direction) -> Box<Self> {
         Box::new(RemoveExit { id, direction })
     }
 }

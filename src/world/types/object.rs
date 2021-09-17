@@ -4,65 +4,65 @@ use bevy_ecs::prelude::*;
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::world::types::{self, Container, Description, Keywords, Named};
+use crate::world::types::{self, Container, Description, Id, Keywords, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct Id(i64);
+pub struct ObjectId(i64);
 
-impl TryFrom<i64> for Id {
-    type Error = IdParseError;
+impl TryFrom<i64> for ObjectId {
+    type Error = ObjectIdParseError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value >= 0 {
-            Ok(Id(value))
+            Ok(ObjectId(value))
         } else {
-            Err(IdParseError {})
+            Err(ObjectIdParseError {})
         }
     }
 }
 
-impl FromStr for Id {
-    type Err = IdParseError;
+impl FromStr for ObjectId {
+    type Err = ObjectIdParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let int = s.parse::<i64>().map_err(|_| IdParseError {})?;
-        Id::try_from(int)
+        let int = s.parse::<i64>().map_err(|_| ObjectIdParseError {})?;
+        ObjectId::try_from(int)
     }
 }
 
-impl fmt::Display for Id {
+impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
 #[derive(Debug)]
-pub struct IdParseError {}
-impl fmt::Display for IdParseError {
+pub struct ObjectIdParseError {}
+impl fmt::Display for ObjectIdParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Object IDs must be a non-negative integers.")
     }
 }
-impl error::Error for IdParseError {}
+impl error::Error for ObjectIdParseError {}
 
 bitflags! {
-    pub struct Flags: i64{
+    pub struct ObjectFlags: i64{
         const FIXED = 0b0001;
         const SUBTLE = 0b0010;
     }
 }
 
-impl TryFrom<&[String]> for Flags {
+impl TryFrom<&[String]> for ObjectFlags {
     type Error = FlagsParseError;
 
     fn try_from(strs: &[String]) -> Result<Self, Self::Error> {
-        let mut flags = Flags::empty();
+        let mut flags = ObjectFlags::empty();
 
         for flag in strs {
             match flag.to_lowercase().as_str() {
-                "fixed" => flags.insert(Flags::FIXED),
-                "subtle" => flags.insert(Flags::SUBTLE),
+                "fixed" => flags.insert(ObjectFlags::FIXED),
+                "subtle" => flags.insert(ObjectFlags::SUBTLE),
                 _ => {
                     return Err(FlagsParseError {
                         invalid_flag: flag.to_string(),
@@ -83,8 +83,8 @@ pub struct FlagsParseError {
 
 #[derive(Debug, Bundle)]
 pub struct ObjectBundle {
+    pub id: Id,
     pub object: Object,
-    pub id: types::Id,
     pub flags: types::Flags,
     pub container: Container,
     pub name: Named,
@@ -94,58 +94,33 @@ pub struct ObjectBundle {
 
 #[derive(Debug)]
 pub struct Object {
-    pub id: Id,
-    pub flags: Flags,
-    pub container: Entity,
-    pub keywords: Vec<String>,
-    pub short: String,
-    pub long: String,
-}
-
-impl Object {
-    pub fn new(
-        id: Id,
-        flags: Flags,
-        container: Entity,
-        keywords: Vec<String>,
-        short: String,
-        long: String,
-    ) -> Self {
-        Object {
-            id,
-            flags,
-            container,
-            keywords,
-            short,
-            long,
-        }
-    }
+    pub id: ObjectId,
 }
 
 pub struct Objects {
-    by_id: HashMap<Id, Entity>,
+    by_id: HashMap<ObjectId, Entity>,
     highest_id: i64,
 }
 
 impl Objects {
-    pub fn new(highest_id: i64, by_id: HashMap<Id, Entity>) -> Self {
+    pub fn new(highest_id: i64, by_id: HashMap<ObjectId, Entity>) -> Self {
         Objects { by_id, highest_id }
     }
 
-    pub fn insert(&mut self, id: Id, entity: Entity) {
+    pub fn insert(&mut self, id: ObjectId, entity: Entity) {
         self.by_id.insert(id, entity);
     }
 
-    pub fn remove(&mut self, id: Id) {
+    pub fn remove(&mut self, id: ObjectId) {
         self.by_id.remove(&id);
     }
 
-    pub fn by_id(&self, id: Id) -> Option<Entity> {
+    pub fn by_id(&self, id: ObjectId) -> Option<Entity> {
         self.by_id.get(&id).copied()
     }
 
-    pub fn next_id(&mut self) -> Id {
+    pub fn next_id(&mut self) -> ObjectId {
         self.highest_id += 1;
-        Id(self.highest_id)
+        ObjectId(self.highest_id)
     }
 }

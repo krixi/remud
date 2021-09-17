@@ -14,10 +14,10 @@ use crate::{
         },
         types::{
             self,
-            object::{self, Flags, Object, ObjectBundle, Objects},
+            object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
             player::{Messages, Player},
             room::Room,
-            Container, Contents, Description, Keywords, Location, Named,
+            Container, Contents, Description, Id, Keywords, Location, Named,
         },
     },
 };
@@ -34,7 +34,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
         match token {
             "new" => Ok(Box::new(Create {})),
             maybe_id => {
-                let id = match object::Id::from_str(maybe_id) {
+                let id = match ObjectId::from_str(maybe_id) {
                     Ok(id) => id,
                     Err(e) => return Err(e.to_string()),
                 };
@@ -107,7 +107,7 @@ pub fn parse(mut tokenizer: Tokenizer) -> Result<DynAction, String> {
 }
 
 struct ClearFlags {
-    id: object::Id,
+    id: ObjectId,
     flags: Vec<String>,
 }
 
@@ -144,7 +144,7 @@ pub fn object_clear_flags_system(
                 continue;
             };
 
-            let remove_flags = match Flags::try_from(flags.as_slice()) {
+            let remove_flags = match ObjectFlags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
                     if let Ok(mut messages) = messages.get_mut(*entity) {
@@ -204,17 +204,10 @@ pub fn object_create_system(
 
             let object_entity = commands
                 .spawn_bundle(ObjectBundle {
-                    object: Object {
-                        id,
-                        flags: object::Flags::empty(),
-                        container: room_entity,
-                        keywords: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
-                        short: DEFAULT_OBJECT_SHORT.to_string(),
-                        long: DEFAULT_OBJECT_LONG.to_string(),
-                    },
-                    id: types::Id::Object(id),
+                    object: Object { id },
+                    id: Id::Object(id),
                     flags: types::Flags {
-                        flags: object::Flags::empty(),
+                        flags: ObjectFlags::empty(),
                     },
                     container: Container {
                         entity: room_entity,
@@ -250,7 +243,7 @@ pub fn object_create_system(
 }
 
 struct Info {
-    id: object::Id,
+    id: ObjectId,
 }
 
 impl Action for Info {
@@ -313,7 +306,7 @@ pub fn object_info_system(
                 message.push_str("player ");
                 message.push_str(named.name.as_str());
             } else {
-                message.push_str(format!("{:?}", object.container).as_str());
+                message.push_str(format!("{:?}", container.entity).as_str());
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
@@ -324,7 +317,7 @@ pub fn object_info_system(
 }
 
 struct UpdateKeywords {
-    id: object::Id,
+    id: ObjectId,
     keywords: Vec<String>,
 }
 
@@ -384,7 +377,7 @@ pub fn object_update_keywords_system(
 }
 
 struct UpdateLongDescription {
-    id: object::Id,
+    id: ObjectId,
     long: String,
 }
 
@@ -445,7 +438,7 @@ pub fn object_update_description_system(
 }
 
 struct UpdateShortDescription {
-    id: object::Id,
+    id: ObjectId,
     short: String,
 }
 
@@ -500,7 +493,7 @@ pub fn object_update_name_system(
 }
 
 struct Remove {
-    id: object::Id,
+    id: ObjectId,
 }
 
 impl Action for Remove {
@@ -556,7 +549,7 @@ pub fn object_remove_system(
 }
 
 struct SetFlags {
-    id: object::Id,
+    id: ObjectId,
     flags: Vec<String>,
 }
 
@@ -592,7 +585,7 @@ pub fn object_set_flags_system(
                 continue;
             };
 
-            let set_flags = match Flags::try_from(flags.as_slice()) {
+            let set_flags = match ObjectFlags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
                     if let Ok(mut messages) = messages.get_mut(*entity) {

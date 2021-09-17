@@ -17,10 +17,10 @@ use crate::world::{
     action::{self},
     types::{
         self,
-        object::{self, Object, ObjectBundle, Objects},
-        player::{self, Messages, Player, PlayerBundle, Players},
-        room::{self, Direction, Room, RoomBundle, Rooms},
-        Configuration, Container, Contents, Description, Keywords, Location, Named,
+        object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
+        player::{Messages, Player, PlayerBundle, PlayerId, Players},
+        room::{Direction, Room, RoomBundle, RoomId, Rooms},
+        Configuration, Container, Contents, Description, Id, Keywords, Location, Named,
     },
     VOID_ROOM_ID,
 };
@@ -85,12 +85,7 @@ impl Db {
         Ok(!result.is_empty())
     }
 
-    pub async fn create_player(
-        &self,
-        user: &str,
-        hash: &str,
-        room: room::Id,
-    ) -> anyhow::Result<i64> {
+    pub async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {
         let results = sqlx::query(
             "INSERT INTO players (username, password, room) VALUES (?, ?, ?) RETURNING id",
         )
@@ -129,7 +124,7 @@ impl Db {
             .await?;
 
         let spawn_room_str: String = config_row.get("value");
-        let spawn_room = room::Id::try_from(spawn_room_str.parse::<i64>()?)?;
+        let spawn_room = RoomId::try_from(spawn_room_str.parse::<i64>()?)?;
 
         let configuration = Configuration {
             shutdown: false,
@@ -152,7 +147,7 @@ impl Db {
             let entity = world
                 .spawn()
                 .insert_bundle(RoomBundle {
-                    id: types::Id::Room(room::Id::try_from(id)?),
+                    id: Id::Room(RoomId::try_from(id)?),
                     description: Description {
                         text: room.description.clone(),
                     },
@@ -160,7 +155,7 @@ impl Db {
                     contents: Contents::default(),
                 })
                 .id();
-            rooms_by_id.insert(room::Id::try_from(id)?, entity);
+            rooms_by_id.insert(RoomId::try_from(id)?, entity);
         }
 
         let highest_id = sqlx::query("SELECT MAX(id) AS max_id FROM rooms")
@@ -182,8 +177,8 @@ impl Db {
         while let Some(exit) = results.try_next().await? {
             let (from, to) = {
                 let rooms = &world.get_resource::<Rooms>().unwrap();
-                let from = rooms.by_id(room::Id::try_from(exit.room_from)?).unwrap();
-                let to = rooms.by_id(room::Id::try_from(exit.room_to)?).unwrap();
+                let from = rooms.by_id(RoomId::try_from(exit.room_from)?).unwrap();
+                let to = rooms.by_id(RoomId::try_from(exit.room_to)?).unwrap();
                 (from, to)
             };
 
@@ -210,7 +205,7 @@ impl Db {
         let mut by_id = HashMap::new();
 
         while let Some(object_row) = results.try_next().await? {
-            let room_id = match room::Id::try_from(object_row.container) {
+            let room_id = match RoomId::try_from(object_row.container) {
                 Ok(id) => id,
                 Err(_) => bail!("Failed to deserialize room ID: {}", object_row.container),
             };
@@ -220,15 +215,15 @@ impl Db {
                 None => bail!("Failed to retrieve Room for room {}", room_id),
             };
 
-            let id = match object::Id::try_from(object_row.id) {
+            let id = match ObjectId::try_from(object_row.id) {
                 Ok(id) => id,
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
             let bundle = ObjectBundle {
-                id: types::Id::Object(id),
+                id: Id::Object(id),
                 flags: types::Flags {
-                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                    flags: types::object::ObjectFlags::from_bits_truncate(object_row.flags),
                 },
                 container: Container {
                     entity: room_entity,
@@ -242,14 +237,7 @@ impl Db {
                 keywords: Keywords {
                     list: object_row.keywords(),
                 },
-                object: Object::new(
-                    id,
-                    types::object::Flags::from_bits_truncate(object_row.flags),
-                    room_entity,
-                    object_row.keywords(),
-                    object_row.short,
-                    object_row.long,
-                ),
+                object: Object { id },
             };
 
             let object_entity = world.spawn().insert_bundle(bundle).id();
@@ -285,12 +273,12 @@ impl Db {
 
             let mut world = world.write().unwrap();
 
-            let id = match player::Id::try_from(player_row.id) {
+            let id = match PlayerId::try_from(player_row.id) {
                 Ok(id) => id,
                 Err(_) => bail!("Failed to deserialize object ID: {}", player_row.id),
             };
 
-            let room = room::Id::try_from(player_row.room)
+            let room = RoomId::try_from(player_row.room)
                 .ok()
                 .and_then(|id| world.get_resource::<Rooms>().unwrap().by_id(id))
                 .unwrap_or_else(|| {
@@ -308,14 +296,10 @@ impl Db {
                         name: name.to_string(),
                     },
                     location: Location { room },
-                    player: Player {
-                        id,
-                        name: name.to_string(),
-                        room,
-                    },
+                    player: Player { id },
                     contents: Contents::default(),
                     messages: Messages::default(),
-                    id: types::Id::Player(id),
+                    id: Id::Player(id),
                 })
                 .id();
 
@@ -360,15 +344,15 @@ impl Db {
                 None => bail!("Failed to retrieve Player {}.", name),
             };
 
-            let id = match object::Id::try_from(object_row.id) {
+            let id = match ObjectId::try_from(object_row.id) {
                 Ok(id) => id,
                 Err(_) => bail!("Failed to deserialize object ID: {}", object_row.id),
             };
 
             let bundle = ObjectBundle {
-                id: types::Id::Object(id),
+                id: Id::Object(id),
                 flags: types::Flags {
-                    flags: types::object::Flags::from_bits_truncate(object_row.flags),
+                    flags: ObjectFlags::from_bits_truncate(object_row.flags),
                 },
                 container: Container {
                     entity: player_entity,
@@ -382,14 +366,7 @@ impl Db {
                 keywords: Keywords {
                     list: object_row.keywords(),
                 },
-                object: Object::new(
-                    id,
-                    types::object::Flags::from_bits_truncate(object_row.flags),
-                    player_entity,
-                    object_row.keywords(),
-                    object_row.short,
-                    object_row.long,
-                ),
+                object: Object { id },
             };
 
             let object_entity = world.spawn().insert_bundle(bundle).id();
@@ -421,12 +398,12 @@ struct RoomObjectRow {
     object_id: i64,
 }
 
-impl TryFrom<RoomObjectRow> for (room::Id, object::Id) {
+impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
     type Error = anyhow::Error;
 
     fn try_from(value: RoomObjectRow) -> Result<Self, Self::Error> {
-        let room_id = room::Id::try_from(value.room_id)?;
-        let object_id = object::Id::try_from(value.object_id)?;
+        let room_id = RoomId::try_from(value.room_id)?;
+        let object_id = ObjectId::try_from(value.object_id)?;
         Ok((room_id, object_id))
     }
 }
@@ -460,7 +437,7 @@ impl TryFrom<RoomRow> for Room {
     type Error = anyhow::Error;
 
     fn try_from(value: RoomRow) -> Result<Self, Self::Error> {
-        Ok(Room::new(room::Id::try_from(value.id)?, value.description))
+        Ok(Room::new(RoomId::try_from(value.id)?))
     }
 }
 

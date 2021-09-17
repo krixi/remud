@@ -5,17 +5,17 @@ use crate::{
     engine::persist::Persist,
     world::{
         action::{DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
-        types::object::{self, Id},
+        types::object::{ObjectFlags, ObjectId},
     },
 };
 
 pub struct Flags {
-    id: object::Id,
-    flags: object::Flags,
+    id: ObjectId,
+    flags: ObjectFlags,
 }
 
 impl Flags {
-    pub fn new(id: object::Id, flags: object::Flags) -> Box<Self> {
+    pub fn new(id: ObjectId, flags: ObjectFlags) -> Box<Self> {
         Box::new(Flags { id, flags })
     }
 }
@@ -34,12 +34,12 @@ impl Persist for Flags {
 }
 
 pub struct Keywords {
-    id: object::Id,
+    id: ObjectId,
     keywords: Vec<String>,
 }
 
 impl Keywords {
-    pub fn new(id: object::Id, keywords: Vec<String>) -> Box<Self> {
+    pub fn new(id: ObjectId, keywords: Vec<String>) -> Box<Self> {
         Box::new(Keywords { id, keywords })
     }
 }
@@ -59,12 +59,12 @@ impl Persist for Keywords {
 }
 
 pub struct Long {
-    id: object::Id,
+    id: ObjectId,
     long: String,
 }
 
 impl Long {
-    pub fn new(id: object::Id, long: String) -> Box<Self> {
+    pub fn new(id: ObjectId, long: String) -> Box<Self> {
         Box::new(Long { id, long })
     }
 }
@@ -83,11 +83,11 @@ impl Persist for Long {
 }
 
 pub struct New {
-    id: object::Id,
+    id: ObjectId,
 }
 
 impl New {
-    pub fn new(id: object::Id) -> Box<Self> {
+    pub fn new(id: ObjectId) -> Box<Self> {
         Box::new(New { id })
     }
 }
@@ -111,11 +111,11 @@ impl Persist for New {
 }
 
 pub struct Remove {
-    object_id: Id,
+    object_id: ObjectId,
 }
 
 impl Remove {
-    pub fn new(object_id: Id) -> Box<Self> {
+    pub fn new(object_id: ObjectId) -> Box<Self> {
         Box::new(Remove { object_id })
     }
 }
@@ -133,12 +133,12 @@ impl Persist for Remove {
 }
 
 pub struct Short {
-    id: object::Id,
+    id: ObjectId,
     short: String,
 }
 
 impl Short {
-    pub fn new(id: object::Id, short: String) -> Box<Self> {
+    pub fn new(id: ObjectId, short: String) -> Box<Self> {
         Box::new(Short { id, short })
     }
 }

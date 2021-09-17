@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod action;
+mod scripting;
 pub mod types;
 
 use std::{
@@ -10,7 +11,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bevy_app::{EventReader, Events};
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -41,138 +42,19 @@ use crate::{
             system::{login_system, logout_system, shutdown_system, Logout},
             ActionEvent, DynAction,
         },
+        scripting::{
+            post_script_system, pre_script_system, trigger_api, world_api, Script, ScriptExecutions,
+        },
         types::{
-            object::Object,
             player::{Messages, Player, Players},
-            room::{self, Room, Rooms},
-            Configuration, Contents,
+            room::{Room, RoomBundle, RoomId, Rooms},
+            Configuration, Contents, Description, Id, Location, Named,
         },
     },
 };
 
 lazy_static! {
-    pub static ref VOID_ROOM_ID: room::Id = room::Id::try_from(0).unwrap();
-}
-
-#[derive(Debug)]
-pub struct PlayerAction {
-    player: Entity,
-    event: PlayerEvent,
-}
-
-impl PlayerAction {
-    fn trigger(&self) -> Trigger {
-        match self.event {
-            PlayerEvent::Say { .. } => Trigger::Say,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum PlayerEvent {
-    Say { room: Entity, message: String },
-}
-
-#[derive(Debug, Clone)]
-pub enum TriggerData {
-    Player(Entity, PlayerEvent),
-}
-
-#[export_module]
-mod trigger_api {
-    use crate::world::TriggerData;
-
-    #[rhai_fn(get = "entity", pure)]
-    pub fn get_entity(trigger_data: &mut TriggerData) -> Dynamic {
-        match trigger_data {
-            TriggerData::Player(entity, _) => Dynamic::from(*entity),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Script(pub String);
-
-pub struct ScriptExecutions {
-    runs: Vec<(TriggerData, Script)>,
-}
-
-pub struct ScriptTriggers {
-    list: Vec<(Trigger, Script)>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Trigger {
-    Say,
-}
-
-#[export_module]
-pub mod world_api {
-    use std::sync::RwLock;
-
-    use rhai::Dynamic;
-
-    #[rhai_fn(pure)]
-    pub fn player_name(world: &mut Arc<RwLock<World>>, player: Entity) -> Dynamic {
-        if let Some(player) = world.read().unwrap().get::<Player>(player) {
-            Dynamic::from(player.name.clone())
-        } else {
-            Dynamic::UNIT
-        }
-    }
-}
-
-fn player_action_events(
-    mut commands: Commands,
-    mut actions: EventReader<PlayerAction>,
-    objects_query: Query<(Entity, &Object, &ScriptTriggers)>,
-    mut executions_query: Query<&mut ScriptExecutions>,
-) {
-    for action in actions.iter() {
-        let room = match action.event {
-            PlayerEvent::Say { room, .. } => Some(room),
-        };
-
-        for (object_entity, object, script_triggers) in objects_query.iter() {
-            if let Some(room) = room {
-                if object.container != room {
-                    continue;
-                }
-            }
-
-            let trigger = action.trigger();
-
-            let scripts = script_triggers
-                .list
-                .iter()
-                .filter(|(script_trigger, _)| trigger == *script_trigger)
-                .map(|(_, script)| script)
-                .collect_vec();
-
-            if let Ok(mut executions) = executions_query.get_mut(object_entity) {
-                for script in scripts {
-                    executions.runs.push((
-                        TriggerData::Player(action.player, action.event.clone()),
-                        script.clone(),
-                    ));
-                }
-            } else {
-                let executions = {
-                    let runs = scripts
-                        .into_iter()
-                        .map(|script| {
-                            (
-                                TriggerData::Player(action.player, action.event.clone()),
-                                script.clone(),
-                            )
-                        })
-                        .collect_vec();
-                    ScriptExecutions { runs }
-                };
-                commands.entity(object_entity).insert(executions);
-            };
-        }
-    }
+    pub static ref VOID_ROOM_ID: RoomId = RoomId::try_from(0).unwrap();
 }
 
 pub struct GameWorld {
@@ -185,43 +67,23 @@ pub struct GameWorld {
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
         // Add events
-        world.insert_resource(Events::<PlayerAction>::default());
         world.insert_resource(Events::<ActionEvent>::default());
 
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
 
-        if world
-            .get_resource::<Rooms>()
-            .unwrap()
-            .by_id(*VOID_ROOM_ID)
-            .is_none()
-        {
-            let description = "A dark void extends infinitely in all directions.".to_string();
-            let room = Room::new(*VOID_ROOM_ID, description.clone());
-            let void_room = world.spawn().insert(room).id();
-            world
-                .get_resource_mut::<Rooms>()
-                .unwrap()
-                .insert(*VOID_ROOM_ID, void_room);
-
-            world
-                .get_resource_mut::<Updates>()
-                .unwrap()
-                .queue(persist::room::New::new(*VOID_ROOM_ID, description));
-
-            tracing::warn!("Void room was deleted and has been recreated.");
-        }
+        // Add void room
+        GameWorld::add_void_room(&mut world);
 
         // Create schedule
         let mut schedule = Schedule::default();
+
         let mut first = SystemStage::parallel();
-        first.add_system(Events::<PlayerAction>::update_system.system());
         first.add_system(Events::<ActionEvent>::update_system.system());
 
         let mut update = SystemStage::parallel();
-        update.add_system(player_action_events.system());
+        update.add_system(pre_script_system.exclusive_system());
 
         update.add_system(drop_system.system());
         update.add_system(emote_system.system());
@@ -253,6 +115,8 @@ impl GameWorld {
         update.add_system(shutdown_system.system());
         update.add_system(teleport_system.system());
         update.add_system(who_system.system());
+
+        update.add_system(post_script_system.exclusive_system().at_end());
 
         // Add fun systems
         schedule.add_stage("first", first);
@@ -338,8 +202,10 @@ impl GameWorld {
         let mut world = self.world.write().unwrap();
 
         let (name, room) = world
-            .get::<Player>(player)
-            .map(|player| (player.name.clone(), player.room))
+            .query::<(&Named, &Location)>()
+            .get(&*world, player)
+            .map(|(named, location)| (named.name.clone(), location.room))
+            .ok()
             .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         if let Some(objects) = world
@@ -351,7 +217,10 @@ impl GameWorld {
             }
         }
         world.despawn(player);
-        world.get_resource_mut::<Players>().unwrap().remove(&name);
+        world
+            .get_resource_mut::<Players>()
+            .unwrap()
+            .remove(name.as_str());
         world
             .get_mut::<Room>(room)
             .ok_or(action::Error::MissingComponent(room, "Room"))?
@@ -389,7 +258,7 @@ impl GameWorld {
             .is_some()
     }
 
-    pub async fn spawn_room(&self) -> room::Id {
+    pub async fn spawn_room(&self) -> RoomId {
         self.world
             .read()
             .unwrap()
@@ -441,5 +310,36 @@ impl GameWorld {
 
     pub fn get_world(&self) -> Arc<RwLock<World>> {
         self.world.clone()
+    }
+
+    fn add_void_room(world: &mut World) {
+        if world
+            .get_resource::<Rooms>()
+            .unwrap()
+            .by_id(*VOID_ROOM_ID)
+            .is_none()
+        {
+            let description = "A dark void extends infinitely in all directions.".to_string();
+            let bundle = RoomBundle {
+                id: Id::Room(*VOID_ROOM_ID),
+                room: Room::new(*VOID_ROOM_ID),
+                description: Description {
+                    text: description.clone(),
+                },
+                contents: Contents::default(),
+            };
+            let void_room = world.spawn().insert_bundle(bundle).id();
+            world
+                .get_resource_mut::<Rooms>()
+                .unwrap()
+                .insert(*VOID_ROOM_ID, void_room);
+
+            world
+                .get_resource_mut::<Updates>()
+                .unwrap()
+                .queue(persist::room::New::new(*VOID_ROOM_ID, description));
+
+            tracing::warn!("Void room was deleted and has been recreated.");
+        }
     }
 }
