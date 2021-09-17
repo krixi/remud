@@ -248,9 +248,9 @@ impl GameWorld {
         }
 
         world
-            .get_resource_mut::<Events<ActionEvent>>()
+            .get_resource_mut::<Events<PreAction>>()
             .unwrap()
-            .send(action);
+            .send(PreAction { action });
     }
 
     pub async fn player_online(&self, name: &str) -> bool {
