@@ -9,6 +9,36 @@ use crate::{
     },
 };
 
+pub struct AddExit {
+    from_id: RoomId,
+    to_id: RoomId,
+    direction: Direction,
+}
+
+impl AddExit {
+    pub fn new(from_id: RoomId, to_id: RoomId, direction: Direction) -> Box<Self> {
+        Box::new(AddExit {
+            from_id,
+            to_id,
+            direction,
+        })
+    }
+}
+
+#[async_trait]
+impl Persist for AddExit {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("INSERT INTO exits (room_from, room_to, direction) VALUES (?, ?, ?)")
+            .bind(self.from_id)
+            .bind(self.to_id)
+            .bind(self.direction.as_str())
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct AddObject {
     room_id: RoomId,
     object_id: ObjectId,
@@ -33,19 +63,19 @@ impl Persist for AddObject {
     }
 }
 
-pub struct New {
+pub struct Create {
     id: RoomId,
     description: String,
 }
 
-impl New {
+impl Create {
     pub fn new(id: RoomId, description: String) -> Box<Self> {
-        Box::new(New { id, description })
+        Box::new(Create { id, description })
     }
 }
 
 #[async_trait]
-impl Persist for New {
+impl Persist for Create {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO rooms (id, description) VALUES (?, ?)")
             .bind(self.id)
@@ -57,21 +87,45 @@ impl Persist for New {
     }
 }
 
-pub struct Remove {
+pub struct Delete {
     id: RoomId,
 }
 
-impl Remove {
+impl Delete {
     pub fn new(id: RoomId) -> Box<Self> {
-        Box::new(Remove { id })
+        Box::new(Delete { id })
     }
 }
 
 #[async_trait]
-impl Persist for Remove {
+impl Persist for Delete {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM rooms WHERE id = ?")
             .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct RemoveExit {
+    id: RoomId,
+    direction: Direction,
+}
+
+impl RemoveExit {
+    pub fn new(id: RoomId, direction: Direction) -> Box<Self> {
+        Box::new(RemoveExit { id, direction })
+    }
+}
+
+#[async_trait]
+impl Persist for RemoveExit {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM exits WHERE room_from = ? AND direction = ?")
+            .bind(self.id)
+            .bind(self.direction.as_str())
             .execute(pool)
             .await?;
 
@@ -120,60 +174,6 @@ impl Persist for Update {
         sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
             .bind(self.description.as_str())
             .bind(self.id)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct AddExit {
-    from_id: RoomId,
-    to_id: RoomId,
-    direction: Direction,
-}
-
-impl AddExit {
-    pub fn new(from_id: RoomId, to_id: RoomId, direction: Direction) -> Box<Self> {
-        Box::new(AddExit {
-            from_id,
-            to_id,
-            direction,
-        })
-    }
-}
-
-#[async_trait]
-impl Persist for AddExit {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO exits (room_from, room_to, direction) VALUES (?, ?, ?)")
-            .bind(self.from_id)
-            .bind(self.to_id)
-            .bind(self.direction.as_str())
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct RemoveExit {
-    id: RoomId,
-    direction: Direction,
-}
-
-impl RemoveExit {
-    pub fn new(id: RoomId, direction: Direction) -> Box<Self> {
-        Box::new(RemoveExit { id, direction })
-    }
-}
-
-#[async_trait]
-impl Persist for RemoveExit {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM exits WHERE room_from = ? AND direction = ?")
-            .bind(self.id)
-            .bind(self.direction.as_str())
             .execute(pool)
             .await?;
 

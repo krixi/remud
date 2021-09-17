@@ -196,7 +196,7 @@ impl Db {
 
     async fn load_room_objects(&self, world: &mut World) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT id, flags, room_id AS container, keywords, short, long
+            r#"SELECT id, flags, room_id AS container, keywords, name, description
                 FROM objects
                 INNER JOIN room_objects ON room_objects.object_id = objects.id"#,
         )
@@ -229,10 +229,10 @@ impl Db {
                     entity: room_entity,
                 },
                 name: Named {
-                    name: object_row.short.clone(),
+                    name: object_row.name.clone(),
                 },
                 description: Description {
-                    text: object_row.long.clone(),
+                    text: object_row.description.clone(),
                 },
                 keywords: Keywords {
                     list: object_row.keywords(),
@@ -328,7 +328,7 @@ impl Db {
         name: &str,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT objects.id, flags, player_id AS container, keywords, short, long
+            r#"SELECT objects.id, flags, player_id AS container, keywords, name, description
                 FROM objects
                 INNER JOIN player_objects ON player_objects.object_id = objects.id
                 INNER JOIN players ON player_objects.player_id = players.id
@@ -358,10 +358,10 @@ impl Db {
                     entity: player_entity,
                 },
                 name: Named {
-                    name: object_row.short.clone(),
+                    name: object_row.name.clone(),
                 },
                 description: Description {
-                    text: object_row.long.clone(),
+                    text: object_row.description.clone(),
                 },
                 keywords: Keywords {
                     list: object_row.keywords(),
@@ -414,8 +414,8 @@ struct ObjectRow {
     flags: i64,
     container: i64,
     keywords: String,
-    long: String,
-    short: String,
+    description: String,
+    name: String,
 }
 
 impl ObjectRow {

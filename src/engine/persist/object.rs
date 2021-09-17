@@ -4,10 +4,34 @@ use sqlx::SqlitePool;
 use crate::{
     engine::persist::Persist,
     world::{
-        action::{DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
+        action::{DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME},
         types::object::{ObjectFlags, ObjectId},
     },
 };
+
+pub struct Description {
+    id: ObjectId,
+    description: String,
+}
+
+impl Description {
+    pub fn new(id: ObjectId, description: String) -> Box<Self> {
+        Box::new(Description { id, description })
+    }
+}
+
+#[async_trait]
+impl Persist for Description {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE objects SET description = ? WHERE id = ?")
+            .bind(self.description.as_str())
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
 
 pub struct Flags {
     id: ObjectId,
@@ -58,22 +82,22 @@ impl Persist for Keywords {
     }
 }
 
-pub struct Long {
+pub struct Name {
     id: ObjectId,
-    long: String,
+    name: String,
 }
 
-impl Long {
-    pub fn new(id: ObjectId, long: String) -> Box<Self> {
-        Box::new(Long { id, long })
+impl Name {
+    pub fn new(id: ObjectId, name: String) -> Box<Self> {
+        Box::new(Name { id, name })
     }
 }
 
 #[async_trait]
-impl Persist for Long {
+impl Persist for Name {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("UPDATE objects SET long = ? WHERE id = ?")
-            .bind(self.long.as_str())
+        sqlx::query("UPDATE objects SET name = ? WHERE id = ?")
+            .bind(self.name.as_str())
             .bind(self.id)
             .execute(pool)
             .await?;
@@ -96,13 +120,13 @@ impl New {
 impl Persist for New {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO objects (id, flags, keywords, short, long) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO objects (id, flags, keywords, name, description) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(self.id)
         .bind(0)
         .bind(DEFAULT_OBJECT_KEYWORD)
-        .bind(DEFAULT_OBJECT_SHORT)
-        .bind(DEFAULT_OBJECT_LONG)
+        .bind(DEFAULT_OBJECT_NAME)
+        .bind(DEFAULT_OBJECT_DESCRIPTION)
         .execute(pool)
         .await?;
 
@@ -125,30 +149,6 @@ impl Persist for Remove {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM objects WHERE id = ?")
             .bind(self.object_id)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct Short {
-    id: ObjectId,
-    short: String,
-}
-
-impl Short {
-    pub fn new(id: ObjectId, short: String) -> Box<Self> {
-        Box::new(Short { id, short })
-    }
-}
-
-#[async_trait]
-impl Persist for Short {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("UPDATE objects SET short = ? WHERE id = ?")
-            .bind(self.short.as_str())
-            .bind(self.id)
             .execute(pool)
             .await?;
 

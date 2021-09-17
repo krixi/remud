@@ -195,7 +195,7 @@ pub fn room_create_system(
             }
 
             let current_room_id = room_query.get_mut(current_room_entity).unwrap().id;
-            updates.queue(persist::room::New::new(
+            updates.queue(persist::room::Create::new(
                 new_room_id,
                 DEFAULT_ROOM_DESCRIPTION.to_string(),
             ));
@@ -508,7 +508,7 @@ pub fn room_remove_system(
                 })
                 .collect_vec();
 
-            updates.queue(persist::room::Remove::new(room_id));
+            updates.queue(persist::room::Delete::new(room_id));
 
             for id in present_player_ids {
                 updates.queue(persist::player::Room::new(id, *VOID_ROOM_ID));

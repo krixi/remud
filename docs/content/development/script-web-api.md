@@ -8,6 +8,8 @@ author: ""
 tags: [""]
 ---
 
+Runs on port 2080.
+
 ## POST /scripts/create
 
 ```
@@ -17,20 +19,17 @@ in: {
   code: String
 }
 
-out: {
-  id: String
-}
+out: {}
 ```
 
 ## POST /scripts/read
 
 ```
 in: {
-  id: String
+  name: String
 }
 
 out: {
-  id: String
   name: String,
   trigger: String,
   code: String
@@ -44,7 +43,6 @@ in: {}
 out: {
   scripts: [
     {
-      id: String
       name: String,
       trigger: String,
       code: String
@@ -57,7 +55,6 @@ out: {
 
 ```
 in: {
-  id: String,
   name: String,
   trigger: String,
   code: String
@@ -70,7 +67,7 @@ out: {}
 
 ```
 in: {
-  id: String
+  name: String
 }
 
 out: {}

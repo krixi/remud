@@ -1,16 +1,18 @@
 #![allow(clippy::type_complexity)]
 
 pub mod action;
-mod scripting;
+pub mod scripting;
 pub mod types;
 
 use std::{
     collections::VecDeque,
     convert::TryFrom,
     ops::DerefMut,
+    str::FromStr,
     sync::{Arc, RwLock},
 };
 
+use anyhow::bail;
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
@@ -23,8 +25,8 @@ use crate::{
         action::{register_action_systems, system::Logout, ActionEvent},
         scripting::{
             create_script_engine, post_action_script_system, pre_action_script_system,
-            script_compiler_system, CompiledScript, PreAction, Script, ScriptEngine, ScriptName,
-            ScriptRun, ScriptRuns, Scripts, Trigger,
+            script_compiler_system, CompiledScript, PreAction, Script, ScriptArtifacts,
+            ScriptEngine, ScriptName, ScriptRun, ScriptRuns, Scripts, Trigger,
         },
         types::{
             player::{Messages, Player, Players},
@@ -373,6 +375,136 @@ impl GameWorld {
             };
         };
     }
+
+    pub fn create_script(
+        &mut self,
+        name: String,
+        trigger: String,
+        code: String,
+    ) -> anyhow::Result<()> {
+        let mut world = self.world.write().unwrap();
+        let name = ScriptName::from(name.as_str());
+        let trigger = Trigger::from_str(trigger.as_str())?;
+
+        if world
+            .get_resource::<Scripts>()
+            .unwrap()
+            .by_name(&name)
+            .is_some()
+        {
+            bail!("Script {:?} already exists.", name)
+        }
+
+        let script = Script {
+            name: name.clone(),
+            trigger,
+            code,
+        };
+        let id = world.spawn().insert(script.clone()).id();
+
+        world
+            .get_resource_mut::<Scripts>()
+            .unwrap()
+            .insert(name, id);
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::script::Create::new(
+                script.name.to_string(),
+                script.trigger.to_string(),
+                script.code,
+            ));
+
+        Ok(())
+    }
+
+    pub fn read_script(&mut self, name: String) -> anyhow::Result<Script> {
+        let world = self.world.read().unwrap();
+        let name = ScriptName::from(name.as_str());
+
+        let script_entity =
+            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
+                entity
+            } else {
+                bail!("Script {:?} not found.", name);
+            };
+
+        Ok(world.get::<Script>(script_entity).unwrap().clone())
+    }
+
+    pub fn read_all_scripts(&mut self) -> anyhow::Result<Vec<Script>> {
+        let mut world = self.world.write().unwrap();
+
+        let mut scripts = Vec::new();
+        for script in world.query::<&Script>().iter(&world) {
+            scripts.push(script.clone());
+        }
+
+        Ok(scripts)
+    }
+
+    pub fn update_script(
+        &mut self,
+        name: String,
+        trigger: String,
+        code: String,
+    ) -> anyhow::Result<()> {
+        let mut world = self.world.write().unwrap();
+        let name = ScriptName::from(name.as_str());
+        let trigger = Trigger::from_str(trigger.as_str())?;
+
+        let script_entity =
+            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
+                entity
+            } else {
+                bail!("Script {:?} does not exists.", name)
+            };
+
+        let script = Script {
+            name,
+            trigger,
+            code,
+        };
+        world
+            .entity_mut(script_entity)
+            .insert(script.clone())
+            .remove_bundle::<ScriptArtifacts>();
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::script::Update::new(
+                script.name.to_string(),
+                script.trigger.to_string(),
+                script.code,
+            ));
+
+        Ok(())
+    }
+
+    pub fn delete_script(&mut self, name: String) -> anyhow::Result<()> {
+        let mut world = self.world.write().unwrap();
+        let name = ScriptName::from(name.as_str());
+
+        let script_entity =
+            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
+                entity
+            } else {
+                bail!("Script {:?} does not exists.", name)
+            };
+
+        world.despawn(script_entity);
+
+        world.get_resource_mut::<Scripts>().unwrap().remove(&name);
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::script::Delete::new(name.to_string()));
+
+        Ok(())
+    }
 }
 
 fn add_void_room(world: &mut World) {
@@ -400,7 +532,7 @@ fn add_void_room(world: &mut World) {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::room::New::new(*VOID_ROOM_ID, description));
+            .queue(persist::room::Create::new(*VOID_ROOM_ID, description));
 
         tracing::warn!("Void room was deleted and has been recreated.");
     }

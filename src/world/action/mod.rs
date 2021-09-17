@@ -60,8 +60,8 @@ macro_rules! event_from_action {
 
 pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
-pub const DEFAULT_OBJECT_SHORT: &str = "an object";
-pub const DEFAULT_OBJECT_LONG: &str = "A nondescript object. Completely uninteresting.";
+pub const DEFAULT_OBJECT_NAME: &str = "an object";
+pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
 #[derive(Debug, Clone)]
 pub enum ActionEvent {

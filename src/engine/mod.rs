@@ -7,6 +7,7 @@ use argon2::{
     password_hash::{self, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::rngs::OsRng;
 use regex::Regex;
@@ -20,6 +21,7 @@ use crate::{
         client::{Client, Clients, State},
         db::Db,
     },
+    web::{Script, ScriptName, WebMessage, WebRequest, WebResponse},
     world::{
         action::{observe::Look, parse, system::Login, ActionEvent},
         GameWorld,
@@ -48,6 +50,7 @@ pub enum EngineMessage {
 pub struct Engine {
     engine_rx: mpsc::Receiver<ClientMessage>,
     control_tx: mpsc::Sender<ControlMessage>,
+    web_message_rx: mpsc::Receiver<WebMessage>,
     clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
@@ -59,6 +62,7 @@ impl Engine {
     pub async fn new(
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
+        web_message_rx: mpsc::Receiver<WebMessage>,
     ) -> anyhow::Result<Self> {
         let db = Db::new("world.db").await?;
         let world = db.load_world().await?;
@@ -68,6 +72,7 @@ impl Engine {
         Ok(Engine {
             engine_rx,
             control_tx,
+            web_message_rx,
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
@@ -109,6 +114,11 @@ impl Engine {
                         self.process(message).await;
                     }
                 }
+                maybe_message = self.web_message_rx.recv() => {
+                    if let Some(message) = maybe_message {
+                        self.process_web(message).await;
+                    }
+                }
             }
         }
 
@@ -148,6 +158,49 @@ impl Engine {
                 self.process_input(client_id, input).await;
             }
         }
+    }
+
+    async fn process_web(&mut self, message: WebMessage) {
+        match message.request {
+            WebRequest::CreateScript(Script {
+                name,
+                trigger,
+                code,
+            }) => match self.game_world.create_script(name, trigger, code) {
+                Ok(_) => message.response.send(WebResponse::Done),
+                Err(_) => message.response.send(WebResponse::Error),
+            },
+            WebRequest::ReadScript(ScriptName { name }) => {
+                match self.game_world.read_script(name) {
+                    Ok(script) => message.response.send(WebResponse::Script(script.into())),
+                    Err(_) => message.response.send(WebResponse::Error),
+                }
+            }
+            WebRequest::ReadAllScripts => match self.game_world.read_all_scripts() {
+                Ok(scripts) => message.response.send(WebResponse::AllScripts(
+                    scripts
+                        .into_iter()
+                        .map(|script| script.into())
+                        .collect_vec(),
+                )),
+                Err(_) => message.response.send(WebResponse::Error),
+            },
+            WebRequest::UpdateScript(Script {
+                name,
+                trigger,
+                code,
+            }) => match self.game_world.update_script(name, trigger, code) {
+                Ok(_) => message.response.send(WebResponse::Done),
+                Err(_) => message.response.send(WebResponse::Error),
+            },
+            WebRequest::DeleteScript(ScriptName { name }) => {
+                match self.game_world.delete_script(name) {
+                    Ok(_) => message.response.send(WebResponse::Done),
+                    Err(_) => message.response.send(WebResponse::Error),
+                }
+            }
+        }
+        .ok();
     }
 
     async fn process_input(&mut self, client_id: ClientId, input: String) {

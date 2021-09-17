@@ -9,7 +9,9 @@ use crate::{
     event_from_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{ActionEvent, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
+        action::{
+            ActionEvent, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
+        },
         scripting::{PostEventScriptHooks, ScriptHook, Trigger},
         types::{
             self,
@@ -147,10 +149,10 @@ pub fn object_create_system(
                         list: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
                     },
                     name: Named {
-                        name: DEFAULT_OBJECT_SHORT.to_string(),
+                        name: DEFAULT_OBJECT_NAME.to_string(),
                     },
                     description: Description {
-                        text: DEFAULT_OBJECT_LONG.to_string(),
+                        text: DEFAULT_OBJECT_DESCRIPTION.to_string(),
                     },
                 })
                 .insert(PostEventScriptHooks {
@@ -335,7 +337,7 @@ pub fn object_update_description_system(
                 object.id
             };
 
-            updates.queue(persist::object::Long::new(id, description.clone()));
+            updates.queue(persist::object::Description::new(id, description.clone()));
 
             if let Ok(mut messages) = messages.get_mut(*entity) {
                 messages.queue(format!("Updated object {} description.", id));
@@ -428,7 +430,7 @@ pub fn object_update_name_system(
                 object.id
             };
 
-            updates.queue(persist::object::Short::new(id, name.clone()));
+            updates.queue(persist::object::Name::new(id, name.clone()));
 
             if let Ok(mut messages) = messages.get_mut(*entity) {
                 messages.queue(format!("Updated object {} name.", id));

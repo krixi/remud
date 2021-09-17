@@ -7,6 +7,7 @@ use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use rhai::{plugin::*, AST};
+use strum::EnumString;
 
 use crate::world::{
     action::ActionEvent,
@@ -37,6 +38,10 @@ impl Scripts {
         self.by_name.insert(name, script);
     }
 
+    pub fn remove(&mut self, name: &ScriptName) {
+        self.by_name.remove(name);
+    }
+
     pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
         self.by_name.get(name).copied()
     }
@@ -56,11 +61,23 @@ impl From<&str> for ScriptName {
     }
 }
 
-#[derive(Debug)]
+impl ToString for ScriptName {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Script {
     pub name: ScriptName,
     pub trigger: Trigger,
     pub code: String,
+}
+
+#[derive(Bundle)]
+pub struct ScriptArtifacts {
+    compiled: CompiledScript,
+    error: CompilationError,
 }
 
 pub struct CompiledScript {
@@ -129,7 +146,7 @@ impl ScriptHook {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::ToString, EnumString)]
 pub enum Trigger {
     Say,
 }
@@ -281,7 +298,7 @@ fn action_room(
 ) -> Option<Entity> {
     if let Ok(location) = location_query.get(enactor) {
         Some(location.room)
-    } else if let Ok(_) = room_query.get(enactor) {
+    } else if room_query.get(enactor).is_ok() {
         Some(enactor)
     } else {
         let mut containing_entity = enactor;
