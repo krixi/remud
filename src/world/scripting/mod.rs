@@ -1,96 +1,359 @@
-#![allow(dead_code)]
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
-use std::sync::Arc;
-
-use bevy_app::{EventReader, Events};
+use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
-use rhai::plugin::*;
+use rhai::{plugin::*, AST};
 
-use crate::world::{action::ActionEvent, types::Container};
+use crate::world::{
+    action::ActionEvent,
+    types::{room::Room, Container, Contents, Location},
+};
+
+pub struct ScriptEngine {
+    engine: Arc<RwLock<rhai::Engine>>,
+}
+
+impl ScriptEngine {
+    pub fn compile(&self, script: &str) -> anyhow::Result<rhai::AST> {
+        Ok(self.engine.read().unwrap().compile(script)?)
+    }
+
+    pub fn get(&self) -> Arc<RwLock<rhai::Engine>> {
+        self.engine.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct Scripts {
+    by_name: HashMap<ScriptName, Entity>,
+}
+
+impl Scripts {
+    pub fn insert(&mut self, name: ScriptName, script: Entity) {
+        self.by_name.insert(name, script);
+    }
+
+    pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
+        self.by_name.get(name).copied()
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct ScriptRuns {
+    pub runs: Vec<(ActionEvent, Vec<ScriptRun>)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ScriptName(String);
+
+impl From<&str> for ScriptName {
+    fn from(value: &str) -> Self {
+        ScriptName(value.to_string())
+    }
+}
+
+#[derive(Debug)]
+pub struct Script {
+    pub name: ScriptName,
+    pub trigger: Trigger,
+    pub code: String,
+}
+
+pub struct CompiledScript {
+    pub ast: AST,
+}
+
+#[derive(Debug)]
+pub struct CompilationError {
+    pub error: String,
+}
+
+#[derive(Debug)]
+pub struct ScriptRun {
+    pub entity: Entity,
+    pub script: ScriptName,
+}
+
+#[derive(Debug)]
+pub struct PostEventScriptHooks {
+    pub list: Vec<ScriptHook>,
+}
+
+#[derive(Debug)]
+pub struct PreEventScriptHooks {
+    pub list: Vec<ScriptHook>,
+}
+
+trait ScriptHooks: 'static + Send + Sync {
+    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName>;
+}
+
+impl ScriptHooks for PreEventScriptHooks {
+    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName> {
+        self.list
+            .iter()
+            .filter(|hook| hook.trigger == action_trigger)
+            .map(|hook| &hook.script)
+            .cloned()
+            .collect_vec()
+    }
+}
+
+impl ScriptHooks for PostEventScriptHooks {
+    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName> {
+        self.list
+            .iter()
+            .filter(|hook| hook.trigger == action_trigger)
+            .map(|hook| &hook.script)
+            .cloned()
+            .collect_vec()
+    }
+}
+
+#[derive(Debug)]
+pub struct ScriptHook {
+    trigger: Trigger,
+    script: ScriptName,
+}
+
+impl ScriptHook {
+    pub fn new(trigger: Trigger, script: &str) -> Self {
+        ScriptHook {
+            trigger,
+            script: ScriptName::from(script),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    Say,
+}
+
+impl Trigger {
+    fn from_action(value: &ActionEvent) -> Option<Self> {
+        match value {
+            ActionEvent::Drop(_) => None,
+            ActionEvent::Emote(_) => None,
+            ActionEvent::Exits(_) => None,
+            ActionEvent::Get(_) => None,
+            ActionEvent::Inventory(_) => None,
+            ActionEvent::Login(_) => None,
+            ActionEvent::Logout(_) => None,
+            ActionEvent::Look(_) => None,
+            ActionEvent::LookAt(_) => None,
+            ActionEvent::Move(_) => None,
+            ActionEvent::ObjectUnsetFlags(_) => None,
+            ActionEvent::ObjectCreate(_) => None,
+            ActionEvent::ObjectInfo(_) => None,
+            ActionEvent::ObjectRemove(_) => None,
+            ActionEvent::ObjectSetFlags(_) => None,
+            ActionEvent::ObjectUpdateDescription(_) => None,
+            ActionEvent::ObjectUpdateKeywords(_) => None,
+            ActionEvent::ObjectUpdateName(_) => None,
+            ActionEvent::PlayerInfo(_) => None,
+            ActionEvent::RoomCreate(_) => None,
+            ActionEvent::RoomInfo(_) => None,
+            ActionEvent::RoomLink(_) => None,
+            ActionEvent::RoomUpdateDescription(_) => None,
+            ActionEvent::RoomRemove(_) => None,
+            ActionEvent::RoomUnlink(_) => None,
+            ActionEvent::Say(_) => Some(Trigger::Say),
+            ActionEvent::Send(_) => None,
+            ActionEvent::Shutdown(_) => None,
+            ActionEvent::Teleport(_) => None,
+            ActionEvent::Who(_) => None,
+        }
+    }
+}
 
 pub struct PreAction {
     pub action: ActionEvent,
 }
 
-pub struct PostAction {
-    pub action: ActionEvent,
-}
-
-pub fn pre_script_system(world: &mut World) {
-    let world = world.cell();
-
-    let pre_action_events = world.get_resource_mut::<Events<PreAction>>().unwrap();
-    let mut action_events = world.get_resource_mut::<Events<ActionEvent>>().unwrap();
-
-    for PreAction { action } in pre_action_events.get_reader().iter(&*pre_action_events) {
-        action_events.send(action.clone());
-    }
-}
-
-pub fn post_script_system(world: &mut World) {
-    let world = world.cell();
-
-    let action_events = world.get_resource_mut::<Events<ActionEvent>>().unwrap();
-    let mut post_action_events = world.get_resource_mut::<Events<PostAction>>().unwrap();
-
-    for action in action_events.get_reader().iter(&*action_events) {
-        post_action_events.send(PostAction {
-            action: action.clone(),
-        });
-    }
-}
-
-#[derive(Debug)]
-pub struct PlayerAction {
-    player: Entity,
-    event: PlayerEvent,
-}
-
-impl PlayerAction {
-    fn trigger(&self) -> Trigger {
-        match self.event {
-            PlayerEvent::Say { .. } => Trigger::Say,
+pub fn script_compiler_system(
+    mut commands: Commands,
+    engine: Res<ScriptEngine>,
+    uncompiled_scripts: Query<
+        (Entity, &Script),
+        (Without<CompiledScript>, Without<CompilationError>),
+    >,
+) {
+    for (entity, script) in uncompiled_scripts.iter() {
+        match engine.compile(script.code.as_str()) {
+            Ok(ast) => {
+                tracing::info!("Compiled {:?}.", script.name);
+                commands.entity(entity).insert(CompiledScript { ast });
+            }
+            Err(e) => {
+                let error = e.to_string();
+                tracing::warn!("Failed to compile {:?}: {}.", script.name, error);
+                commands.entity(entity).insert(CompilationError { error });
+            }
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum PlayerEvent {
-    Say { room: Entity, message: String },
+pub fn pre_action_script_system(
+    mut pre_action_reader: EventReader<PreAction>,
+    mut action_writer: EventWriter<ActionEvent>,
+    mut script_runs: ResMut<ScriptRuns>,
+    room_query: Query<&Room>,
+    location_query: Query<&Location>,
+    container_query: Query<&Container>,
+    contents_query: Query<&Contents>,
+    hooks_query: Query<&PreEventScriptHooks>,
+) {
+    for PreAction { action } in pre_action_reader.iter() {
+        let enactor = action.enactor();
+
+        // Determine the location the action took place. If we can't, we give the action a pass.
+        let room = if let Some(room) =
+            action_room(enactor, &room_query, &location_query, &container_query)
+        {
+            room
+        } else {
+            tracing::warn!("Unable to determine location of action {:?}", action);
+            action_writer.send(action.clone());
+            continue;
+        };
+
+        // Check if any scripts need to run for this action
+        let runs = get_script_runs(room, action, &hooks_query, &contents_query, &room_query);
+        if runs.is_empty() {
+            action_writer.send(action.clone());
+        } else {
+            script_runs.runs.push((action.clone(), runs));
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
-pub enum TriggerData {
-    Player(Entity, PlayerEvent),
+pub fn post_action_script_system(
+    mut pre_action_reader: EventReader<PreAction>,
+    mut script_runs: ResMut<ScriptRuns>,
+    room_query: Query<&Room>,
+    location_query: Query<&Location>,
+    container_query: Query<&Container>,
+    contents_query: Query<&Contents>,
+    hooks_query: Query<&PostEventScriptHooks>,
+) {
+    for PreAction { action } in pre_action_reader.iter() {
+        let enactor = action.enactor();
+
+        let room = if let Some(room) =
+            action_room(enactor, &room_query, &location_query, &container_query)
+        {
+            room
+        } else {
+            tracing::warn!("Unable to determine location of action {:?}", action);
+            continue;
+        };
+
+        let runs = get_script_runs(room, action, &hooks_query, &contents_query, &room_query);
+
+        if !runs.is_empty() {
+            script_runs.runs.push((action.clone(), runs));
+        }
+    }
+}
+
+pub fn create_script_engine() -> ScriptEngine {
+    let mut engine = rhai::Engine::default();
+
+    engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+    engine.register_global_module(exported_module!(world_api).into());
+    engine.register_global_module(exported_module!(event_api).into());
+
+    ScriptEngine {
+        engine: Arc::new(RwLock::new(engine)),
+    }
+}
+
+fn action_room(
+    enactor: Entity,
+    room_query: &Query<&Room>,
+    location_query: &Query<&Location>,
+    container_query: &Query<&Container>,
+) -> Option<Entity> {
+    if let Ok(location) = location_query.get(enactor) {
+        Some(location.room)
+    } else if let Ok(_) = room_query.get(enactor) {
+        Some(enactor)
+    } else {
+        let mut containing_entity = enactor;
+
+        while let Ok(container) = container_query.get(containing_entity) {
+            containing_entity = container.entity;
+        }
+
+        location_query
+            .get(containing_entity)
+            .map(|location| location.room)
+            .ok()
+    }
+}
+
+fn get_script_runs<Hooks: ScriptHooks>(
+    room: Entity,
+    action: &ActionEvent,
+    hooks_query: &Query<&Hooks>,
+    contents_query: &Query<&Contents>,
+    room_query: &Query<&Room>,
+) -> Vec<ScriptRun> {
+    let mut runs = Vec::new();
+
+    if let Some(action_trigger) = Trigger::from_action(action) {
+        if let Ok(triggers) = hooks_query.get(room) {
+            for script in triggers.triggered_by(action_trigger) {
+                runs.push(ScriptRun {
+                    entity: room,
+                    script,
+                });
+            }
+        }
+
+        let contents = contents_query.get(room).unwrap();
+        for object in &contents.objects {
+            if let Ok(triggers) = hooks_query.get(*object) {
+                for script in triggers.triggered_by(action_trigger) {
+                    runs.push(ScriptRun {
+                        entity: *object,
+                        script,
+                    });
+                }
+            }
+        }
+
+        let room = room_query.get(room).unwrap();
+        for player in &room.players {
+            if let Ok(triggers) = hooks_query.get(*player) {
+                for script in triggers.triggered_by(action_trigger) {
+                    runs.push(ScriptRun {
+                        entity: *player,
+                        script,
+                    });
+                }
+            }
+        }
+
+        // TODO: add checks for all objects in present player's inventories
+    }
+
+    runs
 }
 
 #[export_module]
-pub mod trigger_api {
-    use crate::world::scripting::TriggerData;
+pub mod event_api {
+    use crate::world::action::ActionEvent;
 
     #[rhai_fn(get = "entity", pure)]
-    pub fn get_entity(trigger_data: &mut TriggerData) -> Dynamic {
-        match trigger_data {
-            TriggerData::Player(entity, _) => Dynamic::from(*entity),
-        }
+    pub fn get_entity(action_event: &mut ActionEvent) -> Dynamic {
+        Dynamic::from(action_event.enactor())
     }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Script(pub String);
-
-pub struct ScriptExecutions {
-    pub runs: Vec<(TriggerData, Script)>,
-}
-
-pub struct ScriptTriggers {
-    list: Vec<(Trigger, Script)>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Trigger {
-    Say,
 }
 
 #[export_module]
@@ -107,59 +370,6 @@ pub mod world_api {
             Dynamic::from(named.name.clone())
         } else {
             Dynamic::UNIT
-        }
-    }
-}
-
-fn player_action_events(
-    mut commands: Commands,
-    mut actions: EventReader<PlayerAction>,
-    objects_query: Query<(Entity, &ScriptTriggers, &Container)>,
-    mut executions_query: Query<&mut ScriptExecutions>,
-) {
-    for action in actions.iter() {
-        let room = match action.event {
-            PlayerEvent::Say { room, .. } => Some(room),
-        };
-
-        for (object_entity, script_triggers, container) in objects_query.iter() {
-            if let Some(room) = room {
-                if container.entity != room {
-                    continue;
-                }
-            }
-
-            let trigger = action.trigger();
-
-            let scripts = script_triggers
-                .list
-                .iter()
-                .filter(|(script_trigger, _)| trigger == *script_trigger)
-                .map(|(_, script)| script)
-                .collect_vec();
-
-            if let Ok(mut executions) = executions_query.get_mut(object_entity) {
-                for script in scripts {
-                    executions.runs.push((
-                        TriggerData::Player(action.player, action.event.clone()),
-                        script.clone(),
-                    ));
-                }
-            } else {
-                let executions = {
-                    let runs = scripts
-                        .into_iter()
-                        .map(|script| {
-                            (
-                                TriggerData::Player(action.player, action.event.clone()),
-                                script.clone(),
-                            )
-                        })
-                        .collect_vec();
-                    ScriptExecutions { runs }
-                };
-                commands.entity(object_entity).insert(executions);
-            };
         }
     }
 }

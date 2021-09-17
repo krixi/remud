@@ -5,7 +5,7 @@ mod scripting;
 pub mod types;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     convert::TryFrom,
     ops::DerefMut,
     sync::{Arc, RwLock},
@@ -15,35 +15,16 @@ use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use rhai::{plugin::*, Scope, AST};
+use rhai::{Dynamic, Scope};
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
     world::{
-        action::{
-            communicate::{emote_system, say_system, send_system},
-            immortal::{
-                object::{
-                    object_clear_flags_system, object_create_system, object_info_system,
-                    object_remove_system, object_set_flags_system,
-                    object_update_description_system, object_update_keywords_system,
-                    object_update_name_system,
-                },
-                player::player_info_system,
-                room::{
-                    room_create_system, room_info_system, room_link_system, room_remove_system,
-                    room_unlink_system, room_update_description_system,
-                },
-            },
-            movement::{move_system, teleport_system},
-            object::{drop_system, get_system, inventory_system},
-            observe::{exits_system, look_at_system, look_system, who_system},
-            system::{login_system, logout_system, shutdown_system, Logout},
-            ActionEvent,
-        },
+        action::{register_action_systems, system::Logout, ActionEvent},
         scripting::{
-            post_script_system, pre_script_system, trigger_api, world_api, PostAction, PreAction,
-            Script, ScriptExecutions,
+            create_script_engine, post_action_script_system, pre_action_script_system,
+            script_compiler_system, CompiledScript, PreAction, Script, ScriptEngine, ScriptName,
+            ScriptRun, ScriptRuns, Scripts, Trigger,
         },
         types::{
             player::{Messages, Player, Players},
@@ -53,141 +34,133 @@ use crate::{
     },
 };
 
+pub const STAGE_FIRST: &str = "first";
+pub const STAGE_UPDATE: &str = "update";
+
 lazy_static! {
     pub static ref VOID_ROOM_ID: RoomId = RoomId::try_from(0).unwrap();
 }
 
 pub struct GameWorld {
     world: Arc<RwLock<World>>,
-    schedule: Schedule,
-    engine: rhai::Engine,
-    scripts: HashMap<Script, AST>,
+    pre_event_schedule: Schedule,
+    update_schedule: Schedule,
+    post_event_schedule: Schedule,
 }
 
 impl GameWorld {
     pub fn new(mut world: World) -> Self {
-        // Add events
-        world.insert_resource(Events::<PreAction>::default());
-        world.insert_resource(Events::<ActionEvent>::default());
-        world.insert_resource(Events::<PostAction>::default());
+        let (mut pre_event_schedule, mut update_schedule, mut post_event_schedule) =
+            build_schedules();
 
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
+        world.insert_resource(Scripts::default());
+        world.insert_resource(ScriptRuns::default());
+        world.insert_resource(create_script_engine());
 
-        // Add void room
-        GameWorld::add_void_room(&mut world);
+        // Add events
+        add_events::<PreAction>(&mut world, &mut update_schedule);
+        add_events::<ActionEvent>(&mut world, &mut update_schedule);
 
-        // Create schedule
-        let mut schedule = Schedule::default();
+        // Create emergency room
+        add_void_room(&mut world);
 
-        let mut first = SystemStage::parallel();
-        first.add_system(Events::<PreAction>::update_system.system());
-        first.add_system(Events::<ActionEvent>::update_system.system());
-        first.add_system(Events::<PostAction>::update_system.system());
+        // Configure schedule systems
+        let update = update_schedule
+            .get_stage_mut::<SystemStage>(&STAGE_UPDATE)
+            .unwrap();
+        register_action_systems(update);
 
-        let mut update = SystemStage::parallel();
-        update.add_system(pre_script_system.exclusive_system());
+        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, pre_action_script_system.system());
+        update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
+        post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
 
-        update.add_system(drop_system.system());
-        update.add_system(emote_system.system());
-        update.add_system(exits_system.system());
-        update.add_system(get_system.system());
-        update.add_system(inventory_system.system());
-        update.add_system(login_system.system());
-        update.add_system(logout_system.system());
-        update.add_system(look_system.system());
-        update.add_system(look_at_system.system());
-        update.add_system(move_system.system());
-        update.add_system(object_clear_flags_system.system());
-        update.add_system(object_create_system.system());
-        update.add_system(object_info_system.system());
-        update.add_system(object_update_description_system.system());
-        update.add_system(object_update_keywords_system.system());
-        update.add_system(object_update_name_system.system());
-        update.add_system(object_remove_system.system());
-        update.add_system(object_set_flags_system.system());
-        update.add_system(player_info_system.system());
-        update.add_system(room_create_system.system());
-        update.add_system(room_info_system.system());
-        update.add_system(room_link_system.system());
-        update.add_system(room_update_description_system.system());
-        update.add_system(room_unlink_system.system());
-        update.add_system(room_remove_system.system());
-        update.add_system(say_system.system());
-        update.add_system(send_system.system());
-        update.add_system(shutdown_system.system());
-        update.add_system(teleport_system.system());
-        update.add_system(who_system.system());
+        let test_script_name = ScriptName::from("test_script");
+        let test_script = Script {
+            name: test_script_name.clone(),
+            trigger: Trigger::Say,
+            code: r#"
+            let player = EVENT.entity;
+            let name = WORLD.get_name(player);
+            let output = `Hello there, ${name}.`;
+        "#
+            .to_string(),
+        };
 
-        update.add_system(post_script_system.exclusive_system().at_end());
-
-        // Add fun systems
-        schedule.add_stage("first", first);
-        schedule.add_stage_after("first", "update", update);
+        let test_script_entity = world.spawn().insert(test_script).id();
+        world
+            .get_resource_mut::<Scripts>()
+            .unwrap()
+            .insert(test_script_name, test_script_entity);
 
         let world = Arc::new(RwLock::new(world));
 
-        let mut engine = rhai::Engine::default();
-        engine.register_type_with_name::<Arc<RwLock<World>>>("World");
-        engine.register_global_module(exported_module!(world_api).into());
-        engine.register_global_module(exported_module!(trigger_api).into());
-
-        let mut scripts = HashMap::new();
-
-        let script = r#"
-        let player = TRIGGER.entity;
-        let name = WORLD.player_name(player);
-        let output = `Hello there, ${name}.`;
-        "#;
-        let compiled = engine.compile(script).unwrap();
-
-        scripts.insert(Script("say_hi".to_string()), compiled);
-
         GameWorld {
             world,
-            schedule,
-            engine,
-            scripts,
+            pre_event_schedule,
+            update_schedule,
+            post_event_schedule,
         }
     }
 
     pub async fn run(&mut self) {
-        self.schedule
-            .run_once(self.world.write().unwrap().deref_mut());
+        let world = self.world.clone();
 
-        let executions = {
-            let mut world = self.world.write().unwrap();
-            let entities = world
-                .query_filtered::<Entity, With<ScriptExecutions>>()
-                .iter(&world)
-                .collect_vec();
+        self.pre_event_schedule
+            .run(world.write().unwrap().deref_mut());
 
-            entities
-                .into_iter()
-                .map(|entity| {
-                    (
-                        entity,
-                        world
-                            .entity_mut(entity)
-                            .remove::<ScriptExecutions>()
-                            .unwrap(),
-                    )
-                })
-                .collect_vec()
-        };
+        let mut runs = Vec::new();
+        std::mem::swap(
+            &mut runs,
+            &mut world
+                .write()
+                .unwrap()
+                .get_resource_mut::<ScriptRuns>()
+                .unwrap()
+                .runs,
+        );
 
-        for (entity, execution) in executions {
-            for (trigger, script) in execution.runs {
-                if let Some(ast) = self.scripts.get(&script) {
-                    let mut scope = Scope::new();
-                    scope.push_constant("SELF", entity);
-                    scope.push_constant("WORLD", self.world.clone());
-                    scope.push_constant("TRIGGER", trigger);
-                    self.engine.consume_ast_with_scope(&mut scope, ast).unwrap();
-                    let output = scope.get_value::<String>("output");
-                    tracing::info!("script output: {:?}", output);
+        for (action, runs) in runs.drain(..) {
+            let mut allowed = true;
+
+            for ScriptRun { entity, script } in runs {
+                if !self.run_pre_script(&action, entity, script) {
+                    allowed = false
                 }
+            }
+
+            if allowed {
+                world
+                    .write()
+                    .unwrap()
+                    .get_resource_mut::<Events<ActionEvent>>()
+                    .unwrap()
+                    .send(action);
+            }
+        }
+
+        self.update_schedule
+            .run_once(world.write().unwrap().deref_mut());
+
+        self.post_event_schedule
+            .run(world.write().unwrap().deref_mut());
+
+        let mut runs = Vec::new();
+        std::mem::swap(
+            &mut runs,
+            &mut world
+                .write()
+                .unwrap()
+                .get_resource_mut::<ScriptRuns>()
+                .unwrap()
+                .runs,
+        );
+
+        for (action, runs) in runs.drain(..) {
+            for ScriptRun { entity, script } in runs {
+                self.run_script(&action, entity, script);
             }
         }
     }
@@ -317,34 +290,137 @@ impl GameWorld {
         self.world.clone()
     }
 
-    fn add_void_room(world: &mut World) {
-        if world
-            .get_resource::<Rooms>()
+    fn run_pre_script(&self, event: &ActionEvent, entity: Entity, script: ScriptName) -> bool {
+        let world = self.world.clone();
+
+        if let Some(script) = world
+            .read()
             .unwrap()
-            .by_id(*VOID_ROOM_ID)
-            .is_none()
+            .get_resource::<Scripts>()
+            .unwrap()
+            .by_name(&script)
         {
-            let description = "A dark void extends infinitely in all directions.".to_string();
-            let bundle = RoomBundle {
-                id: Id::Room(*VOID_ROOM_ID),
-                room: Room::new(*VOID_ROOM_ID),
-                description: Description {
-                    text: description.clone(),
-                },
-                contents: Contents::default(),
+            if let Some(compiled_script) = world.read().unwrap().get::<CompiledScript>(script) {
+                let engine = world
+                    .read()
+                    .unwrap()
+                    .get_resource::<ScriptEngine>()
+                    .unwrap()
+                    .get();
+
+                let mut scope = Scope::new();
+                scope.push_constant("SELF", entity);
+                scope.push_constant("WORLD", world.clone());
+                scope.push_constant("EVENT", event.clone());
+                scope.push_dynamic("allow_action", Dynamic::from(true));
+
+                engine
+                    .read()
+                    .unwrap()
+                    .consume_ast_with_scope(&mut scope, &compiled_script.ast)
+                    .unwrap();
+
+                return scope.get_value("allow_action").unwrap();
+            } else {
+                tracing::warn!(
+                    "Skipping execution of {:?}, compiled script not found.",
+                    script
+                );
             };
-            let void_room = world.spawn().insert_bundle(bundle).id();
-            world
-                .get_resource_mut::<Rooms>()
-                .unwrap()
-                .insert(*VOID_ROOM_ID, void_room);
-
-            world
-                .get_resource_mut::<Updates>()
-                .unwrap()
-                .queue(persist::room::New::new(*VOID_ROOM_ID, description));
-
-            tracing::warn!("Void room was deleted and has been recreated.");
         }
+
+        false
     }
+
+    fn run_script(&self, event: &ActionEvent, entity: Entity, script: ScriptName) {
+        let world = self.world.clone();
+
+        if let Some(script) = world
+            .read()
+            .unwrap()
+            .get_resource::<Scripts>()
+            .unwrap()
+            .by_name(&script)
+        {
+            if let Some(compiled_script) = world.read().unwrap().get::<CompiledScript>(script) {
+                let engine = world
+                    .read()
+                    .unwrap()
+                    .get_resource::<ScriptEngine>()
+                    .unwrap()
+                    .get();
+
+                let mut scope = Scope::new();
+                scope.push_constant("SELF", entity);
+                scope.push_constant("WORLD", world.clone());
+                scope.push_constant("EVENT", event.clone());
+
+                tracing::info!("running script");
+                engine
+                    .read()
+                    .unwrap()
+                    .consume_ast_with_scope(&mut scope, &compiled_script.ast)
+                    .unwrap();
+                tracing::info!("done running script");
+
+                let output = scope.get_value::<String>("output");
+                tracing::info!("script output: {:?}", output);
+            } else {
+                tracing::warn!(
+                    "Skipping execution of {:?}, compiled script not found.",
+                    script
+                );
+            };
+        };
+    }
+}
+
+fn add_void_room(world: &mut World) {
+    if world
+        .get_resource::<Rooms>()
+        .unwrap()
+        .by_id(*VOID_ROOM_ID)
+        .is_none()
+    {
+        let description = "A dark void extends infinitely in all directions.".to_string();
+        let bundle = RoomBundle {
+            id: Id::Room(*VOID_ROOM_ID),
+            room: Room::new(*VOID_ROOM_ID),
+            description: Description {
+                text: description.clone(),
+            },
+            contents: Contents::default(),
+        };
+        let void_room = world.spawn().insert_bundle(bundle).id();
+        world
+            .get_resource_mut::<Rooms>()
+            .unwrap()
+            .insert(*VOID_ROOM_ID, void_room);
+
+        world
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .queue(persist::room::New::new(*VOID_ROOM_ID, description));
+
+        tracing::warn!("Void room was deleted and has been recreated.");
+    }
+}
+
+fn build_schedules() -> (Schedule, Schedule, Schedule) {
+    let mut pre_event_schedule = Schedule::default();
+    pre_event_schedule.add_stage(STAGE_UPDATE, SystemStage::parallel());
+
+    let mut update_schedule = Schedule::default();
+    update_schedule.add_stage(STAGE_FIRST, SystemStage::parallel());
+    update_schedule.add_stage_after(STAGE_FIRST, STAGE_UPDATE, SystemStage::parallel());
+
+    let mut post_event_schedule = Schedule::default();
+    post_event_schedule.add_stage(STAGE_UPDATE, SystemStage::parallel());
+
+    (pre_event_schedule, update_schedule, post_event_schedule)
+}
+
+fn add_events<T: 'static + Send + Sync>(world: &mut World, schedule: &mut Schedule) {
+    world.insert_resource(Events::<T>::default());
+    schedule.add_system_to_stage(STAGE_FIRST, Events::<T>::update_system.system());
 }

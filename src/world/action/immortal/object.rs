@@ -10,6 +10,7 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{ActionEvent, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_LONG, DEFAULT_OBJECT_SHORT},
+        scripting::{PostEventScriptHooks, ScriptHook, Trigger},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -108,60 +109,6 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
 }
 
 #[derive(Debug, Clone)]
-pub struct ObjectUnsetFlags {
-    pub entity: Entity,
-    pub id: ObjectId,
-    pub flags: Vec<String>,
-}
-
-event_from_action!(ObjectUnsetFlags);
-
-pub fn object_clear_flags_system(
-    mut events: EventReader<ActionEvent>,
-    objects: Res<Objects>,
-    mut updates: ResMut<Updates>,
-    mut object_query: Query<(&Object, &mut types::Flags)>,
-    mut messages: Query<&mut Messages>,
-) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = event {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*entity) {
-                    messages.queue(format!("Object {} not found.", id));
-                }
-                continue;
-            };
-
-            let remove_flags = match ObjectFlags::try_from(flags.as_slice()) {
-                Ok(flags) => flags,
-                Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*entity) {
-                        messages.queue(e.to_string());
-                    }
-                    continue;
-                }
-            };
-
-            let (id, flags) = {
-                let (object, mut flags) = object_query.get_mut(object_entity).unwrap();
-
-                flags.flags.remove(remove_flags);
-
-                (object.id, flags.flags)
-            };
-
-            updates.queue(persist::object::Flags::new(id, flags));
-
-            if let Ok(mut messages) = messages.get_mut(*entity) {
-                messages.queue(format!("Updated object {} flags.", id));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct ObjectCreate {
     pub entity: Entity,
 }
@@ -205,6 +152,9 @@ pub fn object_create_system(
                     description: Description {
                         text: DEFAULT_OBJECT_LONG.to_string(),
                     },
+                })
+                .insert(PostEventScriptHooks {
+                    list: vec![ScriptHook::new(Trigger::Say, "test_script")],
                 })
                 .id();
 
@@ -291,28 +241,23 @@ pub fn object_info_system(
 }
 
 #[derive(Debug, Clone)]
-pub struct ObjectUpdateKeywords {
+pub struct ObjectUnsetFlags {
     pub entity: Entity,
     pub id: ObjectId,
-    pub keywords: Vec<String>,
+    pub flags: Vec<String>,
 }
 
-event_from_action!(ObjectUpdateKeywords);
+event_from_action!(ObjectUnsetFlags);
 
-pub fn object_update_keywords_system(
+pub fn object_clear_flags_system(
     mut events: EventReader<ActionEvent>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
-    mut object_query: Query<(&Object, &mut Keywords)>,
+    mut object_query: Query<(&Object, &mut types::Flags)>,
     mut messages: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ObjectUpdateKeywords(ObjectUpdateKeywords {
-            entity,
-            id,
-            keywords,
-        }) = event
-        {
+        if let ActionEvent::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = event {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -322,18 +267,28 @@ pub fn object_update_keywords_system(
                 continue;
             };
 
-            let id = {
-                let (object, mut current_keywords) = object_query.get_mut(object_entity).unwrap();
-
-                current_keywords.list = keywords.clone();
-
-                object.id
+            let remove_flags = match ObjectFlags::try_from(flags.as_slice()) {
+                Ok(flags) => flags,
+                Err(e) => {
+                    if let Ok(mut messages) = messages.get_mut(*entity) {
+                        messages.queue(e.to_string());
+                    }
+                    continue;
+                }
             };
 
-            updates.queue(persist::object::Keywords::new(id, keywords.clone()));
+            let (id, flags) = {
+                let (object, mut flags) = object_query.get_mut(object_entity).unwrap();
+
+                flags.flags.remove(remove_flags);
+
+                (object.id, flags.flags)
+            };
+
+            updates.queue(persist::object::Flags::new(id, flags));
 
             if let Ok(mut messages) = messages.get_mut(*entity) {
-                messages.queue(format!("Updated object {} keywords.", id));
+                messages.queue(format!("Updated object {} flags.", id));
             }
         }
     }
@@ -384,6 +339,55 @@ pub fn object_update_description_system(
 
             if let Ok(mut messages) = messages.get_mut(*entity) {
                 messages.queue(format!("Updated object {} description.", id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectUpdateKeywords {
+    pub entity: Entity,
+    pub id: ObjectId,
+    pub keywords: Vec<String>,
+}
+
+event_from_action!(ObjectUpdateKeywords);
+
+pub fn object_update_keywords_system(
+    mut events: EventReader<ActionEvent>,
+    objects: Res<Objects>,
+    mut updates: ResMut<Updates>,
+    mut object_query: Query<(&Object, &mut Keywords)>,
+    mut messages: Query<&mut Messages>,
+) {
+    for event in events.iter() {
+        if let ActionEvent::ObjectUpdateKeywords(ObjectUpdateKeywords {
+            entity,
+            id,
+            keywords,
+        }) = event
+        {
+            let object_entity = if let Some(object) = objects.by_id(*id) {
+                object
+            } else {
+                if let Ok(mut messages) = messages.get_mut(*entity) {
+                    messages.queue(format!("Object {} not found.", id));
+                }
+                continue;
+            };
+
+            let id = {
+                let (object, mut current_keywords) = object_query.get_mut(object_entity).unwrap();
+
+                current_keywords.list = keywords.clone();
+
+                object.id
+            };
+
+            updates.queue(persist::object::Keywords::new(id, keywords.clone()));
+
+            if let Ok(mut messages) = messages.get_mut(*entity) {
+                messages.queue(format!("Updated object {} keywords.", id));
             }
         }
     }

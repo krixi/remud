@@ -12,21 +12,36 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            communicate::{parse_me, parse_say, parse_send, Emote, Say, SendMessage},
+            communicate::{
+                emote_system, parse_me, parse_say, parse_send, say_system, send_system, Emote, Say,
+                SendMessage,
+            },
             immortal::{
                 object::{
-                    ObjectCreate, ObjectInfo, ObjectRemove, ObjectSetFlags, ObjectUnsetFlags,
-                    ObjectUpdateDescription, ObjectUpdateKeywords, ObjectUpdateName,
+                    object_clear_flags_system, object_create_system, object_info_system,
+                    object_remove_system, object_set_flags_system,
+                    object_update_description_system, object_update_keywords_system,
+                    object_update_name_system, ObjectCreate, ObjectInfo, ObjectRemove,
+                    ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
+                    ObjectUpdateKeywords, ObjectUpdateName,
                 },
-                player::PlayerInfo,
+                player::{player_info_system, PlayerInfo},
                 room::{
-                    RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
+                    room_create_system, room_info_system, room_link_system, room_remove_system,
+                    room_unlink_system, room_update_description_system, RoomCreate, RoomInfo,
+                    RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
                 },
             },
-            movement::{parse_teleport, Move, Teleport},
-            object::{parse_drop, parse_get, Drop, Get, Inventory},
-            observe::{parse_look, Exits, Look, LookAt, Who},
-            system::{Login, Logout, Shutdown},
+            movement::{move_system, parse_teleport, teleport_system, Move, Teleport},
+            object::{
+                drop_system, get_system, inventory_system, parse_drop, parse_get, Drop, Get,
+                Inventory,
+            },
+            observe::{
+                exits_system, look_at_system, look_system, parse_look, who_system, Exits, Look,
+                LookAt, Who,
+            },
+            system::{login_system, logout_system, shutdown_system, Login, Logout, Shutdown},
         },
         types::room::Direction,
     },
@@ -117,6 +132,40 @@ impl ActionEvent {
             ActionEvent::Who(action) => action.entity,
         }
     }
+}
+
+pub fn register_action_systems(stage: &mut SystemStage) {
+    stage.add_system(drop_system.system());
+    stage.add_system(emote_system.system());
+    stage.add_system(exits_system.system());
+    stage.add_system(get_system.system());
+    stage.add_system(inventory_system.system());
+    stage.add_system(login_system.system());
+    stage.add_system(logout_system.system());
+    stage.add_system(drop_system.system());
+    stage.add_system(look_system.system());
+    stage.add_system(look_at_system.system());
+    stage.add_system(move_system.system());
+    stage.add_system(object_clear_flags_system.system());
+    stage.add_system(object_create_system.system());
+    stage.add_system(object_info_system.system());
+    stage.add_system(object_update_description_system.system());
+    stage.add_system(object_update_keywords_system.system());
+    stage.add_system(object_update_name_system.system());
+    stage.add_system(object_remove_system.system());
+    stage.add_system(object_set_flags_system.system());
+    stage.add_system(player_info_system.system());
+    stage.add_system(room_create_system.system());
+    stage.add_system(room_info_system.system());
+    stage.add_system(room_link_system.system());
+    stage.add_system(room_update_description_system.system());
+    stage.add_system(room_unlink_system.system());
+    stage.add_system(room_remove_system.system());
+    stage.add_system(say_system.system());
+    stage.add_system(send_system.system());
+    stage.add_system(shutdown_system.system());
+    stage.add_system(teleport_system.system());
+    stage.add_system(who_system.system());
 }
 
 #[derive(Error, Debug)]
