@@ -1,11 +1,10 @@
 ---
 title: "Script Web Api"
 date: 2021-09-17T12:54:12-07:00
-draft: true
 weight: 999
-summary: ""
-author: ""
-tags: [""]
+summary: "The contract for the web API that manages scripts."
+author: "Shaen"
+tags: ["api", "web"]
 ---
 
 Runs on port 2080.

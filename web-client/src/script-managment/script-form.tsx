@@ -226,6 +226,7 @@ const tokenToReact = (token: Token | string, i: number): ReactNode => {
 };
 
 const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
+  const [key, setKey] = useState(1);
   const [tokens, setTokens] = useState<Array<string | Token>>([]);
   const editable = useRef(null);
 
@@ -233,18 +234,20 @@ const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
 
   useEffect(() => {
     const tokens: Array<string | Token> = Prism.languages[lang]
-      ? Prism.tokenize(code, Prism.languages[lang])
+      ? Prism.tokenize(code ? code : "\n", Prism.languages[lang])
       : [];
     setTokens(tokens);
   }, [code, lang]);
 
   return (
     <pre
+      key={key}
       ref={editable}
       className={`language-${lang} p-0.5 rounded w-full h-96`}
       style={{ backgroundColor: "#505050" }}
+      onBlur={() => setKey(key + 1)}
     >
-      {tokens.length ? tokens.map(tokenToReact) : code}
+      {tokens.length && tokens.map(tokenToReact)}
     </pre>
   );
 };
