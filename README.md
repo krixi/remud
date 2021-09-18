@@ -20,3 +20,12 @@ cd docs
 npm install
 hugo serve -D
 ```
+
+
+The web client for this project allows for management of the in-game scripts. To run it:
+
+```shell
+cd web-client
+npm install
+npm start
+```
