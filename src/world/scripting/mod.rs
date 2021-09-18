@@ -179,7 +179,7 @@ impl ScriptHooks for PostEventScriptHooks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ScriptHook {
     pub trigger: Trigger,
     pub script: ScriptName,
@@ -273,11 +273,9 @@ pub fn script_compiler_system(
     for (entity, script) in uncompiled_scripts.iter() {
         match engine.compile(script.code.as_str()) {
             Ok(ast) => {
-                tracing::info!("Compiled {:?}.", script.name);
                 commands.entity(entity).insert(ScriptAst { ast });
             }
             Err(error) => {
-                tracing::warn!("Failed to compile {:?}: {}.", script.name, error);
                 commands.entity(entity).insert(ScriptError { error });
             }
         }

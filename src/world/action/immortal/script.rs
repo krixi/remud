@@ -193,6 +193,13 @@ pub fn script_attach_system(
 
             if *pre {
                 if let Ok(mut hooks) = pre_hook_query.get_mut(target_entity) {
+                    if hooks.list.contains(&hook) {
+                        if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            messages
+                                .queue(format!("Script {} already attached to entity.", script));
+                        }
+                        continue;
+                    }
                     hooks.list.push(hook);
                 } else {
                     commands
@@ -200,6 +207,12 @@ pub fn script_attach_system(
                         .insert(PreEventScriptHooks { list: vec![hook] });
                 }
             } else if let Ok(mut hooks) = post_hook_query.get_mut(target_entity) {
+                if hooks.list.contains(&hook) {
+                    if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                        messages.queue(format!("Script {} already attached to entity.", script));
+                    }
+                    continue;
+                }
                 hooks.list.push(hook);
             } else {
                 commands

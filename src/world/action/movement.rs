@@ -1,4 +1,4 @@
-use bevy_app::Events;
+use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -8,6 +8,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{observe::Look, ActionEvent},
+        scripting::PreAction,
         types::{
             player::Messages,
             room::{Direction, Room, RoomId, Rooms},
@@ -25,15 +26,14 @@ pub struct Move {
 event_from_action!(Move);
 
 pub fn move_system(
-    mut events: ResMut<Events<ActionEvent>>,
+    mut events: EventReader<ActionEvent>,
+    mut pre_events: EventWriter<PreAction>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    let mut events_to_send = Vec::new();
-
-    for event in events.get_reader().iter(&*events) {
+    for event in events.iter() {
         if let ActionEvent::Move(Move { entity, direction }) = event {
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
@@ -134,19 +134,17 @@ pub fn move_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    events_to_send.push(ActionEvent::Look(Look {
-                        entity: *entity,
-                        direction: None,
-                    }));
+                    pre_events.send(PreAction {
+                        action: ActionEvent::Look(Look {
+                            entity: *entity,
+                            direction: None,
+                        }),
+                    });
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
             }
         }
-    }
-
-    for event in events_to_send {
-        events.send(event);
     }
 }
 
@@ -173,15 +171,15 @@ pub struct Teleport {
 event_from_action!(Teleport);
 
 pub fn teleport_system(
-    mut events: ResMut<Events<ActionEvent>>,
+    mut events: EventReader<ActionEvent>,
+    mut pre_events: EventWriter<PreAction>,
     rooms: Res<Rooms>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    let mut events_to_send = Vec::new();
-    for event in events.get_reader().iter(&*events) {
+    for event in events.iter() {
         if let ActionEvent::Teleport(Teleport { entity, room_id }) = event {
             let destination = if let Some(entity) = rooms.by_id(*room_id) {
                 entity
@@ -262,17 +260,16 @@ pub fn teleport_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, *room_id));
-                    events_to_send.push(ActionEvent::Look(Look {
-                        entity: *entity,
-                        direction: None,
-                    }))
+                    pre_events.send(PreAction {
+                        action: ActionEvent::Look(Look {
+                            entity: *entity,
+                            direction: None,
+                        }),
+                    });
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
             }
         }
-    }
-    for event in events_to_send {
-        events.send(event);
     }
 }
