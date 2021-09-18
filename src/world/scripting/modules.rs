@@ -39,7 +39,6 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn say(world: &mut Arc<RwLock<World>>, who: Entity, message: String) {
-        tracing::info!("saying");
         world
             .write()
             .unwrap()
@@ -52,6 +51,5 @@ pub mod world_api {
                 }
                 .into(),
             ));
-        tracing::info!("said");
     }
 }

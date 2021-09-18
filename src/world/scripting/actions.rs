@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::{
     engine::persist::{self, Updates},
+    web,
     world::{
         action::ActionEvent,
         scripting::{
@@ -11,11 +12,10 @@ use crate::{
     },
 };
 
-use anyhow::bail;
 use bevy_ecs::prelude::*;
 use rhai::{Dynamic, ParseError, Scope};
 
-pub fn create_script(world: &mut World, script: Script) -> anyhow::Result<Option<ParseError>> {
+pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
     tracing::info!("Creating {:?}.", script.name);
 
     if world
@@ -24,7 +24,7 @@ pub fn create_script(world: &mut World, script: Script) -> anyhow::Result<Option
         .by_name(&script.name)
         .is_some()
     {
-        bail!("Script {:?} already exists.", script.name)
+        return Err(web::Error::DuplicateName);
     }
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
@@ -70,14 +70,14 @@ pub fn create_script(world: &mut World, script: Script) -> anyhow::Result<Option
     Ok(error)
 }
 
-pub fn read_script(world: &World, name: ScriptName) -> anyhow::Result<Script> {
+pub fn read_script(world: &World, name: ScriptName) -> Result<Script, web::Error> {
     tracing::info!("Retrieving {:?}.", name);
 
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
             entity
         } else {
-            bail!("Script {:?} not found.", name);
+            return Err(web::Error::ScriptNotFound);
         };
 
     let script = world.get::<Script>(script_entity).unwrap().clone();
@@ -85,7 +85,7 @@ pub fn read_script(world: &World, name: ScriptName) -> anyhow::Result<Script> {
     Ok(script)
 }
 
-pub fn read_all_scripts(world: &mut World) -> anyhow::Result<Vec<Script>> {
+pub fn read_all_scripts(world: &mut World) -> Vec<Script> {
     let mut scripts = Vec::new();
 
     for script in world.query::<&Script>().iter(world) {
@@ -94,7 +94,7 @@ pub fn read_all_scripts(world: &mut World) -> anyhow::Result<Vec<Script>> {
 
     tracing::info!("Retrieved {} scripts.", scripts.len());
 
-    Ok(scripts)
+    scripts
 }
 
 pub fn run_script(
@@ -103,11 +103,6 @@ pub fn run_script(
     entity: Entity,
     script: ScriptName,
 ) {
-    match world.try_write() {
-        Ok(_) => tracing::info!("can write"),
-        Err(_) => tracing::info!("can't write"),
-    }
-
     let script = {
         if let Some(script) = world
             .read()
@@ -126,11 +121,6 @@ pub fn run_script(
         }
     };
 
-    match world.try_write() {
-        Ok(_) => tracing::info!("can write"),
-        Err(_) => tracing::info!("can't write"),
-    }
-
     let ast = {
         if let Some(ast) = world
             .read()
@@ -148,11 +138,6 @@ pub fn run_script(
         }
     };
 
-    match world.try_write() {
-        Ok(_) => tracing::info!("can write"),
-        Err(_) => tracing::info!("can't write"),
-    }
-
     let engine = {
         let engine = world
             .read()
@@ -166,19 +151,17 @@ pub fn run_script(
 
     let mut scope = Scope::new();
     scope.push_constant("SELF", entity);
-    scope.push_constant("WORLD", world.clone());
+    scope.push_constant("WORLD", world);
     scope.push_constant("EVENT", event.clone());
 
-    match world.try_write() {
-        Ok(_) => tracing::info!("can write"),
-        Err(_) => tracing::info!("can't write"),
-    }
-
-    engine
+    match engine
         .read()
         .unwrap()
         .consume_ast_with_scope(&mut scope, &ast)
-        .unwrap();
+    {
+        Ok(_) => (),
+        Err(e) => tracing::warn!("Script execution error: {}", e),
+    };
 }
 
 pub fn run_pre_script(
@@ -235,7 +218,7 @@ pub fn run_pre_script(
 
     let mut scope = Scope::new();
     scope.push_constant("SELF", entity);
-    scope.push_constant("WORLD", world.clone());
+    scope.push_constant("WORLD", world);
     scope.push_constant("EVENT", event.clone());
     scope.push_dynamic("allow_action", Dynamic::from(true));
 
@@ -248,7 +231,7 @@ pub fn run_pre_script(
     scope.get_value("allow_action").unwrap()
 }
 
-pub fn update_script(world: &mut World, script: Script) -> anyhow::Result<Option<ParseError>> {
+pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
     tracing::info!("Updating {:?}.", script.name);
 
     let script_entity = if let Some(entity) = world
@@ -258,7 +241,7 @@ pub fn update_script(world: &mut World, script: Script) -> anyhow::Result<Option
     {
         entity
     } else {
-        bail!("Script {:?} does not exists.", script.name)
+        return Err(web::Error::ScriptNotFound);
     };
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
@@ -299,12 +282,12 @@ pub fn update_script(world: &mut World, script: Script) -> anyhow::Result<Option
     Ok(error)
 }
 
-pub fn delete_script(world: &mut World, name: ScriptName) -> anyhow::Result<()> {
+pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), web::Error> {
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
             entity
         } else {
-            bail!("Script {:?} does not exists.", name)
+            return Err(web::Error::ScriptNotFound);
         };
 
     tracing::info!("Deleting script for web: {:?}", name);

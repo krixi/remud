@@ -20,6 +20,7 @@ use rhai::ParseError;
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
+    web,
     world::{
         action::{register_action_systems, system::Logout, ActionEvent},
         scripting::{
@@ -234,9 +235,11 @@ impl GameWorld {
         name: String,
         trigger: String,
         code: String,
-    ) -> anyhow::Result<Option<ParseError>> {
+    ) -> Result<Option<ParseError>, web::Error> {
         let name = ScriptName::from(name.as_str());
-        let trigger = Trigger::from_str(trigger.as_str())?;
+        let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+
+        tracing::info!("Creating with trigger: {:?}", trigger);
 
         let script = Script {
             name,
@@ -247,13 +250,13 @@ impl GameWorld {
         scripting::actions::create_script(self.world.write().unwrap().deref_mut(), script)
     }
 
-    pub fn read_script(&mut self, name: String) -> anyhow::Result<Script> {
+    pub fn read_script(&mut self, name: String) -> Result<Script, web::Error> {
         let name = ScriptName::from(name.as_str());
 
         scripting::actions::read_script(&*self.world.read().unwrap(), name)
     }
 
-    pub fn read_all_scripts(&mut self) -> anyhow::Result<Vec<Script>> {
+    pub fn read_all_scripts(&mut self) -> Vec<Script> {
         scripting::actions::read_all_scripts(self.world.write().unwrap().deref_mut())
     }
 
@@ -262,9 +265,11 @@ impl GameWorld {
         name: String,
         trigger: String,
         code: String,
-    ) -> anyhow::Result<Option<ParseError>> {
+    ) -> Result<Option<ParseError>, web::Error> {
         let name = ScriptName::from(name.as_str());
-        let trigger = Trigger::from_str(trigger.as_str())?;
+        let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+
+        tracing::info!("Updating with trigger: {:?}", trigger);
 
         let script = Script {
             name,
@@ -275,7 +280,7 @@ impl GameWorld {
         scripting::actions::update_script(self.world.write().unwrap().deref_mut(), script)
     }
 
-    pub fn delete_script(&mut self, name: String) -> anyhow::Result<()> {
+    pub fn delete_script(&mut self, name: String) -> Result<(), web::Error> {
         let name = ScriptName::from(name.as_str());
 
         scripting::actions::delete_script(self.world.write().unwrap().deref_mut(), name)

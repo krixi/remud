@@ -41,10 +41,11 @@ pub struct Drop {
 event_from_action!(Drop);
 
 pub fn drop_system(
+    mut commands: Commands,
     mut events: EventReader<ActionEvent>,
     mut updates: ResMut<Updates>,
     mut dropping_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
-    mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
+    mut object_query: Query<(&Id, &Named, &Keywords)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -56,7 +57,7 @@ pub fn drop_system(
                     let pos = contents.objects.iter().position(|object| {
                         object_query
                             .get_mut(*object)
-                            .map(|(_, _, object_keywords, _)| {
+                            .map(|(_, _, object_keywords)| {
                                 {
                                     keywords
                                         .iter()
@@ -88,9 +89,11 @@ pub fn drop_system(
                 };
 
                 let (object_id, name) = {
-                    let (id, named, _, mut container) =
-                        object_query.get_mut(object_entity).unwrap();
-                    container.entity = room_entity;
+                    let (id, named, _) = object_query.get_mut(object_entity).unwrap();
+                    commands
+                        .entity(object_entity)
+                        .insert(Location { room: room_entity })
+                        .remove::<Container>();
 
                     let id = if let Id::Object(id) = id {
                         *id
@@ -150,10 +153,11 @@ pub struct Get {
 event_from_action!(Get);
 
 pub fn get_system(
+    mut commands: Commands,
     mut events: EventReader<ActionEvent>,
     mut updates: ResMut<Updates>,
     mut getting_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
-    mut object_query: Query<(&Id, &Named, &Keywords, &mut Container)>,
+    mut object_query: Query<(&Id, &Named, &Keywords)>,
     flags_query: Query<&Flags>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
@@ -176,7 +180,7 @@ pub fn get_system(
                     contents.objects.iter().position(|object| {
                         object_query
                             .get_mut(*object)
-                            .map(|(_, _, object_keywords, _)| {
+                            .map(|(_, _, object_keywords)| {
                                 {
                                     keywords
                                         .iter()
@@ -202,7 +206,7 @@ pub fn get_system(
                         .contains(ObjectFlags::FIXED)
                     {
                         if let Ok(mut messages) = messages_query.get_mut(*entity) {
-                            let (_, named, _, _) = object_query.get_mut(object_entity).unwrap();
+                            let (_, named, _) = object_query.get_mut(object_entity).unwrap();
                             messages.queue(format!(
                                 "Try as you might, you cannot pick up {}.",
                                 named.name
@@ -222,9 +226,12 @@ pub fn get_system(
                     .expect("Location has valid Room");
 
                 let (object_id, name) = {
-                    let (id, named, _, mut container) =
-                        object_query.get_mut(object_entity).unwrap();
-                    container.entity = *entity;
+                    let (id, named, _) = object_query.get_mut(object_entity).unwrap();
+
+                    commands
+                        .entity(object_entity)
+                        .insert(Container { entity: *entity })
+                        .remove::<Location>();
 
                     let id = if let Id::Object(id) = id {
                         *id

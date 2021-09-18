@@ -12,7 +12,7 @@ use crate::{
         action::{
             ActionEvent, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
         },
-        scripting::{PostEventScriptHooks, ScriptHook, Trigger},
+        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook, Trigger},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -142,9 +142,6 @@ pub fn object_create_system(
                     flags: types::Flags {
                         flags: ObjectFlags::empty(),
                     },
-                    container: Container {
-                        entity: room_entity,
-                    },
                     keywords: Keywords {
                         list: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
                     },
@@ -155,6 +152,7 @@ pub fn object_create_system(
                         text: DEFAULT_OBJECT_DESCRIPTION.to_string(),
                     },
                 })
+                .insert(Location { room: room_entity })
                 .insert(PostEventScriptHooks {
                     list: vec![ScriptHook::new(Trigger::Say, "test_script")],
                 })
@@ -197,7 +195,10 @@ pub fn object_info_system(
         &Keywords,
         &Named,
         &Description,
-        &Container,
+        Option<&Container>,
+        Option<&Location>,
+        Option<&PreEventScriptHooks>,
+        Option<&PostEventScriptHooks>,
     )>,
     room_query: Query<&Room>,
     player_query: Query<&Named, With<Player>>,
@@ -214,8 +215,17 @@ pub fn object_info_system(
                 continue;
             };
 
-            let (object, flags, keywords, named, description, container) =
-                object_query.get(object_entity).unwrap();
+            let (
+                object,
+                flags,
+                keywords,
+                named,
+                description,
+                container,
+                location,
+                pre_hooks,
+                post_hooks,
+            ) = object_query.get(object_entity).unwrap();
 
             let mut message = format!("Object {}", object.id);
             message.push_str("\r\n  name: ");
@@ -227,14 +237,31 @@ pub fn object_info_system(
             message.push_str("\r\n  keywords: ");
             message.push_str(word_list(keywords.list.clone()).as_str());
             message.push_str("\r\n  container: ");
-            if let Ok(room) = room_query.get(container.entity) {
-                message.push_str("room ");
-                message.push_str(room.id.to_string().as_str());
-            } else if let Ok(named) = player_query.get(container.entity) {
-                message.push_str("player ");
-                message.push_str(named.name.as_str());
-            } else {
-                message.push_str(format!("{:?}", container.entity).as_str());
+            if let Some(container) = container {
+                if let Ok(named) = player_query.get(container.entity) {
+                    message.push_str("player ");
+                    message.push_str(named.name.as_str());
+                } else {
+                    message.push_str("other ");
+                    message.push_str(format!("{:?}", container.entity).as_str());
+                }
+            } else if let Some(location) = location {
+                if let Ok(room) = room_query.get(location.room) {
+                    message.push_str("room ");
+                    message.push_str(room.id.to_string().as_str());
+                }
+            }
+            if let Some(PreEventScriptHooks { list }) = pre_hooks {
+                message.push_str("\r\n  pre-event hooks:");
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {}->{}", trigger, script).as_str());
+                }
+            }
+            if let Some(PostEventScriptHooks { list }) = post_hooks {
+                message.push_str("\r\n  post-event hooks:");
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {}->{}", trigger, script).as_str());
+                }
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
@@ -455,6 +482,7 @@ pub fn object_remove_system(
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
     container_query: Query<&Container>,
+    location_query: Query<&Location>,
     mut contents_query: Query<&mut Contents>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -469,7 +497,16 @@ pub fn object_remove_system(
                 continue;
             };
 
-            let container = container_query.get(object_entity).unwrap().entity;
+            let container = if let Ok(container) = container_query.get(object_entity) {
+                container.entity
+            } else if let Ok(location) = location_query.get(object_entity) {
+                location.room
+            } else {
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    messages.queue(format!("Object {} not in a location or container.", id));
+                }
+                continue;
+            };
 
             objects.remove(*id);
             commands.entity(object_entity).despawn();

@@ -4,7 +4,7 @@ use bevy_ecs::prelude::*;
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::world::types::{self, Container, Description, Id, Keywords, Named};
+use crate::world::types::{self, Description, Id, Keywords, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -86,7 +86,6 @@ pub struct ObjectBundle {
     pub id: Id,
     pub object: Object,
     pub flags: types::Flags,
-    pub container: Container,
     pub name: Named,
     pub description: Description,
     pub keywords: Keywords,

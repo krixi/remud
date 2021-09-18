@@ -227,9 +227,6 @@ impl Db {
                 flags: types::Flags {
                     flags: types::object::ObjectFlags::from_bits_truncate(object_row.flags),
                 },
-                container: Container {
-                    entity: room_entity,
-                },
                 name: Named {
                     name: object_row.name.clone(),
                 },
@@ -242,7 +239,9 @@ impl Db {
                 object: Object { id },
             };
 
-            let object_entity = world.spawn().insert_bundle(bundle).id();
+            let location = Location { room: room_entity };
+
+            let object_entity = world.spawn().insert_bundle(bundle).insert(location).id();
             match world.get_mut::<Contents>(room_entity) {
                 Some(mut contents) => contents.objects.push(object_entity),
                 None => bail!("Failed to retrieve Room for room {:?}", room_entity),
@@ -378,9 +377,6 @@ impl Db {
                 flags: types::Flags {
                     flags: ObjectFlags::from_bits_truncate(object_row.flags),
                 },
-                container: Container {
-                    entity: player_entity,
-                },
                 name: Named {
                     name: object_row.name.clone(),
                 },
@@ -393,7 +389,11 @@ impl Db {
                 object: Object { id },
             };
 
-            let object_entity = world.spawn().insert_bundle(bundle).id();
+            let container = Container {
+                entity: player_entity,
+            };
+
+            let object_entity = world.spawn().insert_bundle(bundle).insert(container).id();
             world
                 .get_mut::<Contents>(player_entity)
                 .unwrap()

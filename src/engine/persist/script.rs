@@ -21,9 +21,14 @@ impl Create {
 #[async_trait]
 impl Persist for Create {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+        tracing::info!(
+            "Inserting new script: {} -> {}",
+            self.name.as_str(),
+            self.trigger.to_string()
+        );
         sqlx::query("INSERT INTO scripts (name, trigger, code) VALUES (?, ?, ?)")
             .bind(self.name.as_str())
-            .bind(self.trigger.as_str())
+            .bind(self.trigger.to_string())
             .bind(self.code.as_str())
             .execute(pool)
             .await?;
@@ -51,12 +56,21 @@ impl Update {
 #[async_trait]
 impl Persist for Update {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("UPDATE scripts SET trigger = ? AND code = ? WHERE name = ?")
-            .bind(self.trigger.as_str())
+        tracing::info!(
+            "Updating script: {} -> {}: {}",
+            self.name.as_str(),
+            self.trigger.to_string(),
+            self.code.as_str()
+        );
+        let results = sqlx::query("UPDATE scripts SET trigger = ?, code = ? WHERE name = ?")
+            .bind(self.trigger.to_string())
             .bind(self.code.as_str())
             .bind(self.name.as_str())
             .execute(pool)
             .await?;
+
+        let affected = results.rows_affected();
+        tracing::info!("Update affected {} rows.", affected);
 
         Ok(())
     }

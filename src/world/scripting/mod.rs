@@ -3,6 +3,7 @@ mod modules;
 
 use std::{
     collections::HashMap,
+    fmt,
     sync::{Arc, RwLock},
 };
 
@@ -51,7 +52,7 @@ impl Scripts {
     }
 
     pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
-        self.by_name.get(name).map(|entity| *entity)
+        self.by_name.get(name).copied()
     }
 }
 
@@ -69,9 +70,9 @@ impl From<&str> for ScriptName {
     }
 }
 
-impl ToString for ScriptName {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl fmt::Display for ScriptName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -148,8 +149,8 @@ impl ScriptHooks for PostEventScriptHooks {
 
 #[derive(Debug)]
 pub struct ScriptHook {
-    trigger: Trigger,
-    script: ScriptName,
+    pub trigger: Trigger,
+    pub script: ScriptName,
 }
 
 impl ScriptHook {
@@ -161,7 +162,7 @@ impl ScriptHook {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::ToString, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
 pub enum Trigger {
     Drop,
     Emote,
@@ -208,6 +209,23 @@ impl Trigger {
             ActionEvent::Shutdown(_) => None,
             ActionEvent::Teleport(_) => None,
             ActionEvent::Who(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for Trigger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Trigger::Drop => write!(f, "Drop"),
+            Trigger::Emote => write!(f, "Emote"),
+            Trigger::Exits => write!(f, "Exits"),
+            Trigger::Get => write!(f, "Get"),
+            Trigger::Inventory => write!(f, "Inventory"),
+            Trigger::Look => write!(f, "Look"),
+            Trigger::LookAt => write!(f, "LookAt"),
+            Trigger::Move => write!(f, "Move"),
+            Trigger::Say => write!(f, "Say"),
+            Trigger::Send => write!(f, "Send"),
         }
     }
 }

@@ -173,59 +173,71 @@ impl Engine {
                 trigger,
                 code,
             }) => match self.game_world.create_script(name, trigger, code) {
-                Ok(e) => message
-                    .response
-                    .send(WebResponse::ScriptCompiled(e.map(Into::into))),
+                Ok(e) => {
+                    message
+                        .response
+                        .send(WebResponse::ScriptCompiled(e.map(Into::into)))
+                        .ok();
+                }
                 Err(e) => {
                     tracing::error!("Failed CreateScript request: {}", e);
-                    message.response.send(WebResponse::Error)
+                    message.response.send(WebResponse::Error(e)).ok();
                 }
             },
             WebRequest::ReadScript(ScriptName { name }) => {
                 match self.game_world.read_script(name) {
-                    Ok(script) => message.response.send(WebResponse::Script(script.into())),
+                    Ok(script) => {
+                        message
+                            .response
+                            .send(WebResponse::Script(script.into()))
+                            .ok();
+                    }
                     Err(e) => {
                         tracing::error!("Failed ReadScript request: {}", e);
-                        message.response.send(WebResponse::Error)
+                        message.response.send(WebResponse::Error(e)).ok();
                     }
                 }
             }
-            WebRequest::ReadAllScripts => match self.game_world.read_all_scripts() {
-                Ok(scripts) => message.response.send(WebResponse::ScriptList(
-                    scripts
-                        .into_iter()
-                        .map(|script| script.into())
-                        .collect_vec(),
-                )),
-                Err(e) => {
-                    tracing::error!("Failed ReadAllScripts request: {}", e);
-                    message.response.send(WebResponse::Error)
-                }
-            },
+            WebRequest::ReadAllScripts => {
+                let scripts = self.game_world.read_all_scripts();
+                message
+                    .response
+                    .send(WebResponse::ScriptList(
+                        scripts
+                            .into_iter()
+                            .map(|script| script.into())
+                            .collect_vec(),
+                    ))
+                    .ok();
+            }
             WebRequest::UpdateScript(Script {
                 name,
                 trigger,
                 code,
             }) => match self.game_world.update_script(name, trigger, code) {
-                Ok(e) => message
-                    .response
-                    .send(WebResponse::ScriptCompiled(e.map(Into::into))),
+                Ok(e) => {
+                    message
+                        .response
+                        .send(WebResponse::ScriptCompiled(e.map(Into::into)))
+                        .ok();
+                }
                 Err(e) => {
                     tracing::error!("Failed UpdateScript request: {}", e);
-                    message.response.send(WebResponse::Error)
+                    message.response.send(WebResponse::Error(e)).ok();
                 }
             },
             WebRequest::DeleteScript(ScriptName { name }) => {
                 match self.game_world.delete_script(name) {
-                    Ok(_) => message.response.send(WebResponse::Done),
+                    Ok(_) => {
+                        message.response.send(WebResponse::Done).ok();
+                    }
                     Err(e) => {
                         tracing::error!("Failed DeleteScript request: {}", e);
-                        message.response.send(WebResponse::Error)
+                        message.response.send(WebResponse::Error(e)).ok();
                     }
                 }
             }
-        }
-        .ok();
+        };
     }
 
     async fn process_input(&mut self, client_id: ClientId, input: String) {

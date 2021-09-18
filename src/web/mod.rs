@@ -2,10 +2,11 @@ use std::fmt;
 
 use crate::world::scripting;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tide::{
     http::{headers::HeaderValue, mime},
     security::{CorsMiddleware, Origin},
-    Body, Request, Response,
+    Body, Request, Response, StatusCode,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -33,10 +34,30 @@ pub enum WebRequest {
 
 pub enum WebResponse {
     Done,
-    Error,
+    Error(Error),
     Script(Script),
     ScriptCompiled(Option<ParseError>),
     ScriptList(Vec<ScriptInfo>),
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid trigger")]
+    BadTrigger,
+    #[error("duplicate name")]
+    DuplicateName,
+    #[error("script not found")]
+    ScriptNotFound,
+}
+
+impl Error {
+    fn status(&self) -> StatusCode {
+        match self {
+            Error::BadTrigger => StatusCode::BadRequest,
+            Error::DuplicateName => StatusCode::Conflict,
+            Error::ScriptNotFound => StatusCode::NotFound,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,6 +166,7 @@ pub fn build_web_server() -> (tide::Server<Context>, mpsc::Receiver<WebMessage>)
 
 async fn create_script(mut req: Request<Context>) -> tide::Result {
     let script = req.body_json::<Script>().await?;
+    tracing::info!("Create script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -155,18 +177,19 @@ async fn create_script(mut req: Request<Context>) -> tide::Result {
         })
         .await?;
 
-    if let WebResponse::ScriptCompiled(error) = rx.await? {
-        Ok(Response::builder(200)
+    match rx.await? {
+        WebResponse::ScriptCompiled(error) => Ok(Response::builder(200)
             .body(Body::from_json(&CompileResponse { error })?)
             .content_type(mime::JSON)
-            .build())
-    } else {
-        Ok(Response::new(500))
+            .build()),
+        WebResponse::Error(e) => Ok(Response::new(e.status())),
+        _ => Ok(Response::new(500)),
     }
 }
 
 async fn read_script(mut req: Request<Context>) -> tide::Result {
     let name = req.body_json::<ScriptName>().await?;
+    tracing::info!("Read script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -177,18 +200,13 @@ async fn read_script(mut req: Request<Context>) -> tide::Result {
         })
         .await?;
 
-    match rx.await {
-        Ok(response) => {
-            if let WebResponse::Script(script) = response {
-                Ok(Response::builder(200)
-                    .body(Body::from_json(&script)?)
-                    .content_type(mime::JSON)
-                    .build())
-            } else {
-                Ok(Response::new(500))
-            }
-        }
-        Err(_) => Ok(Response::new(500)),
+    match rx.await? {
+        WebResponse::Script(script) => Ok(Response::builder(200)
+            .body(Body::from_json(&script)?)
+            .content_type(mime::JSON)
+            .build()),
+        WebResponse::Error(e) => Ok(Response::new(e.status())),
+        _ => Ok(Response::new(500)),
     }
 }
 
@@ -202,23 +220,19 @@ async fn read_all_scripts(req: Request<Context>) -> tide::Result {
         })
         .await?;
 
-    match rx.await {
-        Ok(response) => {
-            if let WebResponse::ScriptList(scripts) = response {
-                Ok(Response::builder(200)
-                    .body(Body::from_json(&Scripts { scripts })?)
-                    .content_type(mime::JSON)
-                    .build())
-            } else {
-                Ok(Response::new(500))
-            }
-        }
-        Err(_) => Ok(Response::new(500)),
+    match rx.await? {
+        WebResponse::ScriptList(scripts) => Ok(Response::builder(200)
+            .body(Body::from_json(&Scripts { scripts })?)
+            .content_type(mime::JSON)
+            .build()),
+        WebResponse::Error(e) => Ok(Response::new(e.status())),
+        _ => Ok(Response::new(500)),
     }
 }
 
 async fn update_script(mut req: Request<Context>) -> tide::Result {
     let script = req.body_json::<Script>().await?;
+    tracing::info!("Update script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -229,18 +243,19 @@ async fn update_script(mut req: Request<Context>) -> tide::Result {
         })
         .await?;
 
-    if let WebResponse::ScriptCompiled(error) = rx.await? {
-        Ok(Response::builder(200)
+    match rx.await? {
+        WebResponse::ScriptCompiled(error) => Ok(Response::builder(200)
             .body(Body::from_json(&CompileResponse { error })?)
             .content_type(mime::JSON)
-            .build())
-    } else {
-        Ok(Response::new(500))
+            .build()),
+        WebResponse::Error(e) => Ok(Response::new(e.status())),
+        _ => Ok(Response::new(500)),
     }
 }
 
 async fn delete_script(mut req: Request<Context>) -> tide::Result {
     let name = req.body_json::<ScriptName>().await?;
+    tracing::info!("Delete script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -251,12 +266,12 @@ async fn delete_script(mut req: Request<Context>) -> tide::Result {
         })
         .await?;
 
-    if let WebResponse::Done = rx.await? {
-        Ok(Response::builder(200)
+    match rx.await? {
+        WebResponse::Done => Ok(Response::builder(200)
             .body("{}")
             .content_type(mime::JSON)
-            .build())
-    } else {
-        Ok(Response::new(500))
+            .build()),
+        WebResponse::Error(e) => Ok(Response::new(e.status())),
+        _ => Ok(Response::new(500)),
     }
 }
