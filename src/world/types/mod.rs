@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bevy_ecs::prelude::Entity;
 
 use crate::world::types::{
@@ -15,6 +17,16 @@ pub enum Id {
     Player(PlayerId),
     Object(ObjectId),
     Room(RoomId),
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Id::Player(id) => write!(f, "{}", id),
+            Id::Object(id) => write!(f, "{}", id),
+            Id::Room(id) => write!(f, "{}", id),
+        }
+    }
 }
 
 // Components

@@ -116,9 +116,41 @@ pub struct PostEventScriptHooks {
     pub list: Vec<ScriptHook>,
 }
 
+impl PostEventScriptHooks {
+    pub fn remove(&mut self, trigger: &Trigger, script: &ScriptName) -> bool {
+        if let Some(pos) = self.list.iter().position(
+            |ScriptHook {
+                 trigger: t,
+                 script: s,
+             }| t == trigger && s == script,
+        ) {
+            self.list.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PreEventScriptHooks {
     pub list: Vec<ScriptHook>,
+}
+
+impl PreEventScriptHooks {
+    pub fn remove(&mut self, trigger: &Trigger, script: &ScriptName) -> bool {
+        if let Some(pos) = self.list.iter().position(
+            |ScriptHook {
+                 trigger: t,
+                 script: s,
+             }| t == trigger && s == script,
+        ) {
+            self.list.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 trait ScriptHooks: 'static + Send + Sync {
@@ -189,11 +221,11 @@ impl Trigger {
             ActionEvent::Look(_) => Some(Trigger::Look),
             ActionEvent::LookAt(_) => Some(Trigger::LookAt),
             ActionEvent::Move(_) => Some(Trigger::Move),
-            ActionEvent::ObjectUnsetFlags(_) => None,
             ActionEvent::ObjectCreate(_) => None,
             ActionEvent::ObjectInfo(_) => None,
             ActionEvent::ObjectRemove(_) => None,
             ActionEvent::ObjectSetFlags(_) => None,
+            ActionEvent::ObjectUnsetFlags(_) => None,
             ActionEvent::ObjectUpdateDescription(_) => None,
             ActionEvent::ObjectUpdateKeywords(_) => None,
             ActionEvent::ObjectUpdateName(_) => None,
@@ -201,10 +233,12 @@ impl Trigger {
             ActionEvent::RoomCreate(_) => None,
             ActionEvent::RoomInfo(_) => None,
             ActionEvent::RoomLink(_) => None,
-            ActionEvent::RoomUpdateDescription(_) => None,
             ActionEvent::RoomRemove(_) => None,
             ActionEvent::RoomUnlink(_) => None,
+            ActionEvent::RoomUpdateDescription(_) => None,
             ActionEvent::Say(_) => Some(Trigger::Say),
+            ActionEvent::ScriptAttach(_) => None,
+            ActionEvent::ScriptDetach(_) => None,
             ActionEvent::Send(_) => Some(Trigger::Send),
             ActionEvent::Shutdown(_) => None,
             ActionEvent::Teleport(_) => None,

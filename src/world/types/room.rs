@@ -65,6 +65,12 @@ impl fmt::Display for RoomId {
     }
 }
 
+impl From<RoomId> for Id {
+    fn from(id: RoomId) -> Self {
+        Id::Room(id)
+    }
+}
+
 #[derive(Debug)]
 pub struct RoomIdParseError {}
 impl fmt::Display for RoomIdParseError {
