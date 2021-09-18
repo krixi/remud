@@ -1,16 +1,20 @@
+pub mod actions;
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
 
-use bevy_app::{EventReader, EventWriter};
+use bevy_app::{EventReader, EventWriter, Events};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
-use rhai::{plugin::*, AST};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rhai::{plugin::*, ParseError, AST};
 use strum::EnumString;
 
 use crate::world::{
     action::ActionEvent,
+    scripting::actions::{run_pre_script, run_script},
     types::{room::Room, Container, Contents, Location},
 };
 
@@ -19,8 +23,8 @@ pub struct ScriptEngine {
 }
 
 impl ScriptEngine {
-    pub fn compile(&self, script: &str) -> anyhow::Result<rhai::AST> {
-        Ok(self.engine.read().unwrap().compile(script)?)
+    pub fn compile(&self, script: &str) -> Result<rhai::AST, rhai::ParseError> {
+        self.engine.read().unwrap().compile(script)
     }
 
     pub fn get(&self) -> Arc<RwLock<rhai::Engine>> {
@@ -75,18 +79,24 @@ pub struct Script {
 }
 
 #[derive(Bundle)]
-pub struct ScriptArtifacts {
-    compiled: CompiledScript,
-    error: CompilationError,
+pub struct CompiledScript {
+    pub script: Script,
+    pub ast: ScriptAst,
 }
 
-pub struct CompiledScript {
+#[derive(Bundle)]
+pub struct FailedScript {
+    pub script: Script,
+    pub error: ScriptError,
+}
+
+pub struct ScriptAst {
     pub ast: AST,
 }
 
 #[derive(Debug)]
-pub struct CompilationError {
-    pub error: String,
+pub struct ScriptError {
+    pub error: ParseError,
 }
 
 #[derive(Debug)]
@@ -195,21 +205,17 @@ pub struct PreAction {
 pub fn script_compiler_system(
     mut commands: Commands,
     engine: Res<ScriptEngine>,
-    uncompiled_scripts: Query<
-        (Entity, &Script),
-        (Without<CompiledScript>, Without<CompilationError>),
-    >,
+    uncompiled_scripts: Query<(Entity, &Script), (Without<ScriptAst>, Without<ScriptError>)>,
 ) {
     for (entity, script) in uncompiled_scripts.iter() {
         match engine.compile(script.code.as_str()) {
             Ok(ast) => {
                 tracing::info!("Compiled {:?}.", script.name);
-                commands.entity(entity).insert(CompiledScript { ast });
+                commands.entity(entity).insert(ScriptAst { ast });
             }
-            Err(e) => {
-                let error = e.to_string();
+            Err(error) => {
                 tracing::warn!("Failed to compile {:?}: {}.", script.name, error);
-                commands.entity(entity).insert(CompilationError { error });
+                commands.entity(entity).insert(ScriptError { error });
             }
         }
     }
@@ -288,6 +294,57 @@ pub fn create_script_engine() -> ScriptEngine {
     ScriptEngine {
         engine: Arc::new(RwLock::new(engine)),
     }
+}
+
+pub fn run_pre_event_scripts(world: Arc<RwLock<World>>) {
+    let mut runs = Vec::new();
+    std::mem::swap(
+        &mut runs,
+        &mut world
+            .write()
+            .unwrap()
+            .get_resource_mut::<ScriptRuns>()
+            .unwrap()
+            .runs,
+    );
+
+    runs.into_par_iter().for_each(|(event, runs)| {
+        let allowed: Vec<bool> = runs
+            .into_par_iter()
+            .map(|ScriptRun { entity, script }| {
+                run_pre_script(world.clone(), &event, entity, script)
+            })
+            .collect();
+
+        if allowed.into_iter().all(|b| b) {
+            world
+                .write()
+                .unwrap()
+                .get_resource_mut::<Events<ActionEvent>>()
+                .unwrap()
+                .send(event);
+        }
+    });
+}
+
+pub fn run_event_scripts(world: Arc<RwLock<World>>) {
+    let mut runs = Vec::new();
+    std::mem::swap(
+        &mut runs,
+        &mut world
+            .write()
+            .unwrap()
+            .get_resource_mut::<ScriptRuns>()
+            .unwrap()
+            .runs,
+    );
+
+    runs.into_par_iter().for_each(|(event, runs)| {
+        runs.into_par_iter()
+            .for_each(|ScriptRun { entity, script }| {
+                run_script(world.clone(), &event, entity, script)
+            });
+    });
 }
 
 fn action_room(

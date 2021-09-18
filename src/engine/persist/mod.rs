@@ -31,3 +31,29 @@ impl Updates {
 pub trait Persist {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()>;
 }
+
+// An list of Persist operations that must be completed in order.
+pub struct UpdateGroup {
+    list: Vec<DynUpdate>,
+}
+
+impl UpdateGroup {
+    pub fn new(list: Vec<DynUpdate>) -> Box<Self> {
+        Box::new(UpdateGroup { list })
+    }
+
+    pub fn append(&mut self, update: DynUpdate) {
+        self.list.push(update);
+    }
+}
+
+#[async_trait]
+impl Persist for UpdateGroup {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        for update in self.list.iter() {
+            update.enact(pool).await?;
+        }
+
+        Ok(())
+    }
+}

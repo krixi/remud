@@ -5,7 +5,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persist::{self, Updates},
+    engine::persist::{self, UpdateGroup, Updates},
     event_from_action,
     text::{word_list, Tokenizer},
     world::{
@@ -166,8 +166,10 @@ pub fn object_create_system(
                 room.id
             };
 
-            updates.queue(persist::object::New::new(id));
-            updates.queue(persist::room::AddObject::new(room_id, id));
+            updates.queue(UpdateGroup::new(vec![
+                persist::object::New::new(id),
+                persist::room::AddObject::new(room_id, id),
+            ]));
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
                 messages.queue(format!("Created object {}.", id));

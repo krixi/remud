@@ -1,17 +1,13 @@
 - allow script actors to queue events (say)
 
-- add http script management endpoint
-
-  - list script w/status (compiled, error)
-
-  - script CRUD
-
 - add immortal commands to attach scripts to entities
 
   > script <name> attach-pre [object|player|room] <id/name>
   > script <name> attach [object|player|room] <id/name>
 
 - execute persists in their own async tasks
+
+- execute scripts in their own async tasks
 
 - add help command
 

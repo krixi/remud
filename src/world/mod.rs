@@ -12,12 +12,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::bail;
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use rhai::{Dynamic, Scope};
+use rhai::ParseError;
 
 use crate::{
     engine::persist::{self, DynUpdate, Updates},
@@ -25,8 +24,8 @@ use crate::{
         action::{register_action_systems, system::Logout, ActionEvent},
         scripting::{
             create_script_engine, post_action_script_system, pre_action_script_system,
-            script_compiler_system, CompiledScript, PreAction, Script, ScriptArtifacts,
-            ScriptEngine, ScriptName, ScriptRun, ScriptRuns, Scripts, Trigger,
+            run_event_scripts, run_pre_event_scripts, script_compiler_system, PreAction, Script,
+            ScriptName, ScriptRuns, Scripts, Trigger,
         },
         types::{
             player::{Messages, Player, Players},
@@ -113,35 +112,7 @@ impl GameWorld {
         self.pre_event_schedule
             .run(world.write().unwrap().deref_mut());
 
-        let mut runs = Vec::new();
-        std::mem::swap(
-            &mut runs,
-            &mut world
-                .write()
-                .unwrap()
-                .get_resource_mut::<ScriptRuns>()
-                .unwrap()
-                .runs,
-        );
-
-        for (action, runs) in runs.drain(..) {
-            let mut allowed = true;
-
-            for ScriptRun { entity, script } in runs {
-                if !self.run_pre_script(&action, entity, script) {
-                    allowed = false
-                }
-            }
-
-            if allowed {
-                world
-                    .write()
-                    .unwrap()
-                    .get_resource_mut::<Events<ActionEvent>>()
-                    .unwrap()
-                    .send(action);
-            }
-        }
+        run_pre_event_scripts(world.clone());
 
         self.update_schedule
             .run_once(world.write().unwrap().deref_mut());
@@ -149,22 +120,7 @@ impl GameWorld {
         self.post_event_schedule
             .run(world.write().unwrap().deref_mut());
 
-        let mut runs = Vec::new();
-        std::mem::swap(
-            &mut runs,
-            &mut world
-                .write()
-                .unwrap()
-                .get_resource_mut::<ScriptRuns>()
-                .unwrap()
-                .runs,
-        );
-
-        for (action, runs) in runs.drain(..) {
-            for ScriptRun { entity, script } in runs {
-                self.run_script(&action, entity, script);
-            }
-        }
+        run_event_scripts(world);
     }
 
     pub async fn should_shutdown(&self) -> bool {
@@ -292,156 +248,32 @@ impl GameWorld {
         self.world.clone()
     }
 
-    fn run_pre_script(&self, event: &ActionEvent, entity: Entity, script: ScriptName) -> bool {
-        let world = self.world.clone();
-
-        if let Some(script) = world
-            .read()
-            .unwrap()
-            .get_resource::<Scripts>()
-            .unwrap()
-            .by_name(&script)
-        {
-            if let Some(compiled_script) = world.read().unwrap().get::<CompiledScript>(script) {
-                let engine = world
-                    .read()
-                    .unwrap()
-                    .get_resource::<ScriptEngine>()
-                    .unwrap()
-                    .get();
-
-                let mut scope = Scope::new();
-                scope.push_constant("SELF", entity);
-                scope.push_constant("WORLD", world.clone());
-                scope.push_constant("EVENT", event.clone());
-                scope.push_dynamic("allow_action", Dynamic::from(true));
-
-                engine
-                    .read()
-                    .unwrap()
-                    .consume_ast_with_scope(&mut scope, &compiled_script.ast)
-                    .unwrap();
-
-                return scope.get_value("allow_action").unwrap();
-            } else {
-                tracing::warn!(
-                    "Skipping execution of {:?}, compiled script not found.",
-                    script
-                );
-            };
-        }
-
-        false
-    }
-
-    fn run_script(&self, event: &ActionEvent, entity: Entity, script: ScriptName) {
-        let world = self.world.clone();
-
-        if let Some(script) = world
-            .read()
-            .unwrap()
-            .get_resource::<Scripts>()
-            .unwrap()
-            .by_name(&script)
-        {
-            if let Some(compiled_script) = world.read().unwrap().get::<CompiledScript>(script) {
-                let engine = world
-                    .read()
-                    .unwrap()
-                    .get_resource::<ScriptEngine>()
-                    .unwrap()
-                    .get();
-
-                let mut scope = Scope::new();
-                scope.push_constant("SELF", entity);
-                scope.push_constant("WORLD", world.clone());
-                scope.push_constant("EVENT", event.clone());
-
-                tracing::info!("running script");
-                engine
-                    .read()
-                    .unwrap()
-                    .consume_ast_with_scope(&mut scope, &compiled_script.ast)
-                    .unwrap();
-                tracing::info!("done running script");
-
-                let output = scope.get_value::<String>("output");
-                tracing::info!("script output: {:?}", output);
-            } else {
-                tracing::warn!(
-                    "Skipping execution of {:?}, compiled script not found.",
-                    script
-                );
-            };
-        };
-    }
-
     pub fn create_script(
         &mut self,
         name: String,
         trigger: String,
         code: String,
-    ) -> anyhow::Result<()> {
-        let mut world = self.world.write().unwrap();
+    ) -> anyhow::Result<Option<ParseError>> {
         let name = ScriptName::from(name.as_str());
         let trigger = Trigger::from_str(trigger.as_str())?;
 
-        if world
-            .get_resource::<Scripts>()
-            .unwrap()
-            .by_name(&name)
-            .is_some()
-        {
-            bail!("Script {:?} already exists.", name)
-        }
-
         let script = Script {
-            name: name.clone(),
+            name,
             trigger,
             code,
         };
-        let id = world.spawn().insert(script.clone()).id();
 
-        world
-            .get_resource_mut::<Scripts>()
-            .unwrap()
-            .insert(name, id);
-
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::script::Create::new(
-                script.name.to_string(),
-                script.trigger.to_string(),
-                script.code,
-            ));
-
-        Ok(())
+        scripting::actions::create_script(self.world.write().unwrap().deref_mut(), script)
     }
 
     pub fn read_script(&mut self, name: String) -> anyhow::Result<Script> {
-        let world = self.world.read().unwrap();
         let name = ScriptName::from(name.as_str());
 
-        let script_entity =
-            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
-                entity
-            } else {
-                bail!("Script {:?} not found.", name);
-            };
-
-        Ok(world.get::<Script>(script_entity).unwrap().clone())
+        scripting::actions::read_script(&*self.world.read().unwrap(), name)
     }
 
     pub fn read_all_scripts(&mut self) -> anyhow::Result<Vec<Script>> {
-        let mut world = self.world.write().unwrap();
-
-        let mut scripts = Vec::new();
-        for script in world.query::<&Script>().iter(&world) {
-            scripts.push(script.clone());
-        }
-
-        Ok(scripts)
+        scripting::actions::read_all_scripts(self.world.write().unwrap().deref_mut())
     }
 
     pub fn update_script(
@@ -449,61 +281,23 @@ impl GameWorld {
         name: String,
         trigger: String,
         code: String,
-    ) -> anyhow::Result<()> {
-        let mut world = self.world.write().unwrap();
+    ) -> anyhow::Result<Option<ParseError>> {
         let name = ScriptName::from(name.as_str());
         let trigger = Trigger::from_str(trigger.as_str())?;
-
-        let script_entity =
-            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
-                entity
-            } else {
-                bail!("Script {:?} does not exists.", name)
-            };
 
         let script = Script {
             name,
             trigger,
             code,
         };
-        world
-            .entity_mut(script_entity)
-            .insert(script.clone())
-            .remove_bundle::<ScriptArtifacts>();
 
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::script::Update::new(
-                script.name.to_string(),
-                script.trigger.to_string(),
-                script.code,
-            ));
-
-        Ok(())
+        scripting::actions::update_script(self.world.write().unwrap().deref_mut(), script)
     }
 
     pub fn delete_script(&mut self, name: String) -> anyhow::Result<()> {
-        let mut world = self.world.write().unwrap();
         let name = ScriptName::from(name.as_str());
 
-        let script_entity =
-            if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
-                entity
-            } else {
-                bail!("Script {:?} does not exists.", name)
-            };
-
-        world.despawn(script_entity);
-
-        world.get_resource_mut::<Scripts>().unwrap().remove(&name);
-
-        world
-            .get_resource_mut::<Updates>()
-            .unwrap()
-            .queue(persist::script::Delete::new(name.to_string()));
-
-        Ok(())
+        scripting::actions::delete_script(self.world.write().unwrap().deref_mut(), name)
     }
 }
 

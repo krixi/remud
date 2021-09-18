@@ -7,6 +7,7 @@ use argon2::{
     password_hash::{self, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
+use futures::future::join_all;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::rngs::OsRng;
@@ -96,12 +97,17 @@ impl Engine {
                         }
                     }
 
+                    let mut handles = Vec::new();
                     for update in self.game_world.updates().await {
-                        match update.enact(self.db.get_pool()).await {
-                            Ok(_) => (),
-                            Err(e) => tracing::error!("Failed to execute update: {}", e),
-                        };
+                        let pool = self.db.get_pool().clone();
+                        handles.push(tokio::spawn(async move {
+                            match update.enact(&pool).await {
+                                Ok(_) => (),
+                                Err(e) => tracing::error!("Failed to execute update: {}", e),
+                            };
+                        }));
                     }
+                    join_all(handles).await;
 
                     if self.game_world.should_shutdown().await {
                         break
@@ -167,36 +173,55 @@ impl Engine {
                 trigger,
                 code,
             }) => match self.game_world.create_script(name, trigger, code) {
-                Ok(_) => message.response.send(WebResponse::Done),
-                Err(_) => message.response.send(WebResponse::Error),
+                Ok(e) => message
+                    .response
+                    .send(WebResponse::ScriptCompiled(e.map(Into::into))),
+                Err(e) => {
+                    tracing::error!("Failed CreateScript request: {}", e);
+                    message.response.send(WebResponse::Error)
+                }
             },
             WebRequest::ReadScript(ScriptName { name }) => {
                 match self.game_world.read_script(name) {
                     Ok(script) => message.response.send(WebResponse::Script(script.into())),
-                    Err(_) => message.response.send(WebResponse::Error),
+                    Err(e) => {
+                        tracing::error!("Failed ReadScript request: {}", e);
+                        message.response.send(WebResponse::Error)
+                    }
                 }
             }
             WebRequest::ReadAllScripts => match self.game_world.read_all_scripts() {
-                Ok(scripts) => message.response.send(WebResponse::AllScripts(
+                Ok(scripts) => message.response.send(WebResponse::ScriptList(
                     scripts
                         .into_iter()
                         .map(|script| script.into())
                         .collect_vec(),
                 )),
-                Err(_) => message.response.send(WebResponse::Error),
+                Err(e) => {
+                    tracing::error!("Failed ReadAllScripts request: {}", e);
+                    message.response.send(WebResponse::Error)
+                }
             },
             WebRequest::UpdateScript(Script {
                 name,
                 trigger,
                 code,
             }) => match self.game_world.update_script(name, trigger, code) {
-                Ok(_) => message.response.send(WebResponse::Done),
-                Err(_) => message.response.send(WebResponse::Error),
+                Ok(e) => message
+                    .response
+                    .send(WebResponse::ScriptCompiled(e.map(Into::into))),
+                Err(e) => {
+                    tracing::error!("Failed UpdateScript request: {}", e);
+                    message.response.send(WebResponse::Error)
+                }
             },
             WebRequest::DeleteScript(ScriptName { name }) => {
                 match self.game_world.delete_script(name) {
                     Ok(_) => message.response.send(WebResponse::Done),
-                    Err(_) => message.response.send(WebResponse::Error),
+                    Err(e) => {
+                        tracing::error!("Failed DeleteScript request: {}", e);
+                        message.response.send(WebResponse::Error)
+                    }
                 }
             }
         }

@@ -32,25 +32,28 @@ async fn main() -> anyhow::Result<()> {
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let web_address = "0.0.0.0:2080";
     let (web_server, web_message_rx) = build_web_server();
+
+    let mut engine = Engine::new(engine_rx, control_tx, web_message_rx).await?;
+    tokio::spawn(async move {
+        engine.run().await;
+    });
+    tracing::info!("Engine started.");
+
+    let web_address = "0.0.0.0:2080";
     tokio::spawn(async move {
         match web_server.listen(web_address).await {
             Ok(_) => (),
             Err(e) => tracing::error!("Listen error: {}", e),
         }
     });
-
-    let mut engine = Engine::new(engine_rx, control_tx, web_message_rx).await?;
-    tokio::spawn(async move {
-        engine.run().await;
-    });
+    tracing::info!("Web listening on {}", web_address);
 
     let telnet_address = "0.0.0.0:2004";
     let telnet_listener = TcpListener::bind(telnet_address)
         .await
         .unwrap_or_else(|_| panic!("Cannot bind to {:?}", telnet_address));
-    tracing::info!("Listening on {}", telnet_address);
+    tracing::info!("Telnet listening on {}", telnet_address);
 
     let mut next_client_id = 1;
 

@@ -5,7 +5,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    engine::persist::{self, Updates},
+    engine::persist::{self, UpdateGroup, Updates},
     event_from_action,
     text::Tokenizer,
     world::{
@@ -195,22 +195,23 @@ pub fn room_create_system(
             }
 
             let current_room_id = room_query.get_mut(current_room_entity).unwrap().id;
-            updates.queue(persist::room::Create::new(
+            let mut update = UpdateGroup::new(vec![persist::room::Create::new(
                 new_room_id,
                 DEFAULT_ROOM_DESCRIPTION.to_string(),
-            ));
+            )]);
             if let Some(direction) = direction {
-                updates.queue(persist::room::AddExit::new(
+                update.append(persist::room::AddExit::new(
                     current_room_id,
                     new_room_id,
                     *direction,
                 ));
-                updates.queue(persist::room::AddExit::new(
+                update.append(persist::room::AddExit::new(
                     new_room_id,
                     current_room_id,
                     direction.opposite(),
                 ));
             }
+            updates.queue(update);
 
             let mut message = format!("Created room {}", new_room_id);
             if let Some(direction) = direction {
