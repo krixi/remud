@@ -15,7 +15,9 @@ use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
     action::{self},
-    scripting::{Script, ScriptName, Scripts, Trigger},
+    scripting::{
+        PostEventScriptHooks, PreEventScriptHooks, Script, ScriptHook, ScriptName, Scripts, Trigger,
+    },
     types::{
         self,
         object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -116,6 +118,8 @@ impl Db {
         self.load_exits(&mut world).await?;
         self.load_room_objects(&mut world).await?;
         self.load_scripts(&mut world).await?;
+        self.load_object_scripts(&mut world).await?;
+        self.load_room_scripts(&mut world).await?;
 
         Ok(world)
     }
@@ -282,12 +286,112 @@ impl Db {
         Ok(())
     }
 
+    async fn load_room_scripts(&self, world: &mut World) -> anyhow::Result<()> {
+        let rooms = world
+            .query::<&Room>()
+            .iter(world)
+            .map(|room| room.id)
+            .collect_vec();
+
+        for room_id in rooms {
+            let room = world
+                .get_resource::<Rooms>()
+                .unwrap()
+                .by_id(room_id)
+                .unwrap();
+
+            let mut results = sqlx::query_as::<_, HookRow>(
+                r#"SELECT kind, script, trigger FROM room_scripts WHERE room_id = ?"#,
+            )
+            .bind(room_id)
+            .fetch(&self.pool);
+
+            while let Some(hook_row) = results.try_next().await? {
+                let pre = match hook_row.kind.as_str() {
+                    "pre" => true,
+                    "post" => false,
+                    _ => bail!("Unknown kind field for room script hook: {:?}", hook_row),
+                };
+
+                let hook = ScriptHook::try_from(hook_row)?;
+
+                if pre {
+                    if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(room) {
+                        hooks.list.push(hook)
+                    } else {
+                        world
+                            .entity_mut(room)
+                            .insert(PreEventScriptHooks { list: vec![hook] });
+                    }
+                } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(room) {
+                    hooks.list.push(hook)
+                } else {
+                    world
+                        .entity_mut(room)
+                        .insert(PostEventScriptHooks { list: vec![hook] });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn load_object_scripts(&self, world: &mut World) -> anyhow::Result<()> {
+        let objects = world
+            .query::<&Object>()
+            .iter(world)
+            .map(|object| object.id)
+            .collect_vec();
+
+        for object_id in objects {
+            let object = world
+                .get_resource::<Objects>()
+                .unwrap()
+                .by_id(object_id)
+                .unwrap();
+
+            let mut results = sqlx::query_as::<_, HookRow>(
+                r#"SELECT kind, script, trigger FROM object_scripts WHERE object_id = ?"#,
+            )
+            .bind(object_id)
+            .fetch(&self.pool);
+
+            while let Some(hook_row) = results.try_next().await? {
+                let pre = match hook_row.kind.as_str() {
+                    "pre" => true,
+                    "post" => false,
+                    _ => bail!("Unknown kind field for object script hook: {:?}", hook_row),
+                };
+
+                let hook = ScriptHook::try_from(hook_row)?;
+
+                if pre {
+                    if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(object) {
+                        hooks.list.push(hook)
+                    } else {
+                        world
+                            .entity_mut(object)
+                            .insert(PreEventScriptHooks { list: vec![hook] });
+                    }
+                } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(object) {
+                    hooks.list.push(hook)
+                } else {
+                    world
+                        .entity_mut(object)
+                        .insert(PostEventScriptHooks { list: vec![hook] });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn load_player(
         &self,
         world: Arc<RwLock<World>>,
         name: &str,
     ) -> anyhow::Result<Entity> {
-        let player = {
+        let (player, id) = {
             let player_row =
                 sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
                     .bind(name)
@@ -337,10 +441,12 @@ impl Db {
                 .unwrap()
                 .insert(player, name.to_string());
 
-            player
+            (player, id)
         };
 
-        self.load_player_inventory(world, name).await?;
+        self.load_player_inventory(world.clone(), name, player)
+            .await?;
+        self.load_player_scripts(world, id, player).await?;
 
         Ok(player)
     }
@@ -349,6 +455,7 @@ impl Db {
         &self,
         world: Arc<RwLock<World>>,
         name: &str,
+        player: Entity,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, flags, player_id AS container, keywords, name, description
@@ -362,10 +469,6 @@ impl Db {
 
         while let Some(object_row) = results.try_next().await? {
             let mut world = world.write().unwrap();
-            let player_entity = match world.get_resource::<Players>().unwrap().by_name(name) {
-                Some(room) => room,
-                None => bail!("Failed to retrieve Player {}.", name),
-            };
 
             let id = match ObjectId::try_from(object_row.id) {
                 Ok(id) => id,
@@ -389,13 +492,11 @@ impl Db {
                 object: Object { id },
             };
 
-            let container = Container {
-                entity: player_entity,
-            };
+            let container = Container { entity: player };
 
             let object_entity = world.spawn().insert_bundle(bundle).insert(container).id();
             world
-                .get_mut::<Contents>(player_entity)
+                .get_mut::<Contents>(player)
                 .unwrap()
                 .objects
                 .push(object_entity);
@@ -408,15 +509,57 @@ impl Db {
 
         Ok(())
     }
+
+    async fn load_player_scripts(
+        &self,
+        world: Arc<RwLock<World>>,
+        id: PlayerId,
+        player: Entity,
+    ) -> anyhow::Result<()> {
+        let mut results = sqlx::query_as::<_, HookRow>(
+            r#"SELECT kind, script, trigger FROM player_scripts WHERE player_id = ?"#,
+        )
+        .bind(id)
+        .fetch(&self.pool);
+
+        while let Some(hook_row) = results.try_next().await? {
+            let mut world = world.write().unwrap();
+            let pre = match hook_row.kind.as_str() {
+                "pre" => true,
+                "post" => false,
+                _ => bail!("Unknown kind field for player script hook: {:?}", hook_row),
+            };
+
+            let hook = ScriptHook::try_from(hook_row)?;
+
+            if pre {
+                if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(player) {
+                    hooks.list.push(hook)
+                } else {
+                    world
+                        .entity_mut(player)
+                        .insert(PreEventScriptHooks { list: vec![hook] });
+                }
+            } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(player) {
+                hooks.list.push(hook)
+            } else {
+                world
+                    .entity_mut(player)
+                    .insert(PostEventScriptHooks { list: vec![hook] });
+            }
+        }
+
+        Ok(())
+    }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct PlayerRow {
     id: i64,
     room: i64,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct RoomObjectRow {
     room_id: i64,
     object_id: i64,
@@ -432,7 +575,7 @@ impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
     }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct ObjectRow {
     id: i64,
     flags: i64,
@@ -451,7 +594,7 @@ impl ObjectRow {
     }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct RoomRow {
     id: i64,
     description: String,
@@ -465,14 +608,14 @@ impl TryFrom<RoomRow> for Room {
     }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct ExitRow {
     room_from: i64,
     room_to: i64,
     direction: String,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct ScriptRow {
     name: String,
     trigger: String,
@@ -491,5 +634,23 @@ impl TryFrom<ScriptRow> for Script {
             trigger,
             code: value.code,
         })
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct HookRow {
+    kind: String,
+    script: String,
+    trigger: String,
+}
+
+impl TryFrom<HookRow> for ScriptHook {
+    type Error = anyhow::Error;
+
+    fn try_from(value: HookRow) -> Result<Self, Self::Error> {
+        let script = ScriptName::from(value.script.as_str());
+        let trigger = Trigger::from_str(value.trigger.as_str())?;
+
+        Ok(ScriptHook { script, trigger })
     }
 }
