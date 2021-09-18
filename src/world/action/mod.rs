@@ -144,14 +144,14 @@ impl ActionEvent {
 
 pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(drop_system.system());
-    stage.add_system(emote_system.system());
+    stage.add_system(emote_system.system().after("look"));
     stage.add_system(exits_system.system());
     stage.add_system(get_system.system());
     stage.add_system(inventory_system.system());
     stage.add_system(login_system.system());
     stage.add_system(logout_system.system());
     stage.add_system(look_at_system.system());
-    stage.add_system(look_system.system());
+    stage.add_system(look_system.system().label("look"));
     stage.add_system(move_system.system());
     stage.add_system(object_clear_flags_system.system());
     stage.add_system(object_create_system.system());
@@ -168,10 +168,10 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(room_remove_system.system());
     stage.add_system(room_unlink_system.system());
     stage.add_system(room_update_description_system.system());
-    stage.add_system(say_system.system());
+    stage.add_system(say_system.system().after("look"));
     stage.add_system(script_attach_system.system());
     stage.add_system(script_detach_system.system());
-    stage.add_system(send_system.system());
+    stage.add_system(send_system.system().after("look"));
     stage.add_system(shutdown_system.system());
     stage.add_system(teleport_system.system());
     stage.add_system(who_system.system());

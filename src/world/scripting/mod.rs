@@ -185,15 +185,6 @@ pub struct ScriptHook {
     pub script: ScriptName,
 }
 
-impl ScriptHook {
-    pub fn new(trigger: Trigger, script: &str) -> Self {
-        ScriptHook {
-            trigger,
-            script: ScriptName::from(script),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
 pub enum Trigger {
     Drop,

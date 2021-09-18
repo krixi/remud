@@ -16,7 +16,7 @@ use bevy_ecs::prelude::*;
 use rhai::{Dynamic, ParseError, Scope};
 
 pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
-    tracing::info!("Creating {:?}.", script.name);
+    tracing::debug!("Creating {:?}.", script.name);
 
     if world
         .get_resource::<Scripts>()
@@ -71,7 +71,7 @@ pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseEr
 }
 
 pub fn read_script(world: &World, name: ScriptName) -> Result<Script, web::Error> {
-    tracing::info!("Retrieving {:?}.", name);
+    tracing::debug!("Retrieving {:?}.", name);
 
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
@@ -92,7 +92,7 @@ pub fn read_all_scripts(world: &mut World) -> Vec<Script> {
         scripts.push(script.clone());
     }
 
-    tracing::info!("Retrieved {} scripts.", scripts.len());
+    tracing::debug!("Retrieved {} scripts.", scripts.len());
 
     scripts
 }
@@ -232,7 +232,7 @@ pub fn run_pre_script(
 }
 
 pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
-    tracing::info!("Updating {:?}.", script.name);
+    tracing::debug!("Updating {:?}.", script.name);
 
     let script_entity = if let Some(entity) = world
         .get_resource::<Scripts>()
@@ -290,7 +290,7 @@ pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), web::Err
             return Err(web::Error::ScriptNotFound);
         };
 
-    tracing::info!("Deleting script for web: {:?}", name);
+    tracing::debug!("Deleting: {:?}", name);
 
     world.despawn(script_entity);
 

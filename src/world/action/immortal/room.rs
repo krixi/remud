@@ -10,6 +10,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{ActionEvent, DEFAULT_ROOM_DESCRIPTION},
+        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
         types::{
             object::Object,
             player::{Messages, Player},
@@ -236,7 +237,13 @@ event_from_action!(RoomInfo);
 pub fn room_info_system(
     mut events: EventReader<ActionEvent>,
     player_query: Query<&Location, With<Player>>,
-    room_query: Query<(&Room, &Description, &Contents)>,
+    room_query: Query<(
+        &Room,
+        &Description,
+        &Contents,
+        Option<&PreEventScriptHooks>,
+        Option<&PostEventScriptHooks>,
+    )>,
     named_query: Query<&Named>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
@@ -251,7 +258,8 @@ pub fn room_info_system(
                     continue;
                 };
 
-            let (room, description, contents) = room_query.get(room_entity).unwrap();
+            let (room, description, contents, pre_hooks, post_hooks) =
+                room_query.get(room_entity).unwrap();
 
             let mut message = format!("Room {}", room.id);
 
@@ -264,7 +272,7 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, _, _)| (direction, room.id))
+                        .map(|(room, _, _, _, _)| (direction, room.id))
                         .ok()
                 })
                 .for_each(|(direction, room_id)| {
@@ -287,6 +295,28 @@ pub fn room_info_system(
                 .for_each(|(id, name)| {
                     message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
                 });
+            if let Some(PreEventScriptHooks { list }) = pre_hooks {
+                message.push_str("\r\n  pre-event hooks:");
+                if list.is_empty() {
+                    message.push_str(" none");
+                }
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                }
+            } else {
+                message.push_str("\r\n  pre-event hooks: none");
+            }
+            if let Some(PostEventScriptHooks { list }) = post_hooks {
+                message.push_str("\r\n  post-event hooks:");
+                if list.is_empty() {
+                    message.push_str(" none");
+                }
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                }
+            } else {
+                message.push_str("\r\n  post-event hooks: none");
+            }
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {
                 messages.queue(message);

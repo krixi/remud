@@ -31,14 +31,10 @@ pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEv
                 "attach" => parse_params(player, tokenizer, Command::Attach, script_name),
                 "attach-pre" => parse_params(player, tokenizer, Command::AttachPre, script_name),
                 "detach" => parse_params(player, tokenizer, Command::Detach, script_name),
-                "detach-pre" => parse_params(player, tokenizer, Command::DetachPre, script_name),
-                _ => Err(
-                    "Enter a valid subcommand: attach, attach-pre, detach, or detach-pre."
-                        .to_string(),
-                ),
+                _ => Err("Enter a valid subcommand: attach, attach-pre, detach.".to_string()),
             }
         } else {
-            Err("Enter a subcommand: attach, attach-pre, detach, or detach-pre.".to_string())
+            Err("Enter a subcommand: attach, attach-pre, detach.".to_string())
         }
     } else {
         Err("Enter a script name.".to_string())
@@ -81,7 +77,6 @@ enum Command {
     Attach,
     AttachPre,
     Detach,
-    DetachPre,
 }
 
 impl Command {
@@ -105,14 +100,6 @@ impl Command {
             Command::Detach => ScriptDetach {
                 entity,
                 script,
-                pre: false,
-                target: id,
-            }
-            .into(),
-            Command::DetachPre => ScriptDetach {
-                entity,
-                script,
-                pre: true,
                 target: id,
             }
             .into(),
@@ -256,7 +243,6 @@ pub fn script_attach_system(
 pub struct ScriptDetach {
     pub entity: Entity,
     pub script: ScriptName,
-    pub pre: bool,
     pub target: Either<Id, String>,
 }
 
@@ -276,10 +262,9 @@ pub fn script_detach_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
-        if let ActionEvent::ScriptAttach(ScriptAttach {
+        if let ActionEvent::ScriptDetach(ScriptDetach {
             entity,
             script,
-            pre,
             target,
         }) = event
         {
@@ -330,17 +315,23 @@ pub fn script_detach_system(
 
             let trigger = script_query.get(script_entity).unwrap().trigger;
 
-            let removed = if *pre {
-                if let Ok(mut hooks) = pre_hook_query.get_mut(target_entity) {
-                    hooks.remove(&trigger, script)
-                } else {
-                    false
+            let mut pre = false;
+            let mut removed = false;
+
+            if let Ok(mut hooks) = pre_hook_query.get_mut(target_entity) {
+                if hooks.remove(&trigger, script) {
+                    pre = true;
+                    removed = true;
                 }
-            } else if let Ok(mut hooks) = post_hook_query.get_mut(target_entity) {
-                hooks.remove(&trigger, script)
-            } else {
-                false
-            };
+            }
+
+            if !removed {
+                if let Ok(mut hooks) = post_hook_query.get_mut(target_entity) {
+                    if hooks.remove(&trigger, script) {
+                        removed = true;
+                    }
+                }
+            }
 
             if !removed {
                 if let Ok(mut messages) = messages_query.get_mut(*entity) {
@@ -356,7 +347,7 @@ pub fn script_detach_system(
 
             updates.queue(persist::script::Detach::new(
                 id,
-                *pre,
+                pre,
                 script.clone(),
                 trigger,
             ));
