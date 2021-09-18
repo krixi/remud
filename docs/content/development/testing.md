@@ -7,6 +7,12 @@ author: "krixi"
 tags: ["testing"]
 ---
 
+## Known issues
+
+- Same script shouldn't be able to be registered twice for the same trigger.
+- Race condition around sending happy shutdown message to players.
+- Script editing UI steals focus (click outside an editable area as a workaround) ([#16](https://github.com/FormidableLabs/use-editable/issues/16))
+
 ## Script attach & persist
 
 | Command                   | Working ? | Comment |
@@ -27,9 +33,6 @@ tags: ["testing"]
 
 
 ## Script triggers
-
-Bug: Same script shouldn't be able to be registered twice for the same trigger. 
-
 | Trigger       | Entity    |  ?        | Comment |
 | ------------- | --------- | --------- | ------- |
 |  Drop         | object    |   ✅      |         |
@@ -48,7 +51,7 @@ Bug: Same script shouldn't be able to be registered twice for the same trigger.
 |  Exits        | player    |   ✅      |         |
 |  Get          | player    |   ✅      |         |
 |  Inventory    | player    |   ✅      |         |
-|  Look         | player    |   ✅      | Automatic look when entering a room does not trigger this. |
+|  Look         | player    |   ✅      |         |
 |  LookAt       | player    |   ✅      |         |
 |  Move         | player    |   ✅      |         |
 |  Say          | player    |   ✅      |         |
@@ -59,7 +62,7 @@ Bug: Same script shouldn't be able to be registered twice for the same trigger.
 |  Exits        | room      |   ✅      |         |
 |  Get          | room      |   ✅      |         |
 |  Inventory    | room      |   ✅      |         |
-|  Look         | room      |   ✅      | Automatic look when entering a room does not trigger this. |
+|  Look         | room      |   ✅      |         |
 |  LookAt       | room      |   ✅      |         |
 |  Move         | room      |   ✅      |         |
 |  Say          | room      |   ✅      |         |
@@ -89,8 +92,8 @@ Bug: Same script shouldn't be able to be registered twice for the same trigger.
 | teleport          |  ✅     |  |
 | object new        |  ✅     |  |
 | object info       |  ✅     |  |
-| object name       |  ✅     | still is "short" in parser |
-| object desc       |  ✅     | still is "long" in parser |
+| object name       |  ✅     |  |
+| object desc       |  ✅     |  |
 | object keywords   |  ✅     |  |
 | object set        |  ✅     |  |
 | object unset      |  ✅     |  |
