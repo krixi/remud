@@ -1823,6 +1823,7 @@ dependencies = [
  "bevy_ecs",
  "bitflags",
  "bytes",
+ "either",
  "futures",
  "itertools",
  "lazy_static",

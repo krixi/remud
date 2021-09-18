@@ -31,6 +31,10 @@ use crate::{
                     room_unlink_system, room_update_description_system, RoomCreate, RoomInfo,
                     RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
                 },
+                script::{
+                    parse_script, script_attach_system, script_detach_system, ScriptAttach,
+                    ScriptDetach,
+                },
             },
             movement::{move_system, parse_teleport, teleport_system, Move, Teleport},
             object::{
@@ -91,6 +95,8 @@ pub enum ActionEvent {
     RoomRemove(RoomRemove),
     RoomUnlink(RoomUnlink),
     Say(Say),
+    ScriptAttach(ScriptAttach),
+    ScriptDetach(ScriptDetach),
     Send(SendMessage),
     Shutdown(Shutdown),
     Teleport(Teleport),
@@ -110,11 +116,11 @@ impl ActionEvent {
             ActionEvent::Look(action) => action.entity,
             ActionEvent::LookAt(action) => action.entity,
             ActionEvent::Move(action) => action.entity,
-            ActionEvent::ObjectUnsetFlags(action) => action.entity,
             ActionEvent::ObjectCreate(action) => action.entity,
             ActionEvent::ObjectInfo(action) => action.entity,
             ActionEvent::ObjectRemove(action) => action.entity,
             ActionEvent::ObjectSetFlags(action) => action.entity,
+            ActionEvent::ObjectUnsetFlags(action) => action.entity,
             ActionEvent::ObjectUpdateDescription(action) => action.entity,
             ActionEvent::ObjectUpdateKeywords(action) => action.entity,
             ActionEvent::ObjectUpdateName(action) => action.entity,
@@ -122,10 +128,12 @@ impl ActionEvent {
             ActionEvent::RoomCreate(action) => action.entity,
             ActionEvent::RoomInfo(action) => action.entity,
             ActionEvent::RoomLink(action) => action.entity,
-            ActionEvent::RoomUpdateDescription(action) => action.entity,
             ActionEvent::RoomRemove(action) => action.entity,
             ActionEvent::RoomUnlink(action) => action.entity,
+            ActionEvent::RoomUpdateDescription(action) => action.entity,
             ActionEvent::Say(action) => action.entity,
+            ActionEvent::ScriptAttach(action) => action.entity,
+            ActionEvent::ScriptDetach(action) => action.entity,
             ActionEvent::Send(action) => action.entity,
             ActionEvent::Shutdown(action) => action.entity,
             ActionEvent::Teleport(action) => action.entity,
@@ -136,14 +144,14 @@ impl ActionEvent {
 
 pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(drop_system.system());
-    stage.add_system(emote_system.system());
+    stage.add_system(emote_system.system().after("look"));
     stage.add_system(exits_system.system());
     stage.add_system(get_system.system());
     stage.add_system(inventory_system.system());
     stage.add_system(login_system.system());
     stage.add_system(logout_system.system());
     stage.add_system(look_at_system.system());
-    stage.add_system(look_system.system());
+    stage.add_system(look_system.system().label("look"));
     stage.add_system(move_system.system());
     stage.add_system(object_clear_flags_system.system());
     stage.add_system(object_create_system.system());
@@ -160,8 +168,10 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(room_remove_system.system());
     stage.add_system(room_unlink_system.system());
     stage.add_system(room_update_description_system.system());
-    stage.add_system(say_system.system());
-    stage.add_system(send_system.system());
+    stage.add_system(say_system.system().after("look"));
+    stage.add_system(script_attach_system.system());
+    stage.add_system(script_detach_system.system());
+    stage.add_system(send_system.system().after("look"));
     stage.add_system(shutdown_system.system());
     stage.add_system(teleport_system.system());
     stage.add_system(who_system.system());
@@ -219,6 +229,7 @@ pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
             "player" => immortal::player::parse(player, tokenizer),
             "room" => immortal::room::parse(player, tokenizer),
             "say" => parse_say(player, tokenizer),
+            "script" => parse_script(player, tokenizer),
             "send" => parse_send(player, tokenizer),
             "shutdown" => Ok(ActionEvent::from(Shutdown { entity: player })),
             "south" => Ok(ActionEvent::from(Move {

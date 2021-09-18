@@ -12,7 +12,7 @@ use crate::{
         action::{
             ActionEvent, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
         },
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook, Trigger},
+        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -97,11 +97,11 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                                 Ok(ActionEvent::from(ObjectUnsetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
-                        _ => Err("Enter a valid object subcommand: info, keywords, long, set, short, remove, or unset."
+                        _ => Err("Enter a valid object subcommand: desc, info, keywords, name, remove, set, or unset."
                             .to_string()),
                     }
                 } else {
-                    Err("Enter an object subcommand: info, keywords, long, set, short, remove, or unset.".to_string())
+                    Err("Enter an object subcommand: desc, info, keywords, name, remove, set, or unset.".to_string())
                 }
             }
         }
@@ -153,9 +153,6 @@ pub fn object_create_system(
                     },
                 })
                 .insert(Location { room: room_entity })
-                .insert(PostEventScriptHooks {
-                    list: vec![ScriptHook::new(Trigger::Say, "test_script")],
-                })
                 .id();
 
             let room_id = {
@@ -232,8 +229,7 @@ pub fn object_info_system(
             message.push_str(named.name.as_str());
             message.push_str("\r\n  description: ");
             message.push_str(description.text.as_str());
-            message.push_str("\r\n  flags: ");
-            message.push_str(format!("{:?}", flags).as_str());
+            message.push_str(format!("\r\n  flags: {:?}", flags.flags).as_str());
             message.push_str("\r\n  keywords: ");
             message.push_str(word_list(keywords.list.clone()).as_str());
             message.push_str("\r\n  container: ");
@@ -253,15 +249,25 @@ pub fn object_info_system(
             }
             if let Some(PreEventScriptHooks { list }) = pre_hooks {
                 message.push_str("\r\n  pre-event hooks:");
-                for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {}->{}", trigger, script).as_str());
+                if list.is_empty() {
+                    message.push_str(" none");
                 }
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                }
+            } else {
+                message.push_str("\r\n  pre-event hooks: none");
             }
             if let Some(PostEventScriptHooks { list }) = post_hooks {
                 message.push_str("\r\n  post-event hooks:");
-                for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {}->{}", trigger, script).as_str());
+                if list.is_empty() {
+                    message.push_str(" none");
                 }
+                for ScriptHook { trigger, script } in list.iter() {
+                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                }
+            } else {
+                message.push_str("\r\n  post-event hooks: none");
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {

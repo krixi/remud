@@ -5,9 +5,7 @@
   > script <name> attach-pre [object|player|room] <id/name>
   > script <name> attach [object|player|room] <id/name>
 
-- execute persists in their own async tasks
-
-- execute scripts in their own async tasks
+- make ScriptName require ascii names (or at least reject whitespace)
 
 - add help command
 

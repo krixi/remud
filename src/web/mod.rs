@@ -166,7 +166,7 @@ pub fn build_web_server() -> (tide::Server<Context>, mpsc::Receiver<WebMessage>)
 
 async fn create_script(mut req: Request<Context>) -> tide::Result {
     let script = req.body_json::<Script>().await?;
-    tracing::info!("Create script: {:?}", script);
+    tracing::debug!("Create script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -189,7 +189,7 @@ async fn create_script(mut req: Request<Context>) -> tide::Result {
 
 async fn read_script(mut req: Request<Context>) -> tide::Result {
     let name = req.body_json::<ScriptName>().await?;
-    tracing::info!("Read script: {:?}", name);
+    tracing::debug!("Read script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -232,7 +232,7 @@ async fn read_all_scripts(req: Request<Context>) -> tide::Result {
 
 async fn update_script(mut req: Request<Context>) -> tide::Result {
     let script = req.body_json::<Script>().await?;
-    tracing::info!("Update script: {:?}", script);
+    tracing::debug!("Update script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
     req.state()
@@ -255,7 +255,7 @@ async fn update_script(mut req: Request<Context>) -> tide::Result {
 
 async fn delete_script(mut req: Request<Context>) -> tide::Result {
     let name = req.body_json::<ScriptName>().await?;
-    tracing::info!("Delete script: {:?}", name);
+    tracing::debug!("Delete script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();
     req.state()

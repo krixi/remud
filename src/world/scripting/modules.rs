@@ -52,4 +52,14 @@ pub mod world_api {
                 .into(),
             ));
     }
+
+    #[rhai_fn(pure, name = "!=")]
+    pub fn entity_ne(a: &mut Entity, b: Entity) -> bool {
+        *a != b
+    }
+
+    #[rhai_fn(pure, name = "==")]
+    pub fn entity_eq(a: &mut Entity, b: Entity) -> bool {
+        *a == b
+    }
 }

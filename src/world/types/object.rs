@@ -37,6 +37,12 @@ impl fmt::Display for ObjectId {
     }
 }
 
+impl From<ObjectId> for Id {
+    fn from(id: ObjectId) -> Self {
+        Id::Object(id)
+    }
+}
+
 #[derive(Debug)]
 pub struct ObjectIdParseError {}
 impl fmt::Display for ObjectIdParseError {

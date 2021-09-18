@@ -239,8 +239,6 @@ impl GameWorld {
         let name = ScriptName::from(name.as_str());
         let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
 
-        tracing::info!("Creating with trigger: {:?}", trigger);
-
         let script = Script {
             name,
             trigger,
@@ -268,8 +266,6 @@ impl GameWorld {
     ) -> Result<Option<ParseError>, web::Error> {
         let name = ScriptName::from(name.as_str());
         let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
-
-        tracing::info!("Updating with trigger: {:?}", trigger);
 
         let script = Script {
             name,

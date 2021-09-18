@@ -24,6 +24,12 @@ impl TryFrom<i64> for PlayerId {
     }
 }
 
+impl fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct PlayerIdParseError {}
 impl fmt::Display for PlayerIdParseError {
