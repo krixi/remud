@@ -73,9 +73,9 @@ Removes the current room. You'll be teleported to the void room.
 
 
 # Scripts
-Scripts are created through the web-client. Once created, they can be attached and detached from entities with the following commands. 
+Scripts are created through the web-client. Once created, they can be attached and detached from entities with the following commands
+([learn more](../scripting)).
 
 ### `script <name> attach-pre [object|player|room] <id/name>`
 ### `script <name> attach [object|player|room] <id/name>`
-### `script <name> detach-pre [object|player|room] <id/name>`
 ### `script <name> detach [object|player|room] <id/name>`

@@ -11,42 +11,57 @@ tags: ["testing"]
 
 | Command                   | Working ? | Comment |
 | ------------------------- | --------- | ------- |
-| script attach-pre object  |           |         |
-| script attach-pre player  |           |         |
-| script attach-pre room    |           |         |
-| script attach object      |           |         |
-| script attach player      |           |         |
-| script attach room        |           |         |
-| script detach-pre object  |           |         |
-| script detach-pre player  |           |         |
-| script detach-pre room    |           |         |
-| script detach object      |           |         |
-| script detach player      |           |         |
-| script detach room        |           |         |
-| player info               |           |         |
-| object info               |           |         |
-| room info                 |           |         |
+| script attach-pre object  |   ✅      |         |
+| script attach-pre player  |   ✅      |         |
+| script attach-pre room    |   ✅      |         |
+| script attach object      |   ✅      |         |
+| script attach player      |   ✅      |         |
+| script attach room        |   ✅      |         |
+| script detach object      |   ✅      |         |
+| script detach player      |   ✅      |         |
+| script detach room        |   ✅      |         |
+| player info               |   ✅      |         |
+| object info               |   ✅      |         |
+| room info                 |   ✅      |         |
+| `allow_action`            |   ✅      |         |
 
 
 ## Script triggers
-| Trigger                   | Entity    | Working ? | Comment |
-| ------------------------- | --------- | --------- | ------- |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
-|   |           |         |
 
+| Trigger       | Entity    | Working ? | Comment |
+| ------------- | --------- | --------- | ------- |
+|  Drop         | object    |   ✅      |         |
+|  Emote        | object    |   ✅      |         |
+|  Exits        | object    |   ✅      |         |
+|  Get          | object    |   ✅      |         |
+|  Inventory    | object    |   ✅      |         |
+|  Look         | object    |   ✅      |         |
+|  LookAt       | object    |   ✅      |         |
+|  Move         | object    |   ✅      |         |
+|  Say          | object    |   ✅      |         |
+|  Send         | object    |   ✅      |         |
+| ---           | ---       | ---       | ---     |
+|  Drop         | player    |           |         |
+|  Emote        | player    |           |         |
+|  Exits        | player    |           |         |
+|  Get          | player    |           |         |
+|  Inventory    | player    |           |         |
+|  Look         | player    |           |         |
+|  LookAt       | player    |           |         |
+|  Move         | player    |           |         |
+|  Say          | player    |   ✅      |         |
+|  Send         | player    |           |         |
+| ---           | ---       | ---       | ---     |
+|  Drop         | room      |           |         |
+|  Emote        | room      |           |         |
+|  Exits        | room      |           |         |
+|  Get          | room      |           |         |
+|  Inventory    | room      |           |         |
+|  Look         | room      |           |         |
+|  LookAt       | room      |           |         |
+|  Move         | room      |           |         |
+|  Say          | room      |   ✅      | Nothing printed because rooms can't say (need `named` and `location`) |
+|  Send         | room      |           |         |
 
 ## EventAction refactor 
 
