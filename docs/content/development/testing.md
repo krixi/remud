@@ -7,6 +7,48 @@ author: "krixi"
 tags: ["testing"]
 ---
 
+## Script attach & persist
+
+| Command                   | Working ? | Comment |
+| ------------------------- | --------- | ------- |
+| script attach-pre object  |           |         |
+| script attach-pre player  |           |         |
+| script attach-pre room    |           |         |
+| script attach object      |           |         |
+| script attach player      |           |         |
+| script attach room        |           |         |
+| script detach-pre object  |           |         |
+| script detach-pre player  |           |         |
+| script detach-pre room    |           |         |
+| script detach object      |           |         |
+| script detach player      |           |         |
+| script detach room        |           |         |
+| player info               |           |         |
+| object info               |           |         |
+| room info                 |           |         |
+
+
+## Script triggers
+| Trigger                   | Entity    | Working ? | Comment |
+| ------------------------- | --------- | --------- | ------- |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+|   |           |         |
+
+
+## EventAction refactor 
 
 | Command           | Working? | Comment |
 | ------------------| ------- | ------- |
@@ -43,4 +85,3 @@ tags: ["testing"]
 | room link         |  ✅     |  |
 | room unlink       |  ✅     |  |
 | room remove       |  ✅     |  |
-

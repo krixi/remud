@@ -28,6 +28,7 @@ export interface ListScriptsResp {
 }
 
 export interface CompileError {
+  isSaved?: boolean;
   line?: number;
   position?: number;
   message: string;
