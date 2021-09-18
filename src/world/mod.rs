@@ -25,7 +25,7 @@ use crate::{
         scripting::{
             create_script_engine, post_action_script_system, pre_action_script_system,
             run_event_scripts, run_pre_event_scripts, script_compiler_system, PreAction, Script,
-            ScriptName, ScriptRuns, Scripts, Trigger,
+            ScriptName, ScriptRuns, Trigger,
         },
         types::{
             player::{Messages, Player, Players},
@@ -57,7 +57,6 @@ impl GameWorld {
         // Add resources
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
-        world.insert_resource(Scripts::default());
         world.insert_resource(ScriptRuns::default());
         world.insert_resource(create_script_engine());
 
@@ -77,24 +76,6 @@ impl GameWorld {
         pre_event_schedule.add_system_to_stage(STAGE_UPDATE, pre_action_script_system.system());
         update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
         post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
-
-        let test_script_name = ScriptName::from("test_script");
-        let test_script = Script {
-            name: test_script_name.clone(),
-            trigger: Trigger::Say,
-            code: r#"
-            let player = EVENT.actor;
-            let name = WORLD.get_name(player);
-            WORLD.say(SELF, `Hello there, ${name}.`);
-        "#
-            .to_string(),
-        };
-
-        let test_script_entity = world.spawn().insert(test_script).id();
-        world
-            .get_resource_mut::<Scripts>()
-            .unwrap()
-            .insert(test_script_name, test_script_entity);
 
         let world = Arc::new(RwLock::new(world));
 

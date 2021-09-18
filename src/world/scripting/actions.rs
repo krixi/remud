@@ -103,48 +103,82 @@ pub fn run_script(
     entity: Entity,
     script: ScriptName,
 ) {
-    if let Some(script) = world
-        .read()
-        .unwrap()
-        .get_resource::<Scripts>()
-        .unwrap()
-        .by_name(&script)
-    {
+    match world.try_write() {
+        Ok(_) => tracing::info!("can write"),
+        Err(_) => tracing::info!("can't write"),
+    }
+
+    let script = {
+        if let Some(script) = world
+            .read()
+            .unwrap()
+            .get_resource::<Scripts>()
+            .unwrap()
+            .by_name(&script)
+        {
+            script
+        } else {
+            tracing::warn!(
+                "Skipping execution of {:?}, unable to find named script.",
+                script
+            );
+            return;
+        }
+    };
+
+    match world.try_write() {
+        Ok(_) => tracing::info!("can write"),
+        Err(_) => tracing::info!("can't write"),
+    }
+
+    let ast = {
         if let Some(ast) = world
             .read()
             .unwrap()
             .get::<ScriptAst>(script)
             .map(|script_ast| script_ast.ast.clone())
         {
-            let engine = world
-                .read()
-                .unwrap()
-                .get_resource::<ScriptEngine>()
-                .unwrap()
-                .get();
-
-            let mut scope = Scope::new();
-            scope.push_constant("SELF", entity);
-            scope.push_constant("WORLD", world.clone());
-            scope.push_constant("EVENT", event.clone());
-
-            match world.try_write() {
-                Ok(_) => tracing::info!("can write"),
-                Err(_) => tracing::info!("can't write"),
-            }
-
-            engine
-                .read()
-                .unwrap()
-                .consume_ast_with_scope(&mut scope, &ast)
-                .unwrap();
+            ast
         } else {
             tracing::warn!(
                 "Skipping execution of {:?}, compiled script not found.",
                 script
             );
-        };
+            return;
+        }
+    };
+
+    match world.try_write() {
+        Ok(_) => tracing::info!("can write"),
+        Err(_) => tracing::info!("can't write"),
     }
+
+    let engine = {
+        let engine = world
+            .read()
+            .unwrap()
+            .get_resource::<ScriptEngine>()
+            .unwrap()
+            .get();
+
+        engine
+    };
+
+    let mut scope = Scope::new();
+    scope.push_constant("SELF", entity);
+    scope.push_constant("WORLD", world.clone());
+    scope.push_constant("EVENT", event.clone());
+
+    match world.try_write() {
+        Ok(_) => tracing::info!("can write"),
+        Err(_) => tracing::info!("can't write"),
+    }
+
+    engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+        .unwrap();
 }
 
 pub fn run_pre_script(
@@ -153,48 +187,65 @@ pub fn run_pre_script(
     entity: Entity,
     script: ScriptName,
 ) -> bool {
-    if let Some(script) = world
-        .read()
-        .unwrap()
-        .get_resource::<Scripts>()
-        .unwrap()
-        .by_name(&script)
-    {
+    let script = {
+        if let Some(script) = world
+            .read()
+            .unwrap()
+            .get_resource::<Scripts>()
+            .unwrap()
+            .by_name(&script)
+        {
+            script
+        } else {
+            tracing::warn!(
+                "Skipping execution of {:?}, unable to find named script.",
+                script
+            );
+            return true;
+        }
+    };
+
+    let ast = {
         if let Some(ast) = world
             .read()
             .unwrap()
             .get::<ScriptAst>(script)
             .map(|script_ast| script_ast.ast.clone())
         {
-            let engine = world
-                .read()
-                .unwrap()
-                .get_resource::<ScriptEngine>()
-                .unwrap()
-                .get();
-
-            let mut scope = Scope::new();
-            scope.push_constant("SELF", entity);
-            scope.push_constant("WORLD", world.clone());
-            scope.push_constant("EVENT", event.clone());
-            scope.push_dynamic("allow_action", Dynamic::from(true));
-
-            engine
-                .read()
-                .unwrap()
-                .consume_ast_with_scope(&mut scope, &ast)
-                .unwrap();
-
-            return scope.get_value("allow_action").unwrap();
+            ast
         } else {
             tracing::warn!(
                 "Skipping execution of {:?}, compiled script not found.",
                 script
             );
-        };
-    }
+            return true;
+        }
+    };
 
-    false
+    let engine = {
+        let engine = world
+            .read()
+            .unwrap()
+            .get_resource::<ScriptEngine>()
+            .unwrap()
+            .get();
+
+        engine
+    };
+
+    let mut scope = Scope::new();
+    scope.push_constant("SELF", entity);
+    scope.push_constant("WORLD", world.clone());
+    scope.push_constant("EVENT", event.clone());
+    scope.push_dynamic("allow_action", Dynamic::from(true));
+
+    engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+        .unwrap();
+
+    scope.get_value("allow_action").unwrap()
 }
 
 pub fn update_script(world: &mut World, script: Script) -> anyhow::Result<Option<ParseError>> {

@@ -51,7 +51,7 @@ impl Scripts {
     }
 
     pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
-        self.by_name.get(name).copied()
+        self.by_name.get(name).map(|entity| *entity)
     }
 }
 

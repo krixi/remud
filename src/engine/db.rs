@@ -15,6 +15,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
     action::{self},
+    scripting::{Script, ScriptName, Scripts, Trigger},
     types::{
         self,
         object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -114,6 +115,7 @@ impl Db {
         self.load_rooms(&mut world).await?;
         self.load_exits(&mut world).await?;
         self.load_room_objects(&mut world).await?;
+        self.load_scripts(&mut world).await?;
 
         Ok(world)
     }
@@ -255,6 +257,28 @@ impl Db {
         let highest_id = results.get("max_id");
 
         world.insert_resource(Objects::new(highest_id, by_id));
+
+        Ok(())
+    }
+
+    pub async fn load_scripts(&self, world: &mut World) -> anyhow::Result<()> {
+        world.insert_resource(Scripts::default());
+
+        let mut results = sqlx::query_as::<_, ScriptRow>(
+            r#"SELECT name, trigger, code
+                    FROM scripts"#,
+        )
+        .fetch(&self.pool);
+
+        while let Some(script_row) = results.try_next().await? {
+            let script = Script::try_from(script_row)?;
+            let name = script.name.clone();
+            let entity = world.spawn().insert(script).id();
+            world
+                .get_resource_mut::<Scripts>()
+                .unwrap()
+                .insert(name, entity);
+        }
 
         Ok(())
     }
@@ -446,4 +470,26 @@ struct ExitRow {
     room_from: i64,
     room_to: i64,
     direction: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct ScriptRow {
+    name: String,
+    trigger: String,
+    code: String,
+}
+
+impl TryFrom<ScriptRow> for Script {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ScriptRow) -> Result<Self, Self::Error> {
+        let name = ScriptName::from(value.name.as_str());
+        let trigger = Trigger::from_str(value.trigger.as_str())?;
+
+        Ok(Script {
+            name,
+            trigger,
+            code: value.code,
+        })
+    }
 }
