@@ -28,7 +28,9 @@ tags: ["testing"]
 
 ## Script triggers
 
-| Trigger       | Entity    | Working ? | Comment |
+Bug: Same script shouldn't be able to be registered twice for the same trigger. 
+
+| Trigger       | Entity    |  ?        | Comment |
 | ------------- | --------- | --------- | ------- |
 |  Drop         | object    |   ✅      |         |
 |  Emote        | object    |   ✅      |         |
@@ -41,27 +43,27 @@ tags: ["testing"]
 |  Say          | object    |   ✅      |         |
 |  Send         | object    |   ✅      |         |
 | ---           | ---       | ---       | ---     |
-|  Drop         | player    |           |         |
-|  Emote        | player    |           |         |
-|  Exits        | player    |           |         |
-|  Get          | player    |           |         |
-|  Inventory    | player    |           |         |
-|  Look         | player    |           |         |
-|  LookAt       | player    |           |         |
-|  Move         | player    |           |         |
+|  Drop         | player    |   ✅      |         |
+|  Emote        | player    |   ✅      |         |
+|  Exits        | player    |   ✅      |         |
+|  Get          | player    |   ✅      |         |
+|  Inventory    | player    |   ✅      |         |
+|  Look         | player    |   ✅      | Automatic look when entering a room does not trigger this. |
+|  LookAt       | player    |   ✅      |         |
+|  Move         | player    |   ✅      |         |
 |  Say          | player    |   ✅      |         |
-|  Send         | player    |           |         |
+|  Send         | player    |   ✅      |         |
 | ---           | ---       | ---       | ---     |
-|  Drop         | room      |           |         |
-|  Emote        | room      |           |         |
-|  Exits        | room      |           |         |
-|  Get          | room      |           |         |
-|  Inventory    | room      |           |         |
-|  Look         | room      |           |         |
-|  LookAt       | room      |           |         |
-|  Move         | room      |           |         |
-|  Say          | room      |   ✅      | Nothing printed because rooms can't say (need `named` and `location`) |
-|  Send         | room      |           |         |
+|  Drop         | room      |   ✅      |         |
+|  Emote        | room      |   ✅      |         |
+|  Exits        | room      |   ✅      |         |
+|  Get          | room      |   ✅      |         |
+|  Inventory    | room      |   ✅      |         |
+|  Look         | room      |   ✅      | Automatic look when entering a room does not trigger this. |
+|  LookAt       | room      |   ✅      |         |
+|  Move         | room      |   ✅      |         |
+|  Say          | room      |   ✅      |         |
+|  Send         | room      |   ✅      |         |
 
 ## EventAction refactor 
 
