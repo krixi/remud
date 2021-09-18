@@ -1,4 +1,5 @@
 pub mod actions;
+mod modules;
 
 use std::{
     collections::HashMap,
@@ -14,7 +15,10 @@ use strum::EnumString;
 
 use crate::world::{
     action::ActionEvent,
-    scripting::actions::{run_pre_script, run_script},
+    scripting::{
+        actions::{run_pre_script, run_script},
+        modules::{event_api, world_api},
+    },
     types::{room::Room, Container, Contents, Location},
 };
 
@@ -90,6 +94,7 @@ pub struct FailedScript {
     pub error: ScriptError,
 }
 
+#[derive(Clone)]
 pub struct ScriptAst {
     pub ast: AST,
 }
@@ -158,22 +163,31 @@ impl ScriptHook {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::ToString, EnumString)]
 pub enum Trigger {
+    Drop,
+    Emote,
+    Exits,
+    Get,
+    Inventory,
+    Look,
+    LookAt,
+    Move,
     Say,
+    Send,
 }
 
 impl Trigger {
     fn from_action(value: &ActionEvent) -> Option<Self> {
         match value {
-            ActionEvent::Drop(_) => None,
-            ActionEvent::Emote(_) => None,
-            ActionEvent::Exits(_) => None,
-            ActionEvent::Get(_) => None,
-            ActionEvent::Inventory(_) => None,
+            ActionEvent::Drop(_) => Some(Trigger::Drop),
+            ActionEvent::Emote(_) => Some(Trigger::Emote),
+            ActionEvent::Exits(_) => Some(Trigger::Exits),
+            ActionEvent::Get(_) => Some(Trigger::Get),
+            ActionEvent::Inventory(_) => Some(Trigger::Inventory),
             ActionEvent::Login(_) => None,
             ActionEvent::Logout(_) => None,
-            ActionEvent::Look(_) => None,
-            ActionEvent::LookAt(_) => None,
-            ActionEvent::Move(_) => None,
+            ActionEvent::Look(_) => Some(Trigger::Look),
+            ActionEvent::LookAt(_) => Some(Trigger::LookAt),
+            ActionEvent::Move(_) => Some(Trigger::Move),
             ActionEvent::ObjectUnsetFlags(_) => None,
             ActionEvent::ObjectCreate(_) => None,
             ActionEvent::ObjectInfo(_) => None,
@@ -190,7 +204,7 @@ impl Trigger {
             ActionEvent::RoomRemove(_) => None,
             ActionEvent::RoomUnlink(_) => None,
             ActionEvent::Say(_) => Some(Trigger::Say),
-            ActionEvent::Send(_) => None,
+            ActionEvent::Send(_) => Some(Trigger::Send),
             ActionEvent::Shutdown(_) => None,
             ActionEvent::Teleport(_) => None,
             ActionEvent::Who(_) => None,
@@ -200,6 +214,12 @@ impl Trigger {
 
 pub struct PreAction {
     pub action: ActionEvent,
+}
+
+impl PreAction {
+    fn new(action: ActionEvent) -> Self {
+        PreAction { action }
+    }
 }
 
 pub fn script_compiler_system(
@@ -412,38 +432,20 @@ fn get_script_runs<Hooks: ScriptHooks>(
                     });
                 }
             }
-        }
 
-        // TODO: add checks for all objects in present player's inventories
+            let contents = contents_query.get(*player).unwrap();
+            for object in contents.objects.iter() {
+                if let Ok(triggers) = hooks_query.get(*object) {
+                    for script in triggers.triggered_by(action_trigger) {
+                        runs.push(ScriptRun {
+                            entity: *object,
+                            script,
+                        })
+                    }
+                }
+            }
+        }
     }
 
     runs
-}
-
-#[export_module]
-pub mod event_api {
-    use crate::world::action::ActionEvent;
-
-    #[rhai_fn(get = "entity", pure)]
-    pub fn get_entity(action_event: &mut ActionEvent) -> Dynamic {
-        Dynamic::from(action_event.enactor())
-    }
-}
-
-#[export_module]
-pub mod world_api {
-    use std::sync::RwLock;
-
-    use rhai::Dynamic;
-
-    use crate::world::types::Named;
-
-    #[rhai_fn(pure)]
-    pub fn get_name(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
-        if let Some(named) = world.read().unwrap().get::<Named>(entity) {
-            Dynamic::from(named.name.clone())
-        } else {
-            Dynamic::UNIT
-        }
-    }
 }

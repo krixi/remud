@@ -100,7 +100,7 @@ pub fn read_all_scripts(world: &mut World) -> anyhow::Result<Vec<Script>> {
 pub fn run_script(
     world: Arc<RwLock<World>>,
     event: &ActionEvent,
-    actor: Entity,
+    entity: Entity,
     script: ScriptName,
 ) {
     if let Some(script) = world
@@ -110,7 +110,12 @@ pub fn run_script(
         .unwrap()
         .by_name(&script)
     {
-        if let Some(compiled_script) = world.read().unwrap().get::<ScriptAst>(script) {
+        if let Some(ast) = world
+            .read()
+            .unwrap()
+            .get::<ScriptAst>(script)
+            .map(|script_ast| script_ast.ast.clone())
+        {
             let engine = world
                 .read()
                 .unwrap()
@@ -119,14 +124,19 @@ pub fn run_script(
                 .get();
 
             let mut scope = Scope::new();
-            scope.push_constant("SELF", actor);
+            scope.push_constant("SELF", entity);
             scope.push_constant("WORLD", world.clone());
             scope.push_constant("EVENT", event.clone());
+
+            match world.try_write() {
+                Ok(_) => tracing::info!("can write"),
+                Err(_) => tracing::info!("can't write"),
+            }
 
             engine
                 .read()
                 .unwrap()
-                .consume_ast_with_scope(&mut scope, &compiled_script.ast)
+                .consume_ast_with_scope(&mut scope, &ast)
                 .unwrap();
         } else {
             tracing::warn!(
@@ -140,7 +150,7 @@ pub fn run_script(
 pub fn run_pre_script(
     world: Arc<RwLock<World>>,
     event: &ActionEvent,
-    actor: Entity,
+    entity: Entity,
     script: ScriptName,
 ) -> bool {
     if let Some(script) = world
@@ -150,7 +160,12 @@ pub fn run_pre_script(
         .unwrap()
         .by_name(&script)
     {
-        if let Some(compiled_script) = world.read().unwrap().get::<ScriptAst>(script) {
+        if let Some(ast) = world
+            .read()
+            .unwrap()
+            .get::<ScriptAst>(script)
+            .map(|script_ast| script_ast.ast.clone())
+        {
             let engine = world
                 .read()
                 .unwrap()
@@ -159,7 +174,7 @@ pub fn run_pre_script(
                 .get();
 
             let mut scope = Scope::new();
-            scope.push_constant("SELF", actor);
+            scope.push_constant("SELF", entity);
             scope.push_constant("WORLD", world.clone());
             scope.push_constant("EVENT", event.clone());
             scope.push_dynamic("allow_action", Dynamic::from(true));
@@ -167,7 +182,7 @@ pub fn run_pre_script(
             engine
                 .read()
                 .unwrap()
-                .consume_ast_with_scope(&mut scope, &compiled_script.ast)
+                .consume_ast_with_scope(&mut scope, &ast)
                 .unwrap();
 
             return scope.get_value("allow_action").unwrap();

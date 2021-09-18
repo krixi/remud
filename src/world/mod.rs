@@ -83,9 +83,9 @@ impl GameWorld {
             name: test_script_name.clone(),
             trigger: Trigger::Say,
             code: r#"
-            let player = EVENT.entity;
+            let player = EVENT.actor;
             let name = WORLD.get_name(player);
-            let output = `Hello there, ${name}.`;
+            WORLD.say(SELF, `Hello there, ${name}.`);
         "#
             .to_string(),
         };
