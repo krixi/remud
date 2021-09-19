@@ -236,7 +236,6 @@ const tokenToReact = (token: Token | string, i: number): ReactNode => {
 };
 
 const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
-  const [key, setKey] = useState(1);
   const [tokens, setTokens] = useState<Array<string | Token>>([]);
   const editable = useRef(null);
 
@@ -251,11 +250,9 @@ const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
 
   return (
     <pre
-      key={key}
       ref={editable}
       className={`language-${lang} p-0.5 rounded w-full h-96`}
       style={{ backgroundColor: "#505050" }}
-      onBlur={() => setKey(key + 1)}
     >
       {tokens.length && tokens.map(tokenToReact)}
     </pre>
