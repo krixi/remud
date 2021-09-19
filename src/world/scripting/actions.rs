@@ -70,7 +70,10 @@ pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseEr
     Ok(error)
 }
 
-pub fn read_script(world: &World, name: ScriptName) -> Result<Script, web::Error> {
+pub fn read_script(
+    world: &World,
+    name: ScriptName,
+) -> Result<(Script, Option<ParseError>), web::Error> {
     tracing::debug!("Retrieving {:?}.", name);
 
     let script_entity =
@@ -81,8 +84,11 @@ pub fn read_script(world: &World, name: ScriptName) -> Result<Script, web::Error
         };
 
     let script = world.get::<Script>(script_entity).unwrap().clone();
+    let err = world
+        .get::<CompilationError>(script_entity)
+        .map(|e| e.error.clone());
 
-    Ok(script)
+    Ok((script, err))
 }
 
 pub fn read_all_scripts(world: &mut World) -> Vec<(Script, Option<ParseError>)> {

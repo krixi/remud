@@ -35,7 +35,7 @@ pub enum WebRequest {
 pub enum WebResponse {
     Done,
     Error(Error),
-    Script(JsonScript),
+    Script(JsonScriptResponse),
     ScriptCompiled(Option<JsonParseError>),
     ScriptList(Vec<JsonScriptInfo>),
 }
@@ -73,25 +73,35 @@ struct JsonScripts {
     scripts: Vec<JsonScriptInfo>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct JsonScript {
     pub name: String,
     pub trigger: String,
     pub code: String,
 }
 
-impl From<scripting::Script> for JsonScript {
-    fn from(value: scripting::Script) -> Self {
+#[derive(Debug, Serialize)]
+pub struct JsonScriptResponse {
+    pub name: String,
+    pub trigger: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<JsonParseError>,
+}
+
+impl JsonScriptResponse {
+    pub fn new(script: scripting::Script, error: Option<rhai::ParseError>) -> Self {
         let scripting::Script {
             name,
             trigger,
             code,
-        } = value;
+        } = script;
 
-        JsonScript {
+        JsonScriptResponse {
             name: name.to_string(),
             trigger: trigger.to_string(),
             code,
+            error: error.map(|e| e.into()),
         }
     }
 }

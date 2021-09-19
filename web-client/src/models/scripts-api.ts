@@ -15,6 +15,7 @@ export interface Script {
   name: string;
   trigger: Trigger;
   code: string;
+  error?: CompileError;
 }
 
 export interface ScriptInfo {

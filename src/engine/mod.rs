@@ -17,6 +17,7 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
+use crate::web::JsonScriptResponse;
 use crate::{
     engine::{
         client::{Client, Clients, State},
@@ -186,10 +187,10 @@ impl Engine {
             },
             WebRequest::ReadScript(JsonScriptName { name }) => {
                 match self.game_world.read_script(name) {
-                    Ok(script) => {
+                    Ok((script, err)) => {
                         message
                             .response
-                            .send(WebResponse::Script(script.into()))
+                            .send(WebResponse::Script(JsonScriptResponse::new(script, err)))
                             .ok();
                     }
                     Err(e) => {
