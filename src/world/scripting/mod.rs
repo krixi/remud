@@ -19,8 +19,8 @@ use thiserror::Error;
 use crate::world::{
     action::Action,
     scripting::{
-        actions::{run_pre_script, run_script},
-        modules::{event_api, world_api},
+        actions::{run_post_event_script, run_pre_event_script},
+        modules::{event_api, self_api, world_api},
     },
     types::{room::Room, Container, Contents, Location},
 };
@@ -225,6 +225,7 @@ impl TriggerEvent {
             Action::Logout(_) => None,
             Action::Look(_) => Some(TriggerEvent::Look),
             Action::LookAt(_) => Some(TriggerEvent::LookAt),
+            Action::Message(_) => None,
             Action::Move(_) => Some(TriggerEvent::Move),
             Action::ObjectCreate(_) => None,
             Action::ObjectInfo(_) => None,
@@ -391,6 +392,7 @@ pub fn create_script_engine() -> ScriptEngine {
     engine.register_type_with_name::<Arc<RwLock<World>>>("World");
     engine.register_global_module(exported_module!(world_api).into());
     engine.register_global_module(exported_module!(event_api).into());
+    engine.register_global_module(exported_module!(self_api).into());
 
     ScriptEngine {
         engine: Arc::new(RwLock::new(engine)),
@@ -413,7 +415,7 @@ pub fn run_pre_action_scripts(world: Arc<RwLock<World>>) {
         let allowed: Vec<bool> = runs
             .into_par_iter()
             .map(|ScriptRun { entity, script }| {
-                run_pre_script(world.clone(), &event, entity, script)
+                run_pre_event_script(world.clone(), &event, entity, script)
             })
             .collect();
 
@@ -443,7 +445,7 @@ pub fn run_post_action_scripts(world: Arc<RwLock<World>>) {
     runs.into_par_iter().for_each(|(event, runs)| {
         runs.into_par_iter()
             .for_each(|ScriptRun { entity, script }| {
-                run_script(world.clone(), &event, entity, script)
+                run_post_event_script(world.clone(), &event, entity, script)
             });
     });
 }

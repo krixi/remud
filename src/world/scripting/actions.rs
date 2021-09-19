@@ -6,8 +6,8 @@ use crate::{
     world::{
         action::Action,
         scripting::{
-            CompilationError, CompiledScript, FailedScript, Script, ScriptAst, ScriptEngine,
-            ScriptName, Scripts,
+            modules::Me, CompilationError, CompiledScript, FailedScript, Script, ScriptAst,
+            ScriptEngine, ScriptName, Scripts,
         },
     },
 };
@@ -97,7 +97,12 @@ pub fn read_all_scripts(world: &mut World) -> Vec<Script> {
     scripts
 }
 
-pub fn run_script(world: Arc<RwLock<World>>, event: &Action, entity: Entity, script: ScriptName) {
+pub fn run_post_event_script(
+    world: Arc<RwLock<World>>,
+    event: &Action,
+    entity: Entity,
+    script: ScriptName,
+) {
     let script = {
         if let Some(script) = world
             .read()
@@ -145,7 +150,13 @@ pub fn run_script(world: Arc<RwLock<World>>, event: &Action, entity: Entity, scr
     };
 
     let mut scope = Scope::new();
-    scope.push_constant("SELF", entity);
+    scope.push_constant(
+        "SELF",
+        Me {
+            world: world.clone(),
+            entity,
+        },
+    );
     scope.push_constant("WORLD", world);
     scope.push_constant("EVENT", event.clone());
 
@@ -159,7 +170,7 @@ pub fn run_script(world: Arc<RwLock<World>>, event: &Action, entity: Entity, scr
     };
 }
 
-pub fn run_pre_script(
+pub fn run_pre_event_script(
     world: Arc<RwLock<World>>,
     event: &Action,
     entity: Entity,
@@ -212,7 +223,13 @@ pub fn run_pre_script(
     };
 
     let mut scope = Scope::new();
-    scope.push_constant("SELF", entity);
+    scope.push_constant(
+        "SELF",
+        Me {
+            world: world.clone(),
+            entity,
+        },
+    );
     scope.push_constant("WORLD", world);
     scope.push_constant("EVENT", event.clone());
     scope.push_dynamic("allow_action", Dynamic::from(true));

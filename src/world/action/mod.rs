@@ -13,8 +13,8 @@ use crate::{
     world::{
         action::{
             communicate::{
-                emote_system, parse_me, parse_say, parse_send, say_system, send_system, Emote, Say,
-                SendMessage,
+                emote_system, message_system, parse_me, parse_say, parse_send, say_system,
+                send_system, Emote, Message, Say, SendMessage,
             },
             immortal::{
                 object::{
@@ -78,6 +78,7 @@ pub enum Action {
     Logout(Logout),
     Look(Look),
     LookAt(LookAt),
+    Message(Message),
     Move(Move),
     ObjectUnsetFlags(ObjectUnsetFlags),
     ObjectCreate(ObjectCreate),
@@ -115,6 +116,7 @@ impl Action {
             Action::Logout(action) => action.entity,
             Action::Look(action) => action.entity,
             Action::LookAt(action) => action.entity,
+            Action::Message(action) => action.entity,
             Action::Move(action) => action.entity,
             Action::ObjectCreate(action) => action.entity,
             Action::ObjectInfo(action) => action.entity,
@@ -152,6 +154,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(logout_system.system());
     stage.add_system(look_at_system.system());
     stage.add_system(look_system.system().label("look"));
+    stage.add_system(message_system.system());
     stage.add_system(move_system.system());
     stage.add_system(object_clear_flags_system.system());
     stage.add_system(object_create_system.system());

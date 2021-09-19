@@ -120,7 +120,7 @@ pub fn move_system(
                     contents_query
                         .get_mut(location.room)
                         .unwrap()
-                        .remove_object(*entity);
+                        .remove(*entity);
                     contents_query
                         .get_mut(destination)
                         .unwrap()

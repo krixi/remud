@@ -66,6 +66,42 @@ pub fn emote_system(
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub entity: Entity,
+    pub message: String,
+}
+
+into_action!(Message);
+
+pub fn message_system(
+    mut action_reader: EventReader<Action>,
+    messaging_query: Query<&Location>,
+    mut present_query: Query<&mut Messages>,
+    room_query: Query<&Room>,
+) {
+    for action in action_reader.iter() {
+        if let Action::Say(Say { entity, message }) = action {
+            let room_entity = if let Ok(location) = messaging_query.get(*entity) {
+                location.room
+            } else {
+                tracing::warn!("Entity {:?} cannot say without Named and Location.", entity);
+                continue;
+            };
+
+            let room = room_query
+                .get(room_entity)
+                .expect("Location contains a valid room.");
+
+            for player in &room.players {
+                if let Ok(mut messages) = present_query.get_mut(*player) {
+                    messages.queue(message.clone());
+                }
+            }
+        }
+    }
+}
+
 pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
     if tokenizer.rest().is_empty() {
         Err("Say what?".to_string())

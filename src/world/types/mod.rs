@@ -36,9 +36,9 @@ pub struct Contents {
 }
 
 impl Contents {
-    pub fn remove_object(&mut self, entity: Entity) {
-        if let Some(pos) = self.objects.iter().position(|o| *o == entity) {
-            self.objects.remove(pos);
+    pub fn remove(&mut self, object: Entity) {
+        if let Some(index) = self.objects.iter().position(|o| *o == object) {
+            self.objects.remove(index);
         }
     }
 }
@@ -71,14 +71,6 @@ pub struct Keywords {
 #[derive(Debug)]
 pub struct Flags {
     pub flags: ObjectFlags,
-}
-
-impl Contents {
-    pub fn remove(&mut self, object: Entity) {
-        if let Some(index) = self.objects.iter().position(|o| *o == object) {
-            self.objects.remove(index);
-        }
-    }
 }
 
 // Resources
