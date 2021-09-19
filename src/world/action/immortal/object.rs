@@ -4,6 +4,8 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::world::fsm::states::{ChaseState, WanderState};
+use crate::world::fsm::{StateId, StateMachine};
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
     event_from_action,
@@ -153,6 +155,14 @@ pub fn object_create_system(
                     },
                 })
                 .insert(Location { room: room_entity })
+                // TODO: this is how to add a state machine for now, until
+                // .insert(
+                //     StateMachine::new()
+                //         .with_state(StateId::Wander, WanderState::default())
+                //         .with_state(StateId::Chase, ChaseState::default())
+                //         .build()
+                //         .unwrap(),
+                // )
                 .id();
 
             let room_id = {

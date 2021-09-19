@@ -35,6 +35,14 @@ pub struct Contents {
     pub objects: Vec<Entity>,
 }
 
+impl Contents {
+    pub fn remove_object(&mut self, entity: Entity) {
+        if let Some(pos) = self.objects.iter().position(|o| *o == entity) {
+            self.objects.remove(pos);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Named {
     pub name: String,

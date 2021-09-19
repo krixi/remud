@@ -230,6 +230,7 @@ pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
             "room" => immortal::room::parse(player, tokenizer),
             "say" => parse_say(player, tokenizer),
             "script" => parse_script(player, tokenizer),
+            "scripts" => parse_script(player, tokenizer),
             "send" => parse_send(player, tokenizer),
             "shutdown" => Ok(ActionEvent::from(Shutdown { entity: player })),
             "south" => Ok(ActionEvent::from(Move {

@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod action;
+pub mod fsm;
 pub mod scripting;
 pub mod types;
 
@@ -23,6 +24,7 @@ use crate::{
     web,
     world::{
         action::{register_action_systems, system::Logout, ActionEvent},
+        fsm::system::state_machine_system,
         scripting::{
             create_script_engine, post_action_script_system, pre_action_script_system,
             run_event_scripts, run_pre_event_scripts, script_compiler_system, PreAction, Script,
@@ -76,6 +78,10 @@ impl GameWorld {
 
         pre_event_schedule.add_system_to_stage(STAGE_UPDATE, pre_action_script_system.system());
         update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
+        update_schedule.add_system_to_stage(
+            STAGE_UPDATE,
+            state_machine_system.exclusive_system().at_end(),
+        );
         post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
 
         let world = Arc::new(RwLock::new(world));

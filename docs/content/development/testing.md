@@ -9,7 +9,6 @@ tags: ["testing"]
 
 ## Known issues
 
-- Same script shouldn't be able to be registered twice for the same trigger.
 - Race condition around sending happy shutdown message to players.
 - Script editing UI steals focus (click outside an editable area as a workaround) ([#16](https://github.com/FormidableLabs/use-editable/issues/16))
 
