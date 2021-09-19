@@ -2,6 +2,8 @@ use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::engine::persist::UpdateGroup;
+use crate::world::types::Contents;
 use crate::{
     engine::persist::{self, Updates},
     event_from_action,
@@ -31,6 +33,7 @@ pub fn move_system(
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
+    mut contents_query: Query<&mut Contents>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for event in events.iter() {
@@ -45,7 +48,7 @@ pub fn move_system(
                 };
 
             // Retrieve information about the origin/current room.
-            let (destination, origin_players) = {
+            let (destination, origin_players, room_id) = {
                 let room = room_query
                     .get_mut(location.room)
                     .expect("Location contains a valid room.");
@@ -58,6 +61,7 @@ pub fn move_system(
                             .filter(|present_player| **present_player != *entity)
                             .copied()
                             .collect_vec(),
+                        room.id,
                     )
                 } else {
                     if let Ok(mut messages) = messages_query.get_mut(*entity) {
@@ -112,7 +116,17 @@ pub fn move_system(
                         .players
                         .push(*entity);
                 }
-                Id::Object(_) => todo!(),
+                Id::Object(_) => {
+                    contents_query
+                        .get_mut(location.room)
+                        .unwrap()
+                        .remove_object(*entity);
+                    contents_query
+                        .get_mut(destination)
+                        .unwrap()
+                        .objects
+                        .push(*entity);
+                }
                 Id::Room(_) => todo!(),
             }
 
@@ -133,6 +147,7 @@ pub fn move_system(
             // Dispatch a storage update to the new location.
             match id {
                 Id::Player(id) => {
+                    // TODO: why is there a * below?
                     updates.queue(persist::player::Room::new(*id, destination_id));
                     pre_events.send(PreAction {
                         action: ActionEvent::Look(Look {
@@ -141,7 +156,13 @@ pub fn move_system(
                         }),
                     });
                 }
-                Id::Object(_) => todo!(),
+                Id::Object(id) => {
+                    let group = UpdateGroup::new(vec![
+                        persist::room::RemoveObject::new(room_id, *id),
+                        persist::room::AddObject::new(destination_id, *id),
+                    ]);
+                    updates.queue(group);
+                }
                 Id::Room(_) => todo!(),
             }
         }

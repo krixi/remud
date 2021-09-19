@@ -9,7 +9,7 @@ import Prism, { Token } from "prismjs";
 import "prismjs/components/prism-rust";
 import "prismjs/themes/prism-tomorrow.css";
 import { useEditable } from "use-editable";
-import { Script, Trigger } from "../models/scripts-api";
+import { CompileError, Script, Trigger } from "../models/scripts-api";
 import { useScriptsApi } from "../hooks/use-scripts-api";
 import { ScriptAPIBaseURL } from "../env";
 import { useHistory } from "react-router-dom";
@@ -49,8 +49,6 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
     if (errs.length > 0) {
       return;
     }
-    console.log("continuing...");
-
     await fn(e);
   };
 
@@ -60,8 +58,20 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
         // navigate back to the /scripts page if this was successful.
         history.push("/scripts");
       })
-      .catch((reason) => setFormErrors([`${reason}`]))
-      .finally(() => setCreate(false));
+      .catch((reason: CompileError) => {
+        const { isSaved, message, line, position } = reason;
+        if (isSaved) {
+          setCreate(false);
+        }
+        setFormErrors([
+          ...(isSaved ? [`Saved with errors:`] : []),
+          `${
+            line && position
+              ? `Compile failed: Line ${line}, Position ${position}: `
+              : ``
+          }${message}`,
+        ]);
+      });
   };
 
   const submitCompile = async (e: FormEvent) => {
@@ -69,7 +79,7 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
       .then((value) => {
         console.log("got", value);
       })
-      .catch((reason) => setFormErrors([`${reason}`]));
+      .catch((reason) => setFormErrors([`${reason.message}`]));
   };
 
   const submitDelete = async (e: FormEvent) => {
@@ -78,7 +88,7 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
         // navigate back to the /scripts page if this was successful.
         history.push("/scripts");
       })
-      .catch((reason) => setFormErrors([`${reason}`]));
+      .catch((reason) => setFormErrors([`${reason.message}`]));
   };
 
   return (
@@ -94,7 +104,7 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
           <ScriptTriggerForm trigger={trigger} setTrigger={setTrigger} />
           <ScriptCodeForm code={code} setCode={setCode} />
         </div>
-        <div className="mt-2 flex flex-row">
+        <div className="mt-2 flex flex-row justify-end">
           <div className="mr-2">
             <input
               className="cursor-pointer bg-soft-gray btn"
@@ -116,19 +126,19 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
               </button>
             )}
             <button className="btn" onClick={() => history.goBack()}>
-              Cancel
+              Go Back
             </button>
           </div>
-          {formErrors.length > 0 && (
-            <div>
-              {formErrors.map((e, i) => (
-                <div key={i} className="text-red-600">
-                  {e}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+        {formErrors.length > 0 && (
+          <div className="text-center">
+            {formErrors.map((e, i) => (
+              <div key={i} className="text-red-600">
+                {e}
+              </div>
+            ))}
+          </div>
+        )}
       </form>
     </div>
   );
@@ -233,7 +243,7 @@ const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
 
   useEffect(() => {
     const tokens: Array<string | Token> = Prism.languages[lang]
-      ? Prism.tokenize(code, Prism.languages[lang])
+      ? Prism.tokenize(code ? code : "\n", Prism.languages[lang])
       : [];
     setTokens(tokens);
   }, [code, lang]);
@@ -244,7 +254,7 @@ const EditableCode: React.FC<EditableCodeProps> = ({ lang, code, setCode }) => {
       className={`language-${lang} p-0.5 rounded w-full h-96`}
       style={{ backgroundColor: "#505050" }}
     >
-      {tokens.length ? tokens.map(tokenToReact) : code}
+      {tokens.length && tokens.map(tokenToReact)}
     </pre>
   );
 };
