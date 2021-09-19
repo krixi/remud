@@ -10,10 +10,21 @@
     {{ $styles := $styles | minify | fingerprint |
       resources.PostProcess
     }}
+    {{/* https://discourse.gohugo.io/t/css-postprocess-and-relpermalink-issue/29650/5 */}}
+    {{ $deep := strings.Count "/" (strings.TrimPrefix .Site.BaseURL .Permalink) }}
+    {{ $deep = sub $deep 1 }}
+    {{ $relbase := "." }}
+    {{ if gt $deep 0 }}
+      {{ $relbase = "" }}
+      {{ range $i, $sequence := (seq $deep) }}
+        {{ $relbase = (print $relbase "../") }}
+      {{ end }}
+      {{ $relbase = strings.TrimSuffix "/" $relbase }}
+    {{ end }}
     <link
       rel="stylesheet"
       type="text/css"
-      href="{{ $styles.Permalink }}"
+      href="{{ $relbase }}{{ $styles.RelPermalink }}"
       integrity="{{ $styles.Data.Integrity }}"
     />
   {{ end }}

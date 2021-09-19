@@ -1,1 +1,1 @@
-export const ScriptAPIBaseURL = "http://192.168.1.31:2080";
+export const ScriptAPIBaseURL = "http://localhost:2080";
