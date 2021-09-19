@@ -255,7 +255,10 @@ impl GameWorld {
         scripting::actions::create_script(self.world.write().unwrap().deref_mut(), script)
     }
 
-    pub fn read_script(&mut self, name: String) -> Result<Script, web::Error> {
+    pub fn read_script(
+        &mut self,
+        name: String,
+    ) -> Result<(Script, Option<ParseError>), web::Error> {
         let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
 
         scripting::actions::read_script(&*self.world.read().unwrap(), name)

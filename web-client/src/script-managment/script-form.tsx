@@ -2,9 +2,11 @@ import React, {
   FormEvent,
   ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { Subscription, timer } from "rxjs";
 import Prism, { Token } from "prismjs";
 import "prismjs/components/prism-rust";
 import "prismjs/themes/prism-tomorrow.css";
@@ -13,11 +15,25 @@ import { CompileError, Script, Trigger } from "../models/scripts-api";
 import { useScriptsApi } from "../hooks/use-scripts-api";
 import { ScriptApiBaseUrl } from "../env";
 import { useHistory } from "react-router-dom";
+import { CompileStatusCheckbox } from "./compile-status";
+import "./script-form.css";
 
 export interface ScriptFormProps {
   isCreate: boolean;
   script?: Script;
 }
+
+const compilerErrorToString = (err?: CompileError): string => {
+  if (!err) {
+    return "";
+  }
+  const { line, position, message } = err;
+  return `${
+    line && position
+      ? `Compile failed: Line ${line}, Position ${position}: `
+      : ``
+  }${message}`;
+};
 
 export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
   const history = useHistory();
@@ -25,13 +41,15 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
   const [name, setName] = useState("");
   const [trigger, setTrigger] = useState<Trigger>(Trigger.Say);
   const [code, setCode] = useState("");
-  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [err, setErr] = useState<CompileError | undefined>();
   const [create, setCreate] = useState(isCreate);
+  const [saved, setSaved] = useState("");
 
   useEffect(() => {
     setName(script?.name || "");
     setCode(script?.code || "");
     setTrigger(script?.trigger || Trigger.Say);
+    setErr(script?.error);
   }, [script]);
 
   const validateThenRun = async (e: FormEvent, fn: (e: FormEvent) => void) => {
@@ -45,7 +63,7 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
         "Code cannot be empty. Comment it out or delete the script if you don't want this code to run."
       );
     }
-    setFormErrors(errs);
+    setErr({ message: errs.join(" ") });
     if (errs.length > 0) {
       return;
     }
@@ -53,24 +71,23 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
   };
 
   const submitForm = async (e: FormEvent) => {
+    setSaved("");
     await upsert({ name: script?.name || name, trigger, code }, create)
       .then(() => {
-        // navigate back to the /scripts page if this was successful.
-        history.push("/scripts");
+        if (create) {
+          history.push(`/scripts/${name}`);
+        } else {
+          setErr(undefined);
+          setSaved("Saved!");
+        }
       })
       .catch((reason: CompileError) => {
-        const { isSaved, message, line, position } = reason;
+        const { isSaved } = reason;
+        setSaved(isSaved ? "Saved with errors 🤷" : "");
         if (isSaved) {
           setCreate(false);
         }
-        setFormErrors([
-          ...(isSaved ? [`Saved with errors:`] : []),
-          `${
-            line && position
-              ? `Compile failed: Line ${line}, Position ${position}: `
-              : ``
-          }${message}`,
-        ]);
+        setErr(reason);
       });
   };
 
@@ -79,7 +96,7 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
       .then((value) => {
         console.log("got", value);
       })
-      .catch((reason) => setFormErrors([`${reason.message}`]));
+      .catch((reason) => setErr(reason));
   };
 
   const submitDelete = async (e: FormEvent) => {
@@ -88,15 +105,36 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
         // navigate back to the /scripts page if this was successful.
         history.push("/scripts");
       })
-      .catch((reason) => setFormErrors([`${reason.message}`]));
+      .catch((reason) => setErr(reason));
   };
+
+  useEffect(() => {
+    let s: Subscription;
+    if (saved) {
+      s = timer(5000).subscribe({
+        next: () => setSaved(""),
+      });
+    }
+    return () => {
+      if (s) {
+        s.unsubscribe();
+      }
+    };
+  }, [saved]);
+
+  const savedCss = useMemo(() => (saved ? "fade-out" : "visible"), [saved]);
 
   return (
     <div className="w-full">
       <form onSubmit={(e) => validateThenRun(e, submitForm)}>
         {!create && (
           <div className="text-center mb-2">
-            Editing <pre className="inline">{name}</pre>
+            <div className="flex flex-row justify-center">
+              <span className="mr-1">
+                Editing <pre className="inline">{name}</pre>
+              </span>
+              <CompileStatusCheckbox error={err} />
+            </div>
           </div>
         )}
         <div className="border border-gray-500 p-2 rounded">
@@ -104,41 +142,43 @@ export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
           <ScriptTriggerForm trigger={trigger} setTrigger={setTrigger} />
           <ScriptCodeForm code={code} setCode={setCode} />
         </div>
-        <div className="mt-2 flex flex-row justify-end">
-          <div className="mr-2">
-            <input
-              className="cursor-pointer bg-soft-gray btn"
-              type="submit"
-              value="Save"
-            />
-            <button
-              className="btn"
-              onClick={(e) => validateThenRun(e, submitCompile)}
-            >
-              Compile
-            </button>
-            {!create && (
+        <div className="flex flex-row justify-between">
+          <div className="text-center p-2">
+            {err && (
+              <div className="text-red-600">{compilerErrorToString(err)}</div>
+            )}
+          </div>
+
+          <div className="mt-2 flex flex-row justify-end">
+            <div className="mr-2">
+              <input
+                className="cursor-pointer bg-soft-gray btn"
+                type="submit"
+                value="Save"
+              />
               <button
                 className="btn"
-                onClick={(e) => validateThenRun(e, submitDelete)}
+                onClick={(e) => validateThenRun(e, submitCompile)}
               >
-                Delete
+                Compile
               </button>
-            )}
-            <button className="btn" onClick={() => history.goBack()}>
-              Go Back
-            </button>
+              {!create && (
+                <button
+                  className="btn"
+                  onClick={(e) => validateThenRun(e, submitDelete)}
+                >
+                  Delete
+                </button>
+              )}
+              <button className="btn" onClick={() => history.push("/scripts")}>
+                Go Back
+              </button>
+            </div>
           </div>
         </div>
-        {formErrors.length > 0 && (
-          <div className="text-center">
-            {formErrors.map((e, i) => (
-              <div key={i} className="text-red-600">
-                {e}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-row-reverse">
+          <span className={`${savedCss} p-2 success`}>{saved}</span>
+        </div>
       </form>
     </div>
   );
