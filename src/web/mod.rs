@@ -164,6 +164,9 @@ pub fn build_web_server() -> (tide::Server<Context>, mpsc::Receiver<WebMessage>)
     app.at("/scripts/update").post(update_script);
     app.at("/scripts/delete").post(delete_script);
 
+    app.at("/docs").serve_dir("./docs/public").unwrap();
+    app.at("/admin").serve_dir("./web-client/build").unwrap();
+
     (app, rx)
 }
 
