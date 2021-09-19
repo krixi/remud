@@ -22,7 +22,7 @@ use crate::{
         client::{Client, Clients, State},
         db::Db,
     },
-    web::{Script, ScriptName, WebMessage, WebRequest, WebResponse},
+    web::{JsonScript, JsonScriptInfo, JsonScriptName, WebMessage, WebRequest, WebResponse},
     world::{
         action::{observe::Look, parse, system::Login, Action},
         GameWorld,
@@ -168,7 +168,7 @@ impl Engine {
 
     async fn process_web(&mut self, message: WebMessage) {
         match message.request {
-            WebRequest::CreateScript(Script {
+            WebRequest::CreateScript(JsonScript {
                 name,
                 trigger,
                 code,
@@ -184,7 +184,7 @@ impl Engine {
                     message.response.send(WebResponse::Error(e)).ok();
                 }
             },
-            WebRequest::ReadScript(ScriptName { name }) => {
+            WebRequest::ReadScript(JsonScriptName { name }) => {
                 match self.game_world.read_script(name) {
                     Ok(script) => {
                         message
@@ -205,12 +205,12 @@ impl Engine {
                     .send(WebResponse::ScriptList(
                         scripts
                             .into_iter()
-                            .map(|script| script.into())
+                            .map(|(script, error)| JsonScriptInfo::new(script, error))
                             .collect_vec(),
                     ))
                     .ok();
             }
-            WebRequest::UpdateScript(Script {
+            WebRequest::UpdateScript(JsonScript {
                 name,
                 trigger,
                 code,
@@ -226,7 +226,7 @@ impl Engine {
                     message.response.send(WebResponse::Error(e)).ok();
                 }
             },
-            WebRequest::DeleteScript(ScriptName { name }) => {
+            WebRequest::DeleteScript(JsonScriptName { name }) => {
                 match self.game_world.delete_script(name) {
                     Ok(_) => {
                         message.response.send(WebResponse::Done).ok();

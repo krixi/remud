@@ -85,11 +85,14 @@ pub fn read_script(world: &World, name: ScriptName) -> Result<Script, web::Error
     Ok(script)
 }
 
-pub fn read_all_scripts(world: &mut World) -> Vec<Script> {
+pub fn read_all_scripts(world: &mut World) -> Vec<(Script, Option<ParseError>)> {
     let mut scripts = Vec::new();
 
-    for script in world.query::<&Script>().iter(world) {
-        scripts.push(script.clone());
+    for (script, error) in world
+        .query::<(&Script, Option<&CompilationError>)>()
+        .iter(world)
+    {
+        scripts.push((script.clone(), error.map(|c| c.error.clone())));
     }
 
     tracing::debug!("Retrieved {} scripts.", scripts.len());

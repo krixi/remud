@@ -21,6 +21,7 @@ export interface ScriptInfo {
   name: string;
   trigger?: Trigger;
   lines?: number;
+  error?: CompileError;
 }
 
 export interface ListScriptsResp {

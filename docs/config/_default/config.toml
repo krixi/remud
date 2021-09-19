@@ -1,20 +1,20 @@
-baseURL = "."
+baseURL = "http://example.org/"
 languageCode = "en-us"
 title = "ReMUD"
 theme = "remud"
-
+uglyurls = true
 
 [[menu.main]]
 name = "Guide"
-url = "/guide"
+url = "/guide.html"
 weight = 1
 
 [[menu.main]]
 name = "Development"
-url = "/development"
+url = "/development.html"
 weight = 2
 
 [[menu.main]]
 name = "Tags"
-url = "/tags"
+url = "/tags.html"
 weight = 3

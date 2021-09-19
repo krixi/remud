@@ -1,6 +1,6 @@
 import React from "react";
 import { useGetScript } from "../hooks/use-get-script";
-import { ScriptAPIBaseURL } from "../env";
+import { ScriptApiBaseUrl } from "../env";
 import { ErrorDisplay } from "./error-display";
 import { ScriptForm } from "./script-form";
 
@@ -9,7 +9,7 @@ export interface PublicProps {
 }
 
 export const EditPage: React.FC<PublicProps> = ({ name }) => {
-  const { script, loading, err } = useGetScript(ScriptAPIBaseURL, name);
+  const { script, loading, err } = useGetScript(ScriptApiBaseUrl(), name);
 
   if (err) {
     return <ErrorDisplay err={err} />;

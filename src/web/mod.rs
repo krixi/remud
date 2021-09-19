@@ -25,19 +25,19 @@ impl fmt::Debug for WebMessage {
 
 #[derive(Debug)]
 pub enum WebRequest {
-    CreateScript(Script),
-    ReadScript(ScriptName),
+    CreateScript(JsonScript),
+    ReadScript(JsonScriptName),
     ReadAllScripts,
-    UpdateScript(Script),
-    DeleteScript(ScriptName),
+    UpdateScript(JsonScript),
+    DeleteScript(JsonScriptName),
 }
 
 pub enum WebResponse {
     Done,
     Error(Error),
-    Script(Script),
-    ScriptCompiled(Option<ParseError>),
-    ScriptList(Vec<ScriptInfo>),
+    Script(JsonScript),
+    ScriptCompiled(Option<JsonParseError>),
+    ScriptList(Vec<JsonScriptInfo>),
 }
 
 #[derive(Debug, Error)]
@@ -64,23 +64,23 @@ impl Error {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ScriptName {
+pub struct JsonScriptName {
     pub name: String,
 }
 
 #[derive(Debug, Serialize)]
-struct Scripts {
-    scripts: Vec<ScriptInfo>,
+struct JsonScripts {
+    scripts: Vec<JsonScriptInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Script {
+pub struct JsonScript {
     pub name: String,
     pub trigger: String,
     pub code: String,
 }
 
-impl From<scripting::Script> for Script {
+impl From<scripting::Script> for JsonScript {
     fn from(value: scripting::Script) -> Self {
         let scripting::Script {
             name,
@@ -88,7 +88,7 @@ impl From<scripting::Script> for Script {
             code,
         } = value;
 
-        Script {
+        JsonScript {
             name: name.to_string(),
             trigger: trigger.to_string(),
             code,
@@ -97,24 +97,27 @@ impl From<scripting::Script> for Script {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ScriptInfo {
+pub struct JsonScriptInfo {
     pub name: String,
     pub trigger: String,
     pub lines: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<JsonParseError>,
 }
 
-impl From<scripting::Script> for ScriptInfo {
-    fn from(value: scripting::Script) -> Self {
+impl JsonScriptInfo {
+    pub fn new(script: scripting::Script, error: Option<rhai::ParseError>) -> Self {
         let scripting::Script {
             name,
             trigger,
             code,
-        } = value;
+        } = script;
 
-        ScriptInfo {
+        JsonScriptInfo {
             name: name.to_string(),
             trigger: trigger.to_string(),
             lines: code.lines().count(),
+            error: error.map(|e| e.into()),
         }
     }
 }
@@ -122,11 +125,11 @@ impl From<scripting::Script> for ScriptInfo {
 #[derive(Debug, Serialize)]
 pub struct CompileResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<ParseError>,
+    error: Option<JsonParseError>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ParseError {
+pub struct JsonParseError {
     #[serde(skip_serializing_if = "Option::is_none")]
     line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,9 +137,9 @@ pub struct ParseError {
     message: String,
 }
 
-impl From<rhai::ParseError> for ParseError {
+impl From<rhai::ParseError> for JsonParseError {
     fn from(value: rhai::ParseError) -> Self {
-        ParseError {
+        JsonParseError {
             line: value.1.line(),
             position: value.1.position(),
             message: value.0.to_string(),
@@ -149,21 +152,25 @@ pub struct Context {
     pub tx: mpsc::Sender<WebMessage>,
 }
 
-pub fn build_web_server() -> (tide::Server<Context>, mpsc::Receiver<WebMessage>) {
+pub fn build_web_server() -> (tide::Server<()>, mpsc::Receiver<WebMessage>) {
     let (tx, rx) = mpsc::channel(16);
 
     let cors = CorsMiddleware::new()
         .allow_methods("POST".parse::<HeaderValue>().unwrap())
         .allow_origin(Origin::from("*"));
 
-    let mut app = tide::with_state(Context { tx });
-    app.with(cors);
-    app.at("/scripts/create").post(create_script);
-    app.at("/scripts/read").post(read_script);
-    app.at("/scripts/read/all").post(read_all_scripts);
-    app.at("/scripts/update").post(update_script);
-    app.at("/scripts/delete").post(delete_script);
+    let context = Context { tx };
 
+    let mut scripts = tide::with_state(context);
+    scripts.with(cors);
+    scripts.at("/create").post(create_script);
+    scripts.at("/read").post(read_script);
+    scripts.at("/read/all").post(read_all_scripts);
+    scripts.at("/update").post(update_script);
+    scripts.at("/delete").post(delete_script);
+
+    let mut app = tide::new();
+    app.at("/scripts").nest(scripts);
     app.at("/docs").serve_dir("./docs/public").unwrap();
     app.at("/admin").serve_dir("./web-client/build").unwrap();
 
@@ -171,7 +178,7 @@ pub fn build_web_server() -> (tide::Server<Context>, mpsc::Receiver<WebMessage>)
 }
 
 async fn create_script(mut req: Request<Context>) -> tide::Result {
-    let script = req.body_json::<Script>().await?;
+    let script = req.body_json::<JsonScript>().await?;
     tracing::debug!("Create script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
@@ -194,7 +201,7 @@ async fn create_script(mut req: Request<Context>) -> tide::Result {
 }
 
 async fn read_script(mut req: Request<Context>) -> tide::Result {
-    let name = req.body_json::<ScriptName>().await?;
+    let name = req.body_json::<JsonScriptName>().await?;
     tracing::debug!("Read script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();
@@ -228,7 +235,7 @@ async fn read_all_scripts(req: Request<Context>) -> tide::Result {
 
     match rx.await? {
         WebResponse::ScriptList(scripts) => Ok(Response::builder(200)
-            .body(Body::from_json(&Scripts { scripts })?)
+            .body(Body::from_json(&JsonScripts { scripts })?)
             .content_type(mime::JSON)
             .build()),
         WebResponse::Error(e) => Ok(Response::new(e.status())),
@@ -237,7 +244,7 @@ async fn read_all_scripts(req: Request<Context>) -> tide::Result {
 }
 
 async fn update_script(mut req: Request<Context>) -> tide::Result {
-    let script = req.body_json::<Script>().await?;
+    let script = req.body_json::<JsonScript>().await?;
     tracing::debug!("Update script: {:?}", script);
 
     let (tx, rx) = oneshot::channel();
@@ -260,7 +267,7 @@ async fn update_script(mut req: Request<Context>) -> tide::Result {
 }
 
 async fn delete_script(mut req: Request<Context>) -> tide::Result {
-    let name = req.body_json::<ScriptName>().await?;
+    let name = req.body_json::<JsonScriptName>().await?;
     tracing::debug!("Delete script: {:?}", name);
 
     let (tx, rx) = oneshot::channel();

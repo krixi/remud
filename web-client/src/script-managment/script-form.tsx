@@ -11,7 +11,7 @@ import "prismjs/themes/prism-tomorrow.css";
 import { useEditable } from "use-editable";
 import { CompileError, Script, Trigger } from "../models/scripts-api";
 import { useScriptsApi } from "../hooks/use-scripts-api";
-import { ScriptAPIBaseURL } from "../env";
+import { ScriptApiBaseUrl } from "../env";
 import { useHistory } from "react-router-dom";
 
 export interface ScriptFormProps {
@@ -21,7 +21,7 @@ export interface ScriptFormProps {
 
 export const ScriptForm: React.FC<ScriptFormProps> = ({ isCreate, script }) => {
   const history = useHistory();
-  const { upsert, compile, remove } = useScriptsApi(ScriptAPIBaseURL);
+  const { upsert, compile, remove } = useScriptsApi(ScriptApiBaseUrl());
   const [name, setName] = useState("");
   const [trigger, setTrigger] = useState<Trigger>(Trigger.Say);
   const [code, setCode] = useState("");

@@ -261,7 +261,7 @@ impl GameWorld {
         scripting::actions::read_script(&*self.world.read().unwrap(), name)
     }
 
-    pub fn read_all_scripts(&mut self) -> Vec<Script> {
+    pub fn read_all_scripts(&mut self) -> Vec<(Script, Option<ParseError>)> {
         scripting::actions::read_all_scripts(self.world.write().unwrap().deref_mut())
     }
 
