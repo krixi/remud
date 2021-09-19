@@ -12,7 +12,7 @@ use crate::{
     engine::db::{HookRow, ObjectRow},
     world::{
         action,
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
+        scripting::{ScriptHook, ScriptHooks},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -161,28 +161,15 @@ async fn load_player_scripts(
 
     while let Some(hook_row) = results.try_next().await? {
         let mut world = world.write().unwrap();
-        let pre = match hook_row.kind.as_str() {
-            "pre" => true,
-            "post" => false,
-            _ => bail!("Unknown kind field for player script hook: {:?}", hook_row),
-        };
 
         let hook = ScriptHook::try_from(hook_row)?;
 
-        if pre {
-            if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(player) {
-                hooks.list.push(hook)
-            } else {
-                world
-                    .entity_mut(player)
-                    .insert(PreEventScriptHooks { list: vec![hook] });
-            }
-        } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(player) {
+        if let Some(mut hooks) = world.get_mut::<ScriptHooks>(player) {
             hooks.list.push(hook)
         } else {
             world
                 .entity_mut(player)
-                .insert(PostEventScriptHooks { list: vec![hook] });
+                .insert(ScriptHooks { list: vec![hook] });
         }
     }
 

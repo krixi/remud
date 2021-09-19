@@ -3,6 +3,7 @@ mod modules;
 
 use std::{
     collections::HashMap,
+    convert::TryFrom,
     fmt,
     sync::{Arc, RwLock},
 };
@@ -13,9 +14,10 @@ use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rhai::{plugin::*, ParseError, AST};
 use strum::EnumString;
+use thiserror::Error;
 
 use crate::world::{
-    action::ActionEvent,
+    action::Action,
     scripting::{
         actions::{run_pre_script, run_script},
         modules::{event_api, world_api},
@@ -58,15 +60,21 @@ impl Scripts {
 
 #[derive(Default, Debug)]
 pub struct ScriptRuns {
-    pub runs: Vec<(ActionEvent, Vec<ScriptRun>)>,
+    pub runs: Vec<(Action, Vec<ScriptRun>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScriptName(String);
 
-impl From<&str> for ScriptName {
-    fn from(value: &str) -> Self {
-        ScriptName(value.to_string())
+impl TryFrom<String> for ScriptName {
+    type Error = ScriptNameParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.chars().all(|c| c.is_ascii() && !c.is_whitespace()) {
+            Ok(ScriptName(value))
+        } else {
+            Err(ScriptNameParseError {})
+        }
     }
 }
 
@@ -76,10 +84,14 @@ impl fmt::Display for ScriptName {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("Failed to parse script name: must be ASCII and contain no whitespace.")]
+pub struct ScriptNameParseError {}
+
 #[derive(Debug, Clone)]
 pub struct Script {
     pub name: ScriptName,
-    pub trigger: Trigger,
+    pub trigger: TriggerEvent,
     pub code: String,
 }
 
@@ -92,7 +104,7 @@ pub struct CompiledScript {
 #[derive(Bundle)]
 pub struct FailedScript {
     pub script: Script,
-    pub error: ScriptError,
+    pub error: CompilationError,
 }
 
 #[derive(Clone)]
@@ -101,7 +113,7 @@ pub struct ScriptAst {
 }
 
 #[derive(Debug)]
-pub struct ScriptError {
+pub struct CompilationError {
     pub error: ParseError,
 }
 
@@ -112,81 +124,83 @@ pub struct ScriptRun {
 }
 
 #[derive(Debug)]
-pub struct PostEventScriptHooks {
+pub struct ScriptHooks {
     pub list: Vec<ScriptHook>,
 }
 
-impl PostEventScriptHooks {
-    pub fn remove(&mut self, trigger: &Trigger, script: &ScriptName) -> bool {
-        if let Some(pos) = self.list.iter().position(
-            |ScriptHook {
-                 trigger: t,
-                 script: s,
-             }| t == trigger && s == script,
-        ) {
+impl ScriptHooks {
+    pub fn remove(&mut self, hook: &ScriptHook) -> bool {
+        if let Some(pos) = self.list.iter().position(|h| hook == h) {
             self.list.remove(pos);
             true
         } else {
             false
         }
     }
-}
 
-#[derive(Debug)]
-pub struct PreEventScriptHooks {
-    pub list: Vec<ScriptHook>,
-}
-
-impl PreEventScriptHooks {
-    pub fn remove(&mut self, trigger: &Trigger, script: &ScriptName) -> bool {
-        if let Some(pos) = self.list.iter().position(
-            |ScriptHook {
-                 trigger: t,
-                 script: s,
-             }| t == trigger && s == script,
-        ) {
-            self.list.remove(pos);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-trait ScriptHooks: 'static + Send + Sync {
-    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName>;
-}
-
-impl ScriptHooks for PreEventScriptHooks {
-    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName> {
+    fn by_trigger(&self, trigger: ScriptTrigger) -> Vec<ScriptName> {
         self.list
             .iter()
-            .filter(|hook| hook.trigger == action_trigger)
-            .map(|hook| &hook.script)
-            .cloned()
-            .collect_vec()
-    }
-}
-
-impl ScriptHooks for PostEventScriptHooks {
-    fn triggered_by(&self, action_trigger: Trigger) -> Vec<ScriptName> {
-        self.list
-            .iter()
-            .filter(|hook| hook.trigger == action_trigger)
-            .map(|hook| &hook.script)
-            .cloned()
+            .filter(|hook| hook.trigger == trigger)
+            .map(|hook| hook.script.clone())
             .collect_vec()
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptHook {
-    pub trigger: Trigger,
+    pub trigger: ScriptTrigger,
     pub script: ScriptName,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptTrigger {
+    PreEvent(TriggerEvent),
+    PostEvent(TriggerEvent),
+}
+
+impl ScriptTrigger {
+    pub fn kind(&self) -> TriggerKind {
+        match self {
+            ScriptTrigger::PreEvent(_) => TriggerKind::PreEvent,
+            ScriptTrigger::PostEvent(_) => TriggerKind::PostEvent,
+        }
+    }
+
+    pub fn trigger(&self) -> TriggerEvent {
+        match self {
+            ScriptTrigger::PreEvent(trigger) => *trigger,
+            ScriptTrigger::PostEvent(trigger) => *trigger,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
-pub enum Trigger {
+pub enum TriggerKind {
+    PreEvent,
+    PostEvent,
+}
+
+impl TriggerKind {
+    pub fn with_trigger(self, event: TriggerEvent) -> ScriptTrigger {
+        match self {
+            TriggerKind::PreEvent => ScriptTrigger::PreEvent(event),
+            TriggerKind::PostEvent => ScriptTrigger::PostEvent(event),
+        }
+    }
+}
+
+impl fmt::Display for TriggerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TriggerKind::PreEvent => write!(f, "PreEvent"),
+            TriggerKind::PostEvent => write!(f, "PostEvent"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
+pub enum TriggerEvent {
     Drop,
     Emote,
     Exits,
@@ -199,76 +213,76 @@ pub enum Trigger {
     Send,
 }
 
-impl Trigger {
-    fn from_action(value: &ActionEvent) -> Option<Self> {
+impl TriggerEvent {
+    fn from_action(value: &Action) -> Option<Self> {
         match value {
-            ActionEvent::Drop(_) => Some(Trigger::Drop),
-            ActionEvent::Emote(_) => Some(Trigger::Emote),
-            ActionEvent::Exits(_) => Some(Trigger::Exits),
-            ActionEvent::Get(_) => Some(Trigger::Get),
-            ActionEvent::Inventory(_) => Some(Trigger::Inventory),
-            ActionEvent::Login(_) => None,
-            ActionEvent::Logout(_) => None,
-            ActionEvent::Look(_) => Some(Trigger::Look),
-            ActionEvent::LookAt(_) => Some(Trigger::LookAt),
-            ActionEvent::Move(_) => Some(Trigger::Move),
-            ActionEvent::ObjectCreate(_) => None,
-            ActionEvent::ObjectInfo(_) => None,
-            ActionEvent::ObjectRemove(_) => None,
-            ActionEvent::ObjectSetFlags(_) => None,
-            ActionEvent::ObjectUnsetFlags(_) => None,
-            ActionEvent::ObjectUpdateDescription(_) => None,
-            ActionEvent::ObjectUpdateKeywords(_) => None,
-            ActionEvent::ObjectUpdateName(_) => None,
-            ActionEvent::PlayerInfo(_) => None,
-            ActionEvent::RoomCreate(_) => None,
-            ActionEvent::RoomInfo(_) => None,
-            ActionEvent::RoomLink(_) => None,
-            ActionEvent::RoomRemove(_) => None,
-            ActionEvent::RoomUnlink(_) => None,
-            ActionEvent::RoomUpdateDescription(_) => None,
-            ActionEvent::Say(_) => Some(Trigger::Say),
-            ActionEvent::ScriptAttach(_) => None,
-            ActionEvent::ScriptDetach(_) => None,
-            ActionEvent::Send(_) => Some(Trigger::Send),
-            ActionEvent::Shutdown(_) => None,
-            ActionEvent::Teleport(_) => None,
-            ActionEvent::Who(_) => None,
+            Action::Drop(_) => Some(TriggerEvent::Drop),
+            Action::Emote(_) => Some(TriggerEvent::Emote),
+            Action::Exits(_) => Some(TriggerEvent::Exits),
+            Action::Get(_) => Some(TriggerEvent::Get),
+            Action::Inventory(_) => Some(TriggerEvent::Inventory),
+            Action::Login(_) => None,
+            Action::Logout(_) => None,
+            Action::Look(_) => Some(TriggerEvent::Look),
+            Action::LookAt(_) => Some(TriggerEvent::LookAt),
+            Action::Move(_) => Some(TriggerEvent::Move),
+            Action::ObjectCreate(_) => None,
+            Action::ObjectInfo(_) => None,
+            Action::ObjectRemove(_) => None,
+            Action::ObjectSetFlags(_) => None,
+            Action::ObjectUnsetFlags(_) => None,
+            Action::ObjectUpdateDescription(_) => None,
+            Action::ObjectUpdateKeywords(_) => None,
+            Action::ObjectUpdateName(_) => None,
+            Action::PlayerInfo(_) => None,
+            Action::RoomCreate(_) => None,
+            Action::RoomInfo(_) => None,
+            Action::RoomLink(_) => None,
+            Action::RoomRemove(_) => None,
+            Action::RoomUnlink(_) => None,
+            Action::RoomUpdateDescription(_) => None,
+            Action::Say(_) => Some(TriggerEvent::Say),
+            Action::ScriptAttach(_) => None,
+            Action::ScriptDetach(_) => None,
+            Action::Send(_) => Some(TriggerEvent::Send),
+            Action::Shutdown(_) => None,
+            Action::Teleport(_) => None,
+            Action::Who(_) => None,
         }
     }
 }
 
-impl fmt::Display for Trigger {
+impl fmt::Display for TriggerEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Trigger::Drop => write!(f, "Drop"),
-            Trigger::Emote => write!(f, "Emote"),
-            Trigger::Exits => write!(f, "Exits"),
-            Trigger::Get => write!(f, "Get"),
-            Trigger::Inventory => write!(f, "Inventory"),
-            Trigger::Look => write!(f, "Look"),
-            Trigger::LookAt => write!(f, "LookAt"),
-            Trigger::Move => write!(f, "Move"),
-            Trigger::Say => write!(f, "Say"),
-            Trigger::Send => write!(f, "Send"),
+            TriggerEvent::Drop => write!(f, "Drop"),
+            TriggerEvent::Emote => write!(f, "Emote"),
+            TriggerEvent::Exits => write!(f, "Exits"),
+            TriggerEvent::Get => write!(f, "Get"),
+            TriggerEvent::Inventory => write!(f, "Inventory"),
+            TriggerEvent::Look => write!(f, "Look"),
+            TriggerEvent::LookAt => write!(f, "LookAt"),
+            TriggerEvent::Move => write!(f, "Move"),
+            TriggerEvent::Say => write!(f, "Say"),
+            TriggerEvent::Send => write!(f, "Send"),
         }
     }
 }
 
-pub struct PreAction {
-    pub action: ActionEvent,
+pub struct QueuedAction {
+    pub action: Action,
 }
 
-impl PreAction {
-    fn new(action: ActionEvent) -> Self {
-        PreAction { action }
+impl QueuedAction {
+    fn new(action: Action) -> Self {
+        QueuedAction { action }
     }
 }
 
 pub fn script_compiler_system(
     mut commands: Commands,
     engine: Res<ScriptEngine>,
-    uncompiled_scripts: Query<(Entity, &Script), (Without<ScriptAst>, Without<ScriptError>)>,
+    uncompiled_scripts: Query<(Entity, &Script), (Without<ScriptAst>, Without<CompilationError>)>,
 ) {
     for (entity, script) in uncompiled_scripts.iter() {
         match engine.compile(script.code.as_str()) {
@@ -276,23 +290,31 @@ pub fn script_compiler_system(
                 commands.entity(entity).insert(ScriptAst { ast });
             }
             Err(error) => {
-                commands.entity(entity).insert(ScriptError { error });
+                commands.entity(entity).insert(CompilationError { error });
             }
         }
     }
 }
 
-pub fn pre_action_script_system(
-    mut pre_action_reader: EventReader<PreAction>,
-    mut action_writer: EventWriter<ActionEvent>,
+pub fn queued_action_script_system(
+    mut queued_action_reader: EventReader<QueuedAction>,
+    mut action_writer: EventWriter<Action>,
     mut script_runs: ResMut<ScriptRuns>,
     room_query: Query<&Room>,
     location_query: Query<&Location>,
     container_query: Query<&Container>,
     contents_query: Query<&Contents>,
-    hooks_query: Query<&PreEventScriptHooks>,
+    hooks_query: Query<&ScriptHooks>,
 ) {
-    for PreAction { action } in pre_action_reader.iter() {
+    for QueuedAction { action } in queued_action_reader.iter() {
+        let trigger_event = match TriggerEvent::from_action(action) {
+            Some(trigger) => trigger,
+            None => {
+                action_writer.send(action.clone());
+                continue;
+            }
+        };
+
         let enactor = action.enactor();
 
         // Determine the location the action took place. If we can't, we give the action a pass.
@@ -307,7 +329,14 @@ pub fn pre_action_script_system(
         };
 
         // Check if any scripts need to run for this action
-        let runs = get_script_runs(room, action, &hooks_query, &contents_query, &room_query);
+        let runs = get_script_runs(
+            ScriptTrigger::PreEvent(trigger_event),
+            room,
+            &hooks_query,
+            &contents_query,
+            &room_query,
+        );
+
         if runs.is_empty() {
             action_writer.send(action.clone());
         } else {
@@ -317,15 +346,20 @@ pub fn pre_action_script_system(
 }
 
 pub fn post_action_script_system(
-    mut pre_action_reader: EventReader<PreAction>,
+    mut queued_action_reader: EventReader<QueuedAction>,
     mut script_runs: ResMut<ScriptRuns>,
     room_query: Query<&Room>,
     location_query: Query<&Location>,
     container_query: Query<&Container>,
     contents_query: Query<&Contents>,
-    hooks_query: Query<&PostEventScriptHooks>,
+    hooks_query: Query<&ScriptHooks>,
 ) {
-    for PreAction { action } in pre_action_reader.iter() {
+    for QueuedAction { action } in queued_action_reader.iter() {
+        let trigger_event = match TriggerEvent::from_action(action) {
+            Some(trigger) => trigger,
+            None => continue,
+        };
+
         let enactor = action.enactor();
 
         let room = if let Some(room) =
@@ -337,7 +371,13 @@ pub fn post_action_script_system(
             continue;
         };
 
-        let runs = get_script_runs(room, action, &hooks_query, &contents_query, &room_query);
+        let runs = get_script_runs(
+            ScriptTrigger::PostEvent(trigger_event),
+            room,
+            &hooks_query,
+            &contents_query,
+            &room_query,
+        );
 
         if !runs.is_empty() {
             script_runs.runs.push((action.clone(), runs));
@@ -357,7 +397,7 @@ pub fn create_script_engine() -> ScriptEngine {
     }
 }
 
-pub fn run_pre_event_scripts(world: Arc<RwLock<World>>) {
+pub fn run_pre_action_scripts(world: Arc<RwLock<World>>) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
@@ -381,14 +421,14 @@ pub fn run_pre_event_scripts(world: Arc<RwLock<World>>) {
             world
                 .write()
                 .unwrap()
-                .get_resource_mut::<Events<ActionEvent>>()
+                .get_resource_mut::<Events<Action>>()
                 .unwrap()
                 .send(event);
         }
     });
 }
 
-pub fn run_event_scripts(world: Arc<RwLock<World>>) {
+pub fn run_post_action_scripts(world: Arc<RwLock<World>>) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
@@ -432,57 +472,55 @@ fn action_room(
     }
 }
 
-fn get_script_runs<Hooks: ScriptHooks>(
+fn get_script_runs(
+    trigger: ScriptTrigger,
     room: Entity,
-    action: &ActionEvent,
-    hooks_query: &Query<&Hooks>,
+    hooks_query: &Query<&ScriptHooks>,
     contents_query: &Query<&Contents>,
     room_query: &Query<&Room>,
 ) -> Vec<ScriptRun> {
     let mut runs = Vec::new();
 
-    if let Some(action_trigger) = Trigger::from_action(action) {
-        if let Ok(triggers) = hooks_query.get(room) {
-            for script in triggers.triggered_by(action_trigger) {
+    if let Ok(hooks) = hooks_query.get(room) {
+        for script in hooks.by_trigger(trigger) {
+            runs.push(ScriptRun {
+                entity: room,
+                script,
+            });
+        }
+    }
+
+    let contents = contents_query.get(room).unwrap();
+    for object in &contents.objects {
+        if let Ok(hooks) = hooks_query.get(*object) {
+            for script in hooks.by_trigger(trigger) {
                 runs.push(ScriptRun {
-                    entity: room,
+                    entity: *object,
+                    script,
+                });
+            }
+        }
+    }
+
+    let room = room_query.get(room).unwrap();
+    for player in &room.players {
+        if let Ok(hooks) = hooks_query.get(*player) {
+            for script in hooks.by_trigger(trigger) {
+                runs.push(ScriptRun {
+                    entity: *player,
                     script,
                 });
             }
         }
 
-        let contents = contents_query.get(room).unwrap();
-        for object in &contents.objects {
-            if let Ok(triggers) = hooks_query.get(*object) {
-                for script in triggers.triggered_by(action_trigger) {
+        let contents = contents_query.get(*player).unwrap();
+        for object in contents.objects.iter() {
+            if let Ok(hooks) = hooks_query.get(*object) {
+                for script in hooks.by_trigger(trigger) {
                     runs.push(ScriptRun {
                         entity: *object,
                         script,
-                    });
-                }
-            }
-        }
-
-        let room = room_query.get(room).unwrap();
-        for player in &room.players {
-            if let Ok(triggers) = hooks_query.get(*player) {
-                for script in triggers.triggered_by(action_trigger) {
-                    runs.push(ScriptRun {
-                        entity: *player,
-                        script,
-                    });
-                }
-            }
-
-            let contents = contents_query.get(*player).unwrap();
-            for object in contents.objects.iter() {
-                if let Ok(triggers) = hooks_query.get(*object) {
-                    for script in triggers.triggered_by(action_trigger) {
-                        runs.push(ScriptRun {
-                            entity: *object,
-                            script,
-                        })
-                    }
+                    })
                 }
             }
         }

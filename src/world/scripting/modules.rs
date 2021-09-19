@@ -10,10 +10,10 @@ pub struct Me {
 pub mod event_api {
     use rhai::Dynamic;
 
-    use crate::world::action::ActionEvent;
+    use crate::world::action::Action;
 
     #[rhai_fn(get = "actor", pure)]
-    pub fn get_actor(action_event: &mut ActionEvent) -> Dynamic {
+    pub fn get_actor(action_event: &mut Action) -> Dynamic {
         Dynamic::from(action_event.enactor())
     }
 }
@@ -26,7 +26,7 @@ pub mod world_api {
     use bevy_ecs::prelude::{Entity, World};
     use rhai::Dynamic;
 
-    use crate::world::{action::communicate::Say, scripting::PreAction, types::Named};
+    use crate::world::{action::communicate::Say, scripting::QueuedAction, types::Named};
 
     #[rhai_fn(pure)]
     pub fn get_name(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
@@ -42,9 +42,9 @@ pub mod world_api {
         world
             .write()
             .unwrap()
-            .get_resource_mut::<Events<PreAction>>()
+            .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(PreAction::new(
+            .send(QueuedAction::new(
                 Say {
                     entity: who,
                     message,

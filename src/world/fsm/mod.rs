@@ -33,7 +33,7 @@ pub struct StateMachine {
     current: StateId,
 }
 impl StateMachine {
-    pub fn new() -> StateMachineBuilder {
+    pub fn builder() -> StateMachineBuilder {
         StateMachineBuilder::default()
     }
 

@@ -24,7 +24,7 @@ use crate::{
     },
     web::{Script, ScriptName, WebMessage, WebRequest, WebResponse},
     world::{
-        action::{observe::Look, parse, system::Login, ActionEvent},
+        action::{observe::Look, parse, system::Login, Action},
         GameWorld,
     },
     ClientId,
@@ -357,10 +357,10 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(ActionEvent::from(Login { entity: player }))
+                        .player_action(Action::from(Login { entity: player }))
                         .await;
                     self.game_world
-                        .player_action(ActionEvent::from(Look {
+                        .player_action(Action::from(Look {
                             entity: player,
                             direction: None,
                         }))
@@ -408,10 +408,10 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(ActionEvent::from(Login { entity: player }))
+                        .player_action(Action::from(Login { entity: player }))
                         .await;
                     self.game_world
-                        .player_action(ActionEvent::from(Look {
+                        .player_action(Action::from(Look {
                             entity: player,
                             direction: None,
                         }))

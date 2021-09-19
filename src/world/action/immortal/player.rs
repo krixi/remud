@@ -2,11 +2,11 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 
 use crate::{
-    event_from_action,
+    into_action,
     text::Tokenizer,
     world::{
-        action::ActionEvent,
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
+        action::Action,
+        scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
             player::{Messages, Players},
@@ -18,11 +18,11 @@ use crate::{
 
 // Valid shapes:
 // player <name> info - displays information about the player
-pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_player(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(name) = tokenizer.next() {
         if let Some(token) = tokenizer.next() {
             match token {
-                "info" => Ok(ActionEvent::from(PlayerInfo {
+                "info" => Ok(Action::from(PlayerInfo {
                     entity: player,
                     name: name.to_string(),
                 })),
@@ -42,23 +42,18 @@ pub struct PlayerInfo {
     pub name: String,
 }
 
-event_from_action!(PlayerInfo);
+into_action!(PlayerInfo);
 
 pub fn player_info_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     players: Res<Players>,
-    player_query: Query<(
-        &Contents,
-        &Location,
-        Option<&PreEventScriptHooks>,
-        Option<&PostEventScriptHooks>,
-    )>,
+    player_query: Query<(&Contents, &Location, Option<&ScriptHooks>)>,
     room_query: Query<&Room>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::PlayerInfo(PlayerInfo { entity, name }) = event {
+    for action in action_reader.iter() {
+        if let Action::PlayerInfo(PlayerInfo { entity, name }) = action {
             let player = if let Some(entity) = players.by_name(name) {
                 entity
             } else {
@@ -68,7 +63,7 @@ pub fn player_info_system(
                 continue;
             };
 
-            let (contents, location, pre_hooks, post_hooks) = player_query.get(player).unwrap();
+            let (contents, location, hooks) = player_query.get(player).unwrap();
             let room = room_query.get(location.room).unwrap();
 
             let mut message = format!("Player {}", name);
@@ -89,27 +84,16 @@ pub fn player_info_system(
                 .for_each(|(id, name)| {
                     message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
                 });
-            if let Some(PreEventScriptHooks { list }) = pre_hooks {
-                message.push_str("\r\n  pre-event hooks:");
+            message.push_str("\r\n  script hooks:");
+            if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");
                 }
                 for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                    message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
             } else {
-                message.push_str("\r\n  pre-event hooks: none");
-            }
-            if let Some(PostEventScriptHooks { list }) = post_hooks {
-                message.push_str("\r\n  post-event hooks:");
-                if list.is_empty() {
-                    message.push_str(" none");
-                }
-                for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
-                }
-            } else {
-                message.push_str("\r\n  post-event hooks: none");
+                message.push_str(" none");
             }
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {

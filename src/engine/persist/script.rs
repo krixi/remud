@@ -4,23 +4,21 @@ use sqlx;
 use crate::{
     engine::persist::Persist,
     world::{
-        scripting::{ScriptName, Trigger},
+        scripting::{ScriptName, ScriptTrigger},
         types::Id,
     },
 };
 
 pub struct Attach {
     target: Id,
-    pre: bool,
     script: ScriptName,
-    trigger: Trigger,
+    trigger: ScriptTrigger,
 }
 
 impl Attach {
-    pub fn new(target: Id, pre: bool, script: ScriptName, trigger: Trigger) -> Box<Self> {
+    pub fn new(target: Id, script: ScriptName, trigger: ScriptTrigger) -> Box<Self> {
         Box::new(Attach {
             target,
-            pre,
             script,
             trigger,
         })
@@ -30,16 +28,15 @@ impl Attach {
 #[async_trait]
 impl Persist for Attach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        let kind = if self.pre { "pre" } else { "post" };
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
                 "INSERT INTO player_scripts (player_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }
@@ -48,9 +45,9 @@ impl Persist for Attach {
                 "INSERT INTO object_scripts (object_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }
@@ -59,9 +56,9 @@ impl Persist for Attach {
                     "INSERT INTO room_scripts (room_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }
@@ -103,16 +100,14 @@ impl Persist for Create {
 
 pub struct Detach {
     target: Id,
-    pre: bool,
     script: ScriptName,
-    trigger: Trigger,
+    trigger: ScriptTrigger,
 }
 
 impl Detach {
-    pub fn new(target: Id, pre: bool, script: ScriptName, trigger: Trigger) -> Box<Self> {
+    pub fn new(target: Id, script: ScriptName, trigger: ScriptTrigger) -> Box<Self> {
         Box::new(Detach {
             target,
-            pre,
             script,
             trigger,
         })
@@ -122,16 +117,15 @@ impl Detach {
 #[async_trait]
 impl Persist for Detach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        let kind = if self.pre { "pre" } else { "post" };
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
                 "DELETE FROM player_scripts WHERE player_id = ? AND kind = ? AND script = ? AND trigger = ?",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }
@@ -140,9 +134,9 @@ impl Persist for Detach {
                 "DELETE FROM object_scripts WHERE object_id = ? AND kind = ? AND script = ? AND trigger = ?",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }
@@ -151,9 +145,9 @@ impl Persist for Detach {
                 "DELETE FROM room_scripts WHERE room_id = ? AND kind = ? AND script = ? AND trigger = ?",
                 )
                 .bind(id.to_string())
-                .bind(kind)
+                .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.to_string())
+                .bind(self.trigger.trigger().to_string())
                 .execute(pool)
                 .await?;
             }

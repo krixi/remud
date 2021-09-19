@@ -44,6 +44,8 @@ pub enum WebResponse {
 pub enum Error {
     #[error("invalid trigger")]
     BadTrigger,
+    #[error("invalid script name")]
+    BadScriptName,
     #[error("duplicate name")]
     DuplicateName,
     #[error("script not found")]
@@ -54,6 +56,7 @@ impl Error {
     fn status(&self) -> StatusCode {
         match self {
             Error::BadTrigger => StatusCode::BadRequest,
+            Error::BadScriptName => StatusCode::BadRequest,
             Error::DuplicateName => StatusCode::Conflict,
             Error::ScriptNotFound => StatusCode::NotFound,
         }

@@ -3,9 +3,9 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    event_from_action,
+    into_action,
     world::{
-        action::ActionEvent,
+        action::Action,
         types::{
             player::{Messages, Player},
             room::Room,
@@ -19,16 +19,16 @@ pub struct Login {
     pub entity: Entity,
 }
 
-event_from_action!(Login);
+into_action!(Login);
 
 pub fn login_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     player_query: Query<(&Named, &Location), With<Player>>,
     room_query: Query<&Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Login(Login { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::Login(Login { entity }) = action {
             let (name, room) = player_query
                 .get(*entity)
                 .map(|(named, location)| (named.name.as_str(), location.room))
@@ -59,16 +59,16 @@ pub struct Logout {
     pub entity: Entity,
 }
 
-event_from_action!(Logout);
+into_action!(Logout);
 
 pub fn logout_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     player_query: Query<(&Named, &Location), With<Player>>,
     room_query: Query<&Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Logout(Logout { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::Logout(Logout { entity }) = action {
             let (name, room) = player_query
                 .get(*entity)
                 .map(|(named, location)| (named.name.as_str(), location.room))
@@ -99,11 +99,11 @@ pub struct Shutdown {
     pub entity: Entity,
 }
 
-event_from_action!(Shutdown);
+into_action!(Shutdown);
 
-pub fn shutdown_system(mut events: EventReader<ActionEvent>, mut config: ResMut<Configuration>) {
-    for event in events.iter() {
-        if let ActionEvent::Shutdown(Shutdown { .. }) = event {
+pub fn shutdown_system(mut action_reader: EventReader<Action>, mut config: ResMut<Configuration>) {
+    for action in action_reader.iter() {
+        if let Action::Shutdown(Shutdown { .. }) = action {
             config.shutdown = true
         }
     }

@@ -9,7 +9,7 @@ use sqlx::{Row, SqlitePool};
 use crate::{
     engine::db::{ExitRow, HookRow, ObjectRow, RoomRow, ScriptRow},
     world::{
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, Script, ScriptHook, Scripts},
+        scripting::{Script, ScriptHook, ScriptHooks, Scripts},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectId, Objects},
@@ -214,28 +214,14 @@ async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
         .fetch(pool);
 
         while let Some(hook_row) = results.try_next().await? {
-            let pre = match hook_row.kind.as_str() {
-                "pre" => true,
-                "post" => false,
-                _ => bail!("Unknown kind field for room script hook: {:?}", hook_row),
-            };
-
             let hook = ScriptHook::try_from(hook_row)?;
 
-            if pre {
-                if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(room) {
-                    hooks.list.push(hook)
-                } else {
-                    world
-                        .entity_mut(room)
-                        .insert(PreEventScriptHooks { list: vec![hook] });
-                }
-            } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(room) {
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(room) {
                 hooks.list.push(hook)
             } else {
                 world
                     .entity_mut(room)
-                    .insert(PostEventScriptHooks { list: vec![hook] });
+                    .insert(ScriptHooks { list: vec![hook] });
             }
         }
     }
@@ -264,28 +250,14 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
         .fetch(pool);
 
         while let Some(hook_row) = results.try_next().await? {
-            let pre = match hook_row.kind.as_str() {
-                "pre" => true,
-                "post" => false,
-                _ => bail!("Unknown kind field for object script hook: {:?}", hook_row),
-            };
-
             let hook = ScriptHook::try_from(hook_row)?;
 
-            if pre {
-                if let Some(mut hooks) = world.get_mut::<PreEventScriptHooks>(object) {
-                    hooks.list.push(hook)
-                } else {
-                    world
-                        .entity_mut(object)
-                        .insert(PreEventScriptHooks { list: vec![hook] });
-                }
-            } else if let Some(mut hooks) = world.get_mut::<PostEventScriptHooks>(object) {
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
                 hooks.list.push(hook)
             } else {
                 world
                     .entity_mut(object)
-                    .insert(PostEventScriptHooks { list: vec![hook] });
+                    .insert(ScriptHooks { list: vec![hook] });
             }
         }
     }

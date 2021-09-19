@@ -4,10 +4,10 @@ use crate::{
     engine::persist::{self, Updates},
     web,
     world::{
-        action::ActionEvent,
+        action::Action,
         scripting::{
-            CompiledScript, FailedScript, Script, ScriptAst, ScriptEngine, ScriptError, ScriptName,
-            Scripts,
+            CompilationError, CompiledScript, FailedScript, Script, ScriptAst, ScriptEngine,
+            ScriptName, Scripts,
         },
     },
 };
@@ -44,7 +44,7 @@ pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseEr
                 .spawn()
                 .insert_bundle(FailedScript {
                     script: script.clone(),
-                    error: ScriptError {
+                    error: CompilationError {
                         error: error.clone(),
                     },
                 })
@@ -97,12 +97,7 @@ pub fn read_all_scripts(world: &mut World) -> Vec<Script> {
     scripts
 }
 
-pub fn run_script(
-    world: Arc<RwLock<World>>,
-    event: &ActionEvent,
-    entity: Entity,
-    script: ScriptName,
-) {
+pub fn run_script(world: Arc<RwLock<World>>, event: &Action, entity: Entity, script: ScriptName) {
     let script = {
         if let Some(script) = world
             .read()
@@ -166,7 +161,7 @@ pub fn run_script(
 
 pub fn run_pre_script(
     world: Arc<RwLock<World>>,
-    event: &ActionEvent,
+    event: &Action,
     entity: Entity,
     script: ScriptName,
 ) -> bool {
@@ -253,7 +248,7 @@ pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseEr
                     script: script.clone(),
                     ast: ScriptAst { ast },
                 })
-                .remove::<ScriptError>();
+                .remove::<CompilationError>();
             None
         }
         Err(error) => {
@@ -261,7 +256,7 @@ pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseEr
                 .entity_mut(script_entity)
                 .insert_bundle(FailedScript {
                     script: script.clone(),
-                    error: ScriptError {
+                    error: CompilationError {
                         error: error.clone(),
                     },
                 })

@@ -4,10 +4,10 @@ use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, Updates},
-    event_from_action,
+    into_action,
     text::Tokenizer,
     world::{
-        action::ActionEvent,
+        action::Action,
         types::{
             object::ObjectFlags, player::Messages, room::Room, Container, Contents, Flags, Id,
             Keywords, Location, Named,
@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub fn parse_drop(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_drop(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
     if tokenizer.rest().is_empty() {
         return Err("Drop what?".to_string());
     }
@@ -26,7 +26,7 @@ pub fn parse_drop(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, S
         .map(ToString::to_string)
         .collect_vec();
 
-    Ok(ActionEvent::from(Drop {
+    Ok(Action::from(Drop {
         entity: player,
         keywords,
     }))
@@ -38,19 +38,19 @@ pub struct Drop {
     pub keywords: Vec<String>,
 }
 
-event_from_action!(Drop);
+into_action!(Drop);
 
 pub fn drop_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     mut dropping_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
     mut object_query: Query<(&Id, &Named, &Keywords)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Drop(Drop { entity, keywords }) = event {
+    for action in action_reader.iter() {
+        if let Action::Drop(Drop { entity, keywords }) = action {
             // Find entity to drop in contents of dropping entity, if it exists. Grab some other data as well.
             let (entity_id, room_entity, pos) =
                 if let Ok((id, location, contents)) = dropping_query.get_mut(*entity) {
@@ -127,7 +127,7 @@ pub fn drop_system(
     }
 }
 
-pub fn parse_get(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_get(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
     if tokenizer.rest().is_empty() {
         return Err("Get what?".to_string());
     }
@@ -138,7 +138,7 @@ pub fn parse_get(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, St
         .map(ToString::to_string)
         .collect_vec();
 
-    Ok(ActionEvent::from(Get {
+    Ok(Action::from(Get {
         entity: player,
         keywords,
     }))
@@ -150,11 +150,11 @@ pub struct Get {
     pub keywords: Vec<String>,
 }
 
-event_from_action!(Get);
+into_action!(Get);
 
 pub fn get_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     mut getting_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
     mut object_query: Query<(&Id, &Named, &Keywords)>,
@@ -162,8 +162,8 @@ pub fn get_system(
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Get(Get { entity, keywords }) = event {
+    for action in action_reader.iter() {
+        if let Action::Get(Get { entity, keywords }) = action {
             // Get the room that entity is in.
             let (entity_id, room_entity) =
                 if let Ok((id, location, _)) = getting_query.get_mut(*entity) {
@@ -273,16 +273,16 @@ pub struct Inventory {
     pub entity: Entity,
 }
 
-event_from_action!(Inventory);
+into_action!(Inventory);
 
 pub fn inventory_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     inventory_query: Query<&Contents>,
     object_query: Query<&Named>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Inventory(Inventory { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::Inventory(Inventory { entity }) = action {
             let mut message = "You have".to_string();
 
             let contents = if let Ok(contents) = inventory_query.get(*entity) {

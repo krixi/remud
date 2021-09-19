@@ -4,17 +4,17 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
-use crate::world::fsm::states::{ChaseState, WanderState};
-use crate::world::fsm::{StateId, StateMachine};
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
-    event_from_action,
+    into_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{
-            ActionEvent, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
+        action::{Action, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME},
+        fsm::{
+            states::{ChaseState, WanderState},
+            StateId, StateMachine,
         },
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
+        scripting::{ScriptHook, ScriptHooks},
         types::{
             self,
             object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
@@ -32,10 +32,10 @@ use crate::{
 // object <id> short - sets an object's short description
 // object <id> long - sets an object's long description
 // object <id> remove - removes an object
-pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(token) = tokenizer.next() {
         match token {
-            "new" => Ok(ActionEvent::from(ObjectCreate { entity: player })),
+            "new" => Ok(Action::from(ObjectCreate { entity: player })),
             maybe_id => {
                 let id = match ObjectId::from_str(maybe_id) {
                     Ok(id) => id,
@@ -44,7 +44,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
 
                 if let Some(token) = tokenizer.next() {
                     match token {
-                        "info" => Ok(ActionEvent::from(ObjectInfo {entity: player, id })),
+                        "info" => Ok(Action::from(ObjectInfo {entity: player, id })),
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a comma separated list of keywords.".to_string())
@@ -55,7 +55,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
-                                Ok(ActionEvent::from(ObjectUpdateKeywords {
+                                Ok(Action::from(ObjectUpdateKeywords {
                                     entity: player,
                                     id,
                                     keywords,
@@ -66,26 +66,26 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a long description.".to_string())
                             } else {
-                                Ok(ActionEvent::from(ObjectUpdateDescription {
+                                Ok(Action::from(ObjectUpdateDescription {
                                     entity: player,
                                     id,
                                     description: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
-                        "remove" => Ok(ActionEvent::from(ObjectRemove { entity: player, id })),
+                        "remove" => Ok(Action::from(ObjectRemove { entity: player, id })),
                         "set" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(ActionEvent::from(ObjectSetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(Action::from(ObjectSetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
                         "name" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a short description.".to_string())
                             } else {
-                                Ok(ActionEvent::from(ObjectUpdateName {
+                                Ok(Action::from(ObjectUpdateName {
                                     entity: player,
                                     id,
                                     name: tokenizer.rest().to_string(),
@@ -96,7 +96,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(ActionEvent::from(ObjectUnsetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(Action::from(ObjectUnsetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
                             }
                         }
                         _ => Err("Enter a valid object subcommand: desc, info, keywords, name, remove, set, or unset."
@@ -117,19 +117,19 @@ pub struct ObjectCreate {
     pub entity: Entity,
 }
 
-event_from_action!(ObjectCreate);
+into_action!(ObjectCreate);
 
 pub fn object_create_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectCreate(ObjectCreate { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectCreate(ObjectCreate { entity }) = action {
             let room_entity = player_query
                 .get(*entity)
                 .map(|location| location.room)
@@ -156,13 +156,13 @@ pub fn object_create_system(
                 })
                 .insert(Location { room: room_entity })
                 // TODO: this is how to add a state machine for now, until
-                // .insert(
-                //     StateMachine::new()
-                //         .with_state(StateId::Wander, WanderState::default())
-                //         .with_state(StateId::Chase, ChaseState::default())
-                //         .build()
-                //         .unwrap(),
-                // )
+                .insert(
+                    StateMachine::builder()
+                        .with_state(StateId::Wander, WanderState::default())
+                        .with_state(StateId::Chase, ChaseState::default())
+                        .build()
+                        .unwrap(),
+                )
                 .id();
 
             let room_id = {
@@ -191,10 +191,10 @@ pub struct ObjectInfo {
     pub id: ObjectId,
 }
 
-event_from_action!(ObjectInfo);
+into_action!(ObjectInfo);
 
 pub fn object_info_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     object_query: Query<(
         &Object,
@@ -204,15 +204,14 @@ pub fn object_info_system(
         &Description,
         Option<&Container>,
         Option<&Location>,
-        Option<&PreEventScriptHooks>,
-        Option<&PostEventScriptHooks>,
+        Option<&ScriptHooks>,
     )>,
     room_query: Query<&Room>,
     player_query: Query<&Named, With<Player>>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectInfo(ObjectInfo { entity, id }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectInfo(ObjectInfo { entity, id }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -222,17 +221,8 @@ pub fn object_info_system(
                 continue;
             };
 
-            let (
-                object,
-                flags,
-                keywords,
-                named,
-                description,
-                container,
-                location,
-                pre_hooks,
-                post_hooks,
-            ) = object_query.get(object_entity).unwrap();
+            let (object, flags, keywords, named, description, container, location, hooks) =
+                object_query.get(object_entity).unwrap();
 
             let mut message = format!("Object {}", object.id);
             message.push_str("\r\n  name: ");
@@ -257,27 +247,16 @@ pub fn object_info_system(
                     message.push_str(room.id.to_string().as_str());
                 }
             }
-            if let Some(PreEventScriptHooks { list }) = pre_hooks {
-                message.push_str("\r\n  pre-event hooks:");
+            message.push_str("\r\n  script hooks:");
+            if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");
                 }
                 for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                    message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
             } else {
-                message.push_str("\r\n  pre-event hooks: none");
-            }
-            if let Some(PostEventScriptHooks { list }) = post_hooks {
-                message.push_str("\r\n  post-event hooks:");
-                if list.is_empty() {
-                    message.push_str(" none");
-                }
-                for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
-                }
-            } else {
-                message.push_str("\r\n  post-event hooks: none");
+                message.push_str(" none");
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
@@ -294,17 +273,17 @@ pub struct ObjectUnsetFlags {
     pub flags: Vec<String>,
 }
 
-event_from_action!(ObjectUnsetFlags);
+into_action!(ObjectUnsetFlags);
 
 pub fn object_clear_flags_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<(&Object, &mut types::Flags)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -348,21 +327,21 @@ pub struct ObjectUpdateDescription {
     pub description: String,
 }
 
-event_from_action!(ObjectUpdateDescription);
+into_action!(ObjectUpdateDescription);
 
 pub fn object_update_description_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<(&Object, &mut Description)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectUpdateDescription(ObjectUpdateDescription {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateDescription(ObjectUpdateDescription {
             entity,
             id,
             description,
-        }) = event
+        }) = action
         {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
@@ -398,21 +377,21 @@ pub struct ObjectUpdateKeywords {
     pub keywords: Vec<String>,
 }
 
-event_from_action!(ObjectUpdateKeywords);
+into_action!(ObjectUpdateKeywords);
 
 pub fn object_update_keywords_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<(&Object, &mut Keywords)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectUpdateKeywords(ObjectUpdateKeywords {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
             entity,
             id,
             keywords,
-        }) = event
+        }) = action
         {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
@@ -447,17 +426,17 @@ pub struct ObjectUpdateName {
     pub name: String,
 }
 
-event_from_action!(ObjectUpdateName);
+into_action!(ObjectUpdateName);
 
 pub fn object_update_name_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<(&Object, &mut Named)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectUpdateName(ObjectUpdateName { entity, id, name }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateName(ObjectUpdateName { entity, id, name }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -490,11 +469,11 @@ pub struct ObjectRemove {
     pub id: ObjectId,
 }
 
-event_from_action!(ObjectRemove);
+into_action!(ObjectRemove);
 
 pub fn object_remove_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
     container_query: Query<&Container>,
@@ -502,8 +481,8 @@ pub fn object_remove_system(
     mut contents_query: Query<&mut Contents>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectRemove(ObjectRemove { entity, id }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectRemove(ObjectRemove { entity, id }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -547,17 +526,17 @@ pub struct ObjectSetFlags {
     pub flags: Vec<String>,
 }
 
-event_from_action!(ObjectSetFlags);
+into_action!(ObjectSetFlags);
 
 pub fn object_set_flags_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<(&Object, &mut types::Flags)>,
     mut messages: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::ObjectSetFlags(ObjectSetFlags { entity, id, flags }) = event {
+    for action in action_reader.iter() {
+        if let Action::ObjectSetFlags(ObjectSetFlags { entity, id, flags }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {

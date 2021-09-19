@@ -21,15 +21,15 @@ use crate::{
                     object_clear_flags_system, object_create_system, object_info_system,
                     object_remove_system, object_set_flags_system,
                     object_update_description_system, object_update_keywords_system,
-                    object_update_name_system, ObjectCreate, ObjectInfo, ObjectRemove,
-                    ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
+                    object_update_name_system, parse_object, ObjectCreate, ObjectInfo,
+                    ObjectRemove, ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
                     ObjectUpdateKeywords, ObjectUpdateName,
                 },
-                player::{player_info_system, PlayerInfo},
+                player::{parse_player, player_info_system, PlayerInfo},
                 room::{
-                    room_create_system, room_info_system, room_link_system, room_remove_system,
-                    room_unlink_system, room_update_description_system, RoomCreate, RoomInfo,
-                    RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
+                    parse_room, room_create_system, room_info_system, room_link_system,
+                    room_remove_system, room_unlink_system, room_update_description_system,
+                    RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
                 },
                 script::{
                     parse_script, script_attach_system, script_detach_system, ScriptAttach,
@@ -52,11 +52,11 @@ use crate::{
 };
 
 #[macro_export]
-macro_rules! event_from_action {
+macro_rules! into_action {
     ($action:tt) => {
-        impl From<$action> for ActionEvent {
+        impl From<$action> for Action {
             fn from(value: $action) -> Self {
-                ActionEvent::$action(value)
+                Action::$action(value)
             }
         }
     };
@@ -68,7 +68,7 @@ pub const DEFAULT_OBJECT_NAME: &str = "an object";
 pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
 #[derive(Debug, Clone)]
-pub enum ActionEvent {
+pub enum Action {
     Drop(Drop),
     Emote(Emote),
     Exits(Exits),
@@ -103,41 +103,41 @@ pub enum ActionEvent {
     Who(Who),
 }
 
-impl ActionEvent {
+impl Action {
     pub fn enactor(&self) -> Entity {
         match self {
-            ActionEvent::Drop(action) => action.entity,
-            ActionEvent::Emote(action) => action.entity,
-            ActionEvent::Exits(action) => action.entity,
-            ActionEvent::Get(action) => action.entity,
-            ActionEvent::Inventory(action) => action.entity,
-            ActionEvent::Login(action) => action.entity,
-            ActionEvent::Logout(action) => action.entity,
-            ActionEvent::Look(action) => action.entity,
-            ActionEvent::LookAt(action) => action.entity,
-            ActionEvent::Move(action) => action.entity,
-            ActionEvent::ObjectCreate(action) => action.entity,
-            ActionEvent::ObjectInfo(action) => action.entity,
-            ActionEvent::ObjectRemove(action) => action.entity,
-            ActionEvent::ObjectSetFlags(action) => action.entity,
-            ActionEvent::ObjectUnsetFlags(action) => action.entity,
-            ActionEvent::ObjectUpdateDescription(action) => action.entity,
-            ActionEvent::ObjectUpdateKeywords(action) => action.entity,
-            ActionEvent::ObjectUpdateName(action) => action.entity,
-            ActionEvent::PlayerInfo(action) => action.entity,
-            ActionEvent::RoomCreate(action) => action.entity,
-            ActionEvent::RoomInfo(action) => action.entity,
-            ActionEvent::RoomLink(action) => action.entity,
-            ActionEvent::RoomRemove(action) => action.entity,
-            ActionEvent::RoomUnlink(action) => action.entity,
-            ActionEvent::RoomUpdateDescription(action) => action.entity,
-            ActionEvent::Say(action) => action.entity,
-            ActionEvent::ScriptAttach(action) => action.entity,
-            ActionEvent::ScriptDetach(action) => action.entity,
-            ActionEvent::Send(action) => action.entity,
-            ActionEvent::Shutdown(action) => action.entity,
-            ActionEvent::Teleport(action) => action.entity,
-            ActionEvent::Who(action) => action.entity,
+            Action::Drop(action) => action.entity,
+            Action::Emote(action) => action.entity,
+            Action::Exits(action) => action.entity,
+            Action::Get(action) => action.entity,
+            Action::Inventory(action) => action.entity,
+            Action::Login(action) => action.entity,
+            Action::Logout(action) => action.entity,
+            Action::Look(action) => action.entity,
+            Action::LookAt(action) => action.entity,
+            Action::Move(action) => action.entity,
+            Action::ObjectCreate(action) => action.entity,
+            Action::ObjectInfo(action) => action.entity,
+            Action::ObjectRemove(action) => action.entity,
+            Action::ObjectSetFlags(action) => action.entity,
+            Action::ObjectUnsetFlags(action) => action.entity,
+            Action::ObjectUpdateDescription(action) => action.entity,
+            Action::ObjectUpdateKeywords(action) => action.entity,
+            Action::ObjectUpdateName(action) => action.entity,
+            Action::PlayerInfo(action) => action.entity,
+            Action::RoomCreate(action) => action.entity,
+            Action::RoomInfo(action) => action.entity,
+            Action::RoomLink(action) => action.entity,
+            Action::RoomRemove(action) => action.entity,
+            Action::RoomUnlink(action) => action.entity,
+            Action::RoomUpdateDescription(action) => action.entity,
+            Action::Say(action) => action.entity,
+            Action::ScriptAttach(action) => action.entity,
+            Action::ScriptDetach(action) => action.entity,
+            Action::Send(action) => action.entity,
+            Action::Shutdown(action) => action.entity,
+            Action::Teleport(action) => action.entity,
+            Action::Who(action) => action.entity,
         }
     }
 }
@@ -183,13 +183,13 @@ pub enum Error {
     MissingComponent(Entity, &'static str),
 }
 
-pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
+pub fn parse(player: Entity, input: &str) -> Result<Action, String> {
     if let Some(message) = input.strip_prefix('\'').map(ToString::to_string) {
         if message.is_empty() {
             return Err("Say what?".to_string());
         }
 
-        return Ok(ActionEvent::from(Say {
+        return Ok(Action::from(Say {
             entity: player,
             message,
         }));
@@ -198,7 +198,7 @@ pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
             return Err("Do what?".to_string());
         }
 
-        return Ok(ActionEvent::from(Emote {
+        return Ok(Action::from(Emote {
             entity: player,
             emote,
         }));
@@ -207,46 +207,46 @@ pub fn parse(player: Entity, input: &str) -> Result<ActionEvent, String> {
     let mut tokenizer = Tokenizer::new(input);
     if let Some(token) = tokenizer.next() {
         match token.to_lowercase().as_str() {
-            "down" => Ok(ActionEvent::from(Move {
+            "down" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::Down,
             })),
             "drop" => parse_drop(player, tokenizer),
-            "east" => Ok(ActionEvent::from(Move {
+            "east" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::East,
             })),
-            "exits" => Ok(ActionEvent::from(Exits { entity: player })),
+            "exits" => Ok(Action::from(Exits { entity: player })),
             "get" => parse_get(player, tokenizer),
-            "inventory" => Ok(ActionEvent::from(Inventory { entity: player })),
+            "inventory" => Ok(Action::from(Inventory { entity: player })),
             "look" => parse_look(player, tokenizer),
             "me" => parse_me(player, tokenizer),
-            "north" => Ok(ActionEvent::from(Move {
+            "north" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::North,
             })),
-            "object" => immortal::object::parse(player, tokenizer),
-            "player" => immortal::player::parse(player, tokenizer),
-            "room" => immortal::room::parse(player, tokenizer),
+            "object" => parse_object(player, tokenizer),
+            "player" => parse_player(player, tokenizer),
+            "room" => parse_room(player, tokenizer),
             "say" => parse_say(player, tokenizer),
             "script" => parse_script(player, tokenizer),
             "scripts" => parse_script(player, tokenizer),
             "send" => parse_send(player, tokenizer),
-            "shutdown" => Ok(ActionEvent::from(Shutdown { entity: player })),
-            "south" => Ok(ActionEvent::from(Move {
+            "shutdown" => Ok(Action::from(Shutdown { entity: player })),
+            "south" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::South,
             })),
             "teleport" => parse_teleport(player, tokenizer),
-            "up" => Ok(ActionEvent::from(Move {
+            "up" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::Up,
             })),
-            "west" => Ok(ActionEvent::from(Move {
+            "west" => Ok(Action::from(Move {
                 entity: player,
                 direction: Direction::West,
             })),
-            "who" => Ok(ActionEvent::from(Who { entity: player })),
+            "who" => Ok(Action::from(Who { entity: player })),
             _ => Err("I don't know what that means.".to_string()),
         }
     } else {

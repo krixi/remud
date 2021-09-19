@@ -6,11 +6,11 @@ use crate::engine::persist::UpdateGroup;
 use crate::world::types::Contents;
 use crate::{
     engine::persist::{self, Updates},
-    event_from_action,
+    into_action,
     text::Tokenizer,
     world::{
-        action::{observe::Look, ActionEvent},
-        scripting::PreAction,
+        action::{observe::Look, Action},
+        scripting::QueuedAction,
         types::{
             player::Messages,
             room::{Direction, Room, RoomId, Rooms},
@@ -25,19 +25,19 @@ pub struct Move {
     pub direction: Direction,
 }
 
-event_from_action!(Move);
+into_action!(Move);
 
 pub fn move_system(
-    mut events: EventReader<ActionEvent>,
-    mut pre_events: EventWriter<PreAction>,
+    mut action_reader: EventReader<Action>,
+    mut pre_events: EventWriter<QueuedAction>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut contents_query: Query<&mut Contents>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Move(Move { entity, direction }) = event {
+    for action in action_reader.iter() {
+        if let Action::Move(Move { entity, direction }) = action {
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
                 if let Ok((id, named, location)) = moving_query.get_mut(*entity) {
@@ -149,8 +149,8 @@ pub fn move_system(
                 Id::Player(id) => {
                     // TODO: why is there a * below?
                     updates.queue(persist::player::Room::new(*id, destination_id));
-                    pre_events.send(PreAction {
-                        action: ActionEvent::Look(Look {
+                    pre_events.send(QueuedAction {
+                        action: Action::Look(Look {
                             entity: *entity,
                             direction: None,
                         }),
@@ -169,10 +169,10 @@ pub fn move_system(
     }
 }
 
-pub fn parse_teleport(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_teleport(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(destination) = tokenizer.next() {
         match destination.parse::<RoomId>() {
-            Ok(room_id) => Ok(ActionEvent::from(Teleport {
+            Ok(room_id) => Ok(Action::from(Teleport {
                 entity: player,
                 room_id,
             })),
@@ -189,19 +189,19 @@ pub struct Teleport {
     pub room_id: RoomId,
 }
 
-event_from_action!(Teleport);
+into_action!(Teleport);
 
 pub fn teleport_system(
-    mut events: EventReader<ActionEvent>,
-    mut pre_events: EventWriter<PreAction>,
+    mut action_reader: EventReader<Action>,
+    mut pre_events: EventWriter<QueuedAction>,
     rooms: Res<Rooms>,
     mut updates: ResMut<Updates>,
     mut moving_query: Query<(&Id, &Named, &mut Location)>,
     mut room_query: Query<&mut Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Teleport(Teleport { entity, room_id }) = event {
+    for action in action_reader.iter() {
+        if let Action::Teleport(Teleport { entity, room_id }) = action {
             let destination = if let Some(entity) = rooms.by_id(*room_id) {
                 entity
             } else {
@@ -281,8 +281,8 @@ pub fn teleport_system(
             match id {
                 Id::Player(id) => {
                     updates.queue(persist::player::Room::new(*id, *room_id));
-                    pre_events.send(PreAction {
-                        action: ActionEvent::Look(Look {
+                    pre_events.send(QueuedAction {
+                        action: Action::Look(Look {
                             entity: *entity,
                             direction: None,
                         }),

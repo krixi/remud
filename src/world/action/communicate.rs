@@ -2,10 +2,10 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 
 use crate::{
-    event_from_action,
+    into_action,
     text::Tokenizer,
     world::{
-        action::ActionEvent,
+        action::Action,
         types::{
             player::{Messages, Players},
             room::Room,
@@ -14,11 +14,11 @@ use crate::{
     },
 };
 
-pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
     if tokenizer.rest().is_empty() {
         Err("Do what?".to_string())
     } else {
-        Ok(ActionEvent::from(Emote {
+        Ok(Action::from(Emote {
             entity: player,
             emote: tokenizer.rest().to_string(),
         }))
@@ -31,16 +31,16 @@ pub struct Emote {
     pub emote: String,
 }
 
-event_from_action!(Emote);
+into_action!(Emote);
 
 pub fn emote_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     emoting_query: Query<(&Named, &Location)>,
     mut present_query: Query<&mut Messages>,
     room_query: Query<&Room>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Emote(Emote { entity, emote }) = event {
+    for action in action_reader.iter() {
+        if let Action::Emote(Emote { entity, emote }) = action {
             let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*entity) {
                 (named.name.as_str(), location.room)
             } else {
@@ -66,11 +66,11 @@ pub fn emote_system(
     }
 }
 
-pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
     if tokenizer.rest().is_empty() {
         Err("Say what?".to_string())
     } else {
-        Ok(ActionEvent::from(Say {
+        Ok(Action::from(Say {
             entity: player,
             message: tokenizer.rest().to_string(),
         }))
@@ -83,16 +83,16 @@ pub struct Say {
     pub message: String,
 }
 
-event_from_action!(Say);
+into_action!(Say);
 
 pub fn say_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     saying_query: Query<(&Named, &Location)>,
     mut present_query: Query<&mut Messages>,
     room_query: Query<&Room>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Say(Say { entity, message }) = event {
+    for action in action_reader.iter() {
+        if let Action::Say(Say { entity, message }) = action {
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*entity) {
                 (named.name.as_str(), location.room)
             } else {
@@ -119,12 +119,12 @@ pub fn say_system(
     }
 }
 
-pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(target) = tokenizer.next() {
         if tokenizer.rest().is_empty() {
             Err(format!("Send what to {}?", target))
         } else {
-            Ok(ActionEvent::from(SendMessage {
+            Ok(Action::from(SendMessage {
                 entity: player,
                 recipient: target.to_string(),
                 message: tokenizer.rest().to_string(),
@@ -142,24 +142,24 @@ pub struct SendMessage {
     pub message: String,
 }
 
-impl From<SendMessage> for ActionEvent {
+impl From<SendMessage> for Action {
     fn from(value: SendMessage) -> Self {
-        ActionEvent::Send(value)
+        Action::Send(value)
     }
 }
 
 pub fn send_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     players: Res<Players>,
     saying_query: Query<&Named>,
     mut messages_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::Send(SendMessage {
+    for action in action_reader.iter() {
+        if let Action::Send(SendMessage {
             entity,
             recipient,
             message,
-        }) = event
+        }) = action
         {
             let name = if let Ok(named) = saying_query.get(*entity) {
                 named.name.as_str()

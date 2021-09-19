@@ -23,12 +23,12 @@ use crate::{
     engine::persist::{self, DynUpdate, Updates},
     web,
     world::{
-        action::{register_action_systems, system::Logout, ActionEvent},
+        action::{register_action_systems, system::Logout, Action},
         fsm::system::state_machine_system,
         scripting::{
-            create_script_engine, post_action_script_system, pre_action_script_system,
-            run_event_scripts, run_pre_event_scripts, script_compiler_system, PreAction, Script,
-            ScriptName, ScriptRuns, Trigger,
+            create_script_engine, post_action_script_system, queued_action_script_system,
+            run_post_action_scripts, run_pre_action_scripts, script_compiler_system, QueuedAction,
+            Script, ScriptName, ScriptRuns, TriggerEvent,
         },
         types::{
             player::{Messages, Player, Players},
@@ -64,8 +64,8 @@ impl GameWorld {
         world.insert_resource(create_script_engine());
 
         // Add events
-        add_events::<PreAction>(&mut world, &mut update_schedule);
-        add_events::<ActionEvent>(&mut world, &mut update_schedule);
+        add_events::<QueuedAction>(&mut world, &mut update_schedule);
+        add_events::<Action>(&mut world, &mut update_schedule);
 
         // Create emergency room
         add_void_room(&mut world);
@@ -76,7 +76,7 @@ impl GameWorld {
             .unwrap();
         register_action_systems(update);
 
-        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, pre_action_script_system.system());
+        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, queued_action_script_system.system());
         update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
         update_schedule.add_system_to_stage(
             STAGE_UPDATE,
@@ -100,7 +100,7 @@ impl GameWorld {
         self.pre_event_schedule
             .run(world.write().unwrap().deref_mut());
 
-        run_pre_event_scripts(world.clone());
+        run_pre_action_scripts(world.clone());
 
         self.update_schedule
             .run_once(world.write().unwrap().deref_mut());
@@ -108,7 +108,7 @@ impl GameWorld {
         self.post_event_schedule
             .run(world.write().unwrap().deref_mut());
 
-        run_event_scripts(world);
+        run_post_action_scripts(world);
     }
 
     pub async fn should_shutdown(&self) -> bool {
@@ -120,7 +120,7 @@ impl GameWorld {
     }
 
     pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        self.player_action(ActionEvent::from(Logout { entity: player }))
+        self.player_action(Action::from(Logout { entity: player }))
             .await;
 
         let mut world = self.world.write().unwrap();
@@ -153,7 +153,7 @@ impl GameWorld {
         Ok(())
     }
 
-    pub async fn player_action(&mut self, action: ActionEvent) {
+    pub async fn player_action(&mut self, action: Action) {
         let mut world = self.world.write().unwrap();
 
         match world.get_mut::<Messages>(action.enactor()) {
@@ -167,9 +167,9 @@ impl GameWorld {
         }
 
         world
-            .get_resource_mut::<Events<PreAction>>()
+            .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(PreAction { action });
+            .send(QueuedAction { action });
     }
 
     pub async fn player_online(&self, name: &str) -> bool {
@@ -242,8 +242,9 @@ impl GameWorld {
         trigger: String,
         code: String,
     ) -> Result<Option<ParseError>, web::Error> {
-        let name = ScriptName::from(name.as_str());
-        let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+        let trigger =
+            TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
 
         let script = Script {
             name,
@@ -255,7 +256,7 @@ impl GameWorld {
     }
 
     pub fn read_script(&mut self, name: String) -> Result<Script, web::Error> {
-        let name = ScriptName::from(name.as_str());
+        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
 
         scripting::actions::read_script(&*self.world.read().unwrap(), name)
     }
@@ -270,8 +271,9 @@ impl GameWorld {
         trigger: String,
         code: String,
     ) -> Result<Option<ParseError>, web::Error> {
-        let name = ScriptName::from(name.as_str());
-        let trigger = Trigger::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+        let trigger =
+            TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
 
         let script = Script {
             name,
@@ -283,7 +285,7 @@ impl GameWorld {
     }
 
     pub fn delete_script(&mut self, name: String) -> Result<(), web::Error> {
-        let name = ScriptName::from(name.as_str());
+        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
 
         scripting::actions::delete_script(self.world.write().unwrap().deref_mut(), name)
     }

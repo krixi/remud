@@ -1,7 +1,7 @@
 use crate::world::{
-    action::{communicate::Say, movement::Move, ActionEvent},
+    action::{communicate::Say, movement::Move, Action},
     fsm::{State, StateId, Transition},
-    scripting::PreAction,
+    scripting::QueuedAction,
     types::{
         room::{Direction, Room},
         Location, Named,
@@ -57,9 +57,9 @@ impl State for WanderState {
 
             // if we found one, post the event that will move us there.
             if let Some(exit) = exit.copied() {
-                let mut events = world.get_resource_mut::<Events<PreAction>>().unwrap();
-                events.send(PreAction {
-                    action: ActionEvent::Move(Move {
+                let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
+                events.send(QueuedAction {
+                    action: Action::Move(Move {
                         entity,
                         direction: exit,
                     }),
@@ -97,9 +97,9 @@ impl State for ChaseState {
         self.chasing = Some(player);
 
         // say "i'm gonna get you"
-        let mut events = world.get_resource_mut::<Events<PreAction>>().unwrap();
-        events.send(PreAction {
-            action: ActionEvent::Say(Say {
+        let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
+        events.send(QueuedAction {
+            action: Action::Say(Say {
                 entity,
                 message: format!("I'm gonna get you, {}!", player_name),
             }),
@@ -130,8 +130,7 @@ impl State for ChaseState {
                 .unwrap()
                 .players
                 .iter()
-                .find(|p| **p == self.chasing.unwrap())
-                .is_some()
+                .any(|p| *p == self.chasing.unwrap())
             {
                 player_room = Some(room);
                 self.move_direction = dir;
@@ -153,9 +152,9 @@ impl State for ChaseState {
         // player is still around, follow them if necessary.
         if self.tick_timer > 120 && self.move_direction.is_some() {
             tracing::info!("chasing the player: {:?}", self.move_direction);
-            let mut events = world.get_resource_mut::<Events<PreAction>>().unwrap();
-            events.send(PreAction {
-                action: ActionEvent::Move(Move {
+            let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
+            events.send(QueuedAction {
+                action: Action::Move(Move {
                     entity,
                     direction: self.move_direction.unwrap(),
                 }),

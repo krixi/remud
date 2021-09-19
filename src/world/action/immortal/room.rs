@@ -6,11 +6,11 @@ use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
-    event_from_action,
+    into_action,
     text::Tokenizer,
     world::{
-        action::{ActionEvent, DEFAULT_ROOM_DESCRIPTION},
-        scripting::{PostEventScriptHooks, PreEventScriptHooks, ScriptHook},
+        action::{Action, DEFAULT_ROOM_DESCRIPTION},
+        scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
             player::{Messages, Player},
@@ -28,10 +28,10 @@ use crate::{
 // room desc [description] - sets the description of a room
 // room link [direction] [room ID] - links the current room to another in a given direction (one way)
 // room remove - removes the current room and moves everything in it to the void room
-pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, String> {
+pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
-            "info" => Ok(ActionEvent::from(RoomInfo { entity: player })),
+            "info" => Ok(Action::from(RoomInfo { entity: player })),
             "new" => {
                 let direction = if let Some(direction) = tokenizer.next() {
                     match Direction::from_str(direction) {
@@ -47,7 +47,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                     None
                 };
 
-                Ok(ActionEvent::from(RoomCreate {
+                Ok(Action::from(RoomCreate {
                     entity: player,
                     direction,
                 }))
@@ -56,7 +56,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                 if tokenizer.rest().is_empty() {
                     Err("Enter a description.".to_string())
                 } else {
-                    Ok(ActionEvent::from(RoomUpdateDescription {
+                    Ok(Action::from(RoomUpdateDescription {
                         entity: player,
                         description: tokenizer.rest().to_string(),
                     }))
@@ -80,7 +80,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                             Err(e) => return Err(e.to_string()),
                         };
 
-                        Ok(ActionEvent::from(RoomLink {
+                        Ok(Action::from(RoomLink {
                             entity: player,
                             direction,
                             destination,
@@ -92,7 +92,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                     Err("Enter a direction.".to_string())
                 }
             }
-            "remove" => Ok(ActionEvent::from(RoomRemove { entity: player })),
+            "remove" => Ok(Action::from(RoomRemove { entity: player })),
             "unlink" => {
                 if let Some(direction) = tokenizer.next() {
                     let direction = match Direction::from_str(direction) {
@@ -105,7 +105,7 @@ pub fn parse(player: Entity, mut tokenizer: Tokenizer) -> Result<ActionEvent, St
                         }
                     };
 
-                    Ok(ActionEvent::from(RoomUnlink {
+                    Ok(Action::from(RoomUnlink {
                         entity: player,
                         direction,
                     }))
@@ -129,19 +129,19 @@ pub struct RoomCreate {
     pub direction: Option<Direction>,
 }
 
-event_from_action!(RoomCreate);
+into_action!(RoomCreate);
 
 pub fn room_create_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomCreate(RoomCreate { entity, direction }) = event {
+    for action in action_reader.iter() {
+        if let Action::RoomCreate(RoomCreate { entity, direction }) = action {
             let current_room_entity =
                 if let Ok(room) = player_query.get(*entity).map(|location| location.room) {
                     room
@@ -232,24 +232,18 @@ pub struct RoomInfo {
     pub entity: Entity,
 }
 
-event_from_action!(RoomInfo);
+into_action!(RoomInfo);
 
 pub fn room_info_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     player_query: Query<&Location, With<Player>>,
-    room_query: Query<(
-        &Room,
-        &Description,
-        &Contents,
-        Option<&PreEventScriptHooks>,
-        Option<&PostEventScriptHooks>,
-    )>,
+    room_query: Query<(&Room, &Description, &Contents, Option<&ScriptHooks>)>,
     named_query: Query<&Named>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomInfo(RoomInfo { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::RoomInfo(RoomInfo { entity }) = action {
             let room_entity =
                 if let Ok(room) = player_query.get(*entity).map(|location| location.room) {
                     room
@@ -258,8 +252,7 @@ pub fn room_info_system(
                     continue;
                 };
 
-            let (room, description, contents, pre_hooks, post_hooks) =
-                room_query.get(room_entity).unwrap();
+            let (room, description, contents, hooks) = room_query.get(room_entity).unwrap();
 
             let mut message = format!("Room {}", room.id);
 
@@ -272,7 +265,7 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, _, _, _, _)| (direction, room.id))
+                        .map(|(room, _, _, _)| (direction, room.id))
                         .ok()
                 })
                 .for_each(|(direction, room_id)| {
@@ -295,27 +288,16 @@ pub fn room_info_system(
                 .for_each(|(id, name)| {
                     message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
                 });
-            if let Some(PreEventScriptHooks { list }) = pre_hooks {
-                message.push_str("\r\n  pre-event hooks:");
+            message.push_str("\r\n  script hooks:");
+            if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");
                 }
                 for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
+                    message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
             } else {
-                message.push_str("\r\n  pre-event hooks: none");
-            }
-            if let Some(PostEventScriptHooks { list }) = post_hooks {
-                message.push_str("\r\n  post-event hooks:");
-                if list.is_empty() {
-                    message.push_str(" none");
-                }
-                for ScriptHook { trigger, script } in list.iter() {
-                    message.push_str(format!("\r\n    {} -> {}", trigger, script).as_str());
-                }
-            } else {
-                message.push_str("\r\n  post-event hooks: none");
+                message.push_str(" none");
             }
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {
@@ -332,22 +314,22 @@ pub struct RoomLink {
     pub destination: RoomId,
 }
 
-event_from_action!(RoomLink);
+into_action!(RoomLink);
 
 pub fn room_link_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     rooms: Res<Rooms>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomLink(RoomLink {
+    for action in action_reader.iter() {
+        if let Action::RoomLink(RoomLink {
             entity,
             direction,
             destination,
-        }) = event
+        }) = action
         {
             let to_room_entity = if let Some(room) = rooms.by_id(*destination) {
                 room
@@ -391,20 +373,20 @@ pub struct RoomUpdateDescription {
     pub description: String,
 }
 
-event_from_action!(RoomUpdateDescription);
+into_action!(RoomUpdateDescription);
 
 pub fn room_update_description_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Description)>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomUpdateDescription(RoomUpdateDescription {
+    for action in action_reader.iter() {
+        if let Action::RoomUpdateDescription(RoomUpdateDescription {
             entity,
             description,
-        }) = event
+        }) = action
         {
             let room_entity = player_query
                 .get(*entity)
@@ -431,11 +413,11 @@ pub struct RoomRemove {
     pub entity: Entity,
 }
 
-event_from_action!(RoomRemove);
+into_action!(RoomRemove);
 
 pub fn room_remove_system(
     mut commands: Commands,
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
     mut player_queries: QuerySet<(
@@ -446,8 +428,8 @@ pub fn room_remove_system(
     mut object_query: Query<(&Object, &mut Container)>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomRemove(RoomRemove { entity }) = event {
+    for action in action_reader.iter() {
+        if let Action::RoomRemove(RoomRemove { entity }) = action {
             let room_entity = player_queries
                 .q0()
                 .get(*entity)
@@ -562,17 +544,17 @@ pub struct RoomUnlink {
     pub direction: Direction,
 }
 
-event_from_action!(RoomUnlink);
+into_action!(RoomUnlink);
 
 pub fn room_unlink_system(
-    mut events: EventReader<ActionEvent>,
+    mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
     mut message_query: Query<&mut Messages>,
 ) {
-    for event in events.iter() {
-        if let ActionEvent::RoomUnlink(RoomUnlink { entity, direction }) = event {
+    for action in action_reader.iter() {
+        if let Action::RoomUnlink(RoomUnlink { entity, direction }) = action {
             let room_entity = player_query
                 .get(*entity)
                 .map(|location| location.room)
