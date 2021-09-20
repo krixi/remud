@@ -10,6 +10,11 @@ tags: ["help"]
 As a citizen of CitySix, you interact with the world by issuing commands at your terminal. These commands are described 
 below, organized by function. 
 
+# Attributes
+
+## `stats`
+Displays your vital statistics. 
+
 # Communication
 
 ## `emote <text>` / `; <text>`
