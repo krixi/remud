@@ -8,6 +8,7 @@ use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
+use crate::world::types::{Attributes, Health};
 use crate::{
     engine::db::{HookRow, ObjectRow},
     world::{
@@ -54,6 +55,8 @@ pub async fn load_player(
                     .unwrap()
             });
 
+        let attributes = Attributes::default();
+
         let player = world
             .spawn()
             .insert_bundle(PlayerBundle {
@@ -65,6 +68,8 @@ pub async fn load_player(
                 contents: Contents::default(),
                 messages: Messages::default(),
                 id: Id::Player(id),
+                health: Health::new(attributes),
+                attributes,
             })
             .id();
 

@@ -1,3 +1,4 @@
+pub mod attributes;
 pub mod communicate;
 pub mod immortal;
 pub mod movement;
@@ -8,6 +9,7 @@ pub mod system;
 use bevy_ecs::prelude::*;
 use thiserror::Error;
 
+use crate::world::action::attributes::{parse_stats, stats_system, Stats};
 use crate::{
     text::Tokenizer,
     world::{
@@ -100,6 +102,7 @@ pub enum Action {
     ScriptDetach(ScriptDetach),
     Send(SendMessage),
     Shutdown(Shutdown),
+    Stats(Stats),
     Teleport(Teleport),
     Who(Who),
 }
@@ -138,6 +141,7 @@ impl Action {
             Action::ScriptDetach(action) => action.entity,
             Action::Send(action) => action.entity,
             Action::Shutdown(action) => action.entity,
+            Action::Stats(action) => action.entity,
             Action::Teleport(action) => action.entity,
             Action::Who(action) => action.entity,
         }
@@ -176,6 +180,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(script_detach_system.system());
     stage.add_system(send_system.system().after("look"));
     stage.add_system(shutdown_system.system());
+    stage.add_system(stats_system.system());
     stage.add_system(teleport_system.system());
     stage.add_system(who_system.system());
 }
@@ -234,6 +239,7 @@ pub fn parse(player: Entity, input: &str) -> Result<Action, String> {
             "say" => parse_say(player, tokenizer),
             "script" => parse_script(player, tokenizer),
             "scripts" => parse_script(player, tokenizer),
+            "stats" => parse_stats(player, tokenizer),
             "send" => parse_send(player, tokenizer),
             "shutdown" => Ok(Action::from(Shutdown { entity: player })),
             "south" => Ok(Action::from(Move {

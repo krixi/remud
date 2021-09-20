@@ -78,3 +78,37 @@ pub struct Configuration {
     pub shutdown: bool,
     pub spawn_room: RoomId,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Attributes {
+    pub constitution: f32,
+    pub dexterity: f32,
+    pub intellect: f32,
+    pub strength: f32,
+}
+
+impl Default for Attributes {
+    fn default() -> Self {
+        Attributes {
+            constitution: 10.0,
+            dexterity: 10.0,
+            intellect: 10.0,
+            strength: 10.0,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Health {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl Health {
+    pub fn new(attr: Attributes) -> Self {
+        Health {
+            current: attr.constitution * 5.0,
+            max: attr.constitution * 5.0,
+        }
+    }
+}

@@ -181,8 +181,12 @@ pub fn build_web_server() -> (tide::Server<()>, mpsc::Receiver<WebMessage>) {
 
     let mut app = tide::new();
     app.at("/scripts").nest(scripts);
-    app.at("/docs").serve_dir("./docs/public").unwrap();
-    app.at("/admin").serve_dir("./web-client/build").unwrap();
+    app.at("/docs")
+        .serve_dir("./docs/public")
+        .unwrap_or_else(|_| tracing::warn!("can't find ./docs/public"));
+    app.at("/admin")
+        .serve_dir("./web-client/build")
+        .unwrap_or_else(|_| tracing::warn!("can't find ./web-client/build"));
 
     (app, rx)
 }

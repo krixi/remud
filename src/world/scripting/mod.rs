@@ -247,6 +247,7 @@ impl TriggerEvent {
             Action::ScriptDetach(_) => None,
             Action::Send(_) => Some(TriggerEvent::Send),
             Action::Shutdown(_) => None,
+            Action::Stats(_) => None,
             Action::Teleport(_) => None,
             Action::Who(_) => None,
         }
