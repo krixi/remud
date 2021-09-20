@@ -9,7 +9,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use lazy_static::lazy_static;
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::text::ColorSupport;
+use crate::color::ColorSupport;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Negotiate {

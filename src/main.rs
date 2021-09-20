@@ -18,9 +18,9 @@ use tokio::{
 use tokio_util::codec::Framed;
 
 use crate::{
+    color::colorize,
     engine::{ClientMessage, ControlMessage, Engine, EngineMessage},
     telnet::{Codec, Frame, Telnet},
-    text::colorize,
     web::build_web_server,
 };
 

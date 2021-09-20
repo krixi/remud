@@ -154,7 +154,7 @@ impl Engine {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from(
-                    "\r\n|#7822a3|Connected|-| to |2|ucs://uplink.six.city|-|\r\n\r\nName?\r\n> ",
+                    "\r\n|#7822a3|Connected|/| to |2|ucs://uplink.six.city|/|\r\n\r\nName?\r\n> ",
                 );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;

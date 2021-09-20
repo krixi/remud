@@ -1,9 +1,106 @@
+use lazy_static::lazy_static;
+use regex::{Regex, Replacer};
 use std::{num::ParseIntError, str::FromStr};
 
 // Some code in this module derived from the below link. See link for license.
 // https://github.com/tmux/tmux/blob/8554b80b8b9e70b641847a8534af6d5fbc1a39c7/colour.c
 
 pub const CLEAR_COLOR: &str = "\x1b[m";
+
+lazy_static! {
+    static ref COLOR_TAG: Regex = Regex::new(
+        r#"(?P<escape>\|\|)|\|(?P<byte>(1?[0-9]{1,2})|(2[0-4][0-9])|(25[0-5]))\||\|#(?P<true>[[:xdigit:]]{6})\||\|(?P<name>[[:alnum:]]+)\||(?P<clear>\|/\|)"#,
+    ).unwrap();
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ColorSupport {
+    None,
+    Colors16,
+    Colors256,
+    TrueColor,
+}
+
+pub fn colorize(message: &str, color_support: ColorSupport) -> String {
+    let mut closed = true;
+    let replacer = ColorReplacer::new(color_support, &mut closed);
+    let mut message = COLOR_TAG.replace_all(message, replacer).to_string();
+    if !closed {
+        message.push_str(CLEAR_COLOR)
+    }
+    message
+}
+
+struct ColorReplacer<'a> {
+    color_support: ColorSupport,
+    closed: &'a mut bool,
+}
+
+impl<'a> ColorReplacer<'a> {
+    fn new(color_support: ColorSupport, closed: &'a mut bool) -> Self {
+        ColorReplacer {
+            color_support,
+            closed,
+        }
+    }
+}
+
+impl<'a> Replacer for ColorReplacer<'a> {
+    fn replace_append(&mut self, caps: &regex::Captures<'_>, dst: &mut String) {
+        if caps.name("escape").is_some() {
+            dst.push('|')
+        } else if let Some(m) = caps.name("byte") {
+            if let Ok(color) = Color256::from_str(m.as_str()) {
+                match self.color_support {
+                    ColorSupport::None => (),
+                    ColorSupport::Colors16 => {
+                        let color = Color16::from(color);
+                        dst.push_str(color.to_string().as_str());
+                    }
+                    ColorSupport::Colors256 | ColorSupport::TrueColor => {
+                        dst.push_str(color.to_string().as_str());
+                    }
+                }
+                *self.closed = true;
+            } else {
+                tracing::warn!("Failed to capture matched 256 color: {}", m.as_str());
+            }
+        } else if let Some(m) = caps.name("true") {
+            if let Ok(color) = Color::from_str(m.as_str()) {
+                match self.color_support {
+                    ColorSupport::None => (),
+                    ColorSupport::Colors16 => {
+                        let color = Color16::from(Color256::from(color));
+                        dst.push_str(color.to_string().as_str());
+                    }
+                    ColorSupport::Colors256 => {
+                        let color = Color256::from(color);
+                        dst.push_str(color.to_string().as_str());
+                    }
+                    ColorSupport::TrueColor => {
+                        dst.push_str(color.to_string().as_str());
+                    }
+                }
+                *self.closed = true;
+            } else {
+                tracing::warn!("Failed to capture matched true color: {}", m.as_str());
+            }
+        } else if let Some(_name) = caps.name("name") {
+            tracing::info!("Unimplemented: named colors");
+            *self.closed = true;
+        } else if caps.name("clear").is_some() {
+            match self.color_support {
+                ColorSupport::None => todo!(),
+                ColorSupport::Colors16 | ColorSupport::Colors256 | ColorSupport::TrueColor => {
+                    dst.push_str(CLEAR_COLOR);
+                }
+            }
+            *self.closed = false;
+        } else {
+            tracing::warn!("Unknown color capture occurred.");
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Color {
@@ -226,3 +323,56 @@ const COLORS_256_TO_16: [u8; 256] = [
     9, 9, 9, 13, 9, 9, 9, 9, 9, 13, 11, 11, 11, 11, 11, 15, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 7,
     7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::COLOR_TAG;
+
+    #[test]
+    fn test_color_escape() {
+        let caps = COLOR_TAG.captures("||").unwrap();
+        assert_eq!(caps.name("escape").unwrap().as_str(), "||");
+    }
+
+    #[test]
+    fn test_256_color() {
+        let caps = COLOR_TAG.captures("|0|").unwrap();
+        assert_eq!(caps.name("byte").unwrap().as_str(), "0");
+
+        let caps = COLOR_TAG.captures("|255|").unwrap();
+        assert_eq!(caps.name("byte").unwrap().as_str(), "255");
+
+        let caps = COLOR_TAG.captures("|44|").unwrap();
+        assert_eq!(caps.name("byte").unwrap().as_str(), "44");
+
+        let caps = COLOR_TAG.captures("|197|").unwrap();
+        assert_eq!(caps.name("byte").unwrap().as_str(), "197");
+
+        let caps = COLOR_TAG.captures("|232|").unwrap();
+        assert_eq!(caps.name("byte").unwrap().as_str(), "232");
+    }
+
+    #[test]
+    fn test_true_color() {
+        let caps = COLOR_TAG.captures("|#000000|").unwrap();
+        assert_eq!(caps.name("true").unwrap().as_str(), "000000");
+
+        let caps = COLOR_TAG.captures("|#FfFfFf|").unwrap();
+        assert_eq!(caps.name("true").unwrap().as_str(), "FfFfFf");
+
+        let caps = COLOR_TAG.captures("|#7152d1|").unwrap();
+        assert_eq!(caps.name("true").unwrap().as_str(), "7152d1");
+    }
+
+    #[test]
+    fn test_named_color() {
+        let caps = COLOR_TAG.captures("|white|").unwrap();
+        assert_eq!(caps.name("name").unwrap().as_str(), "white");
+    }
+
+    #[test]
+    fn test_clear_color() {
+        let caps = COLOR_TAG.captures("|/|").unwrap();
+        assert_eq!(caps.name("clear").unwrap().as_str(), "|/|");
+    }
+}
