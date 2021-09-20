@@ -1,5 +1,3 @@
-- add mechanism to automatically clear colors at the end of the message if they were set
-
 - add mechanism for immortal info commands to avoid running through the colorizer
 
 - fix logout message - make instant action when event occurs
@@ -7,18 +5,23 @@
 - add help command
 
   > help \[topic\]
+  > ?\[topic\]
 
 - add ability to look at players
 
   > look at <player\>
 
-- consider ways to improve true color -> 256 color degradation (avoiding grays)
+- add player descriptions
+
+- consider ways to improve true color -> 256 color degradation (avoiding grays). CIE-LAB space?
 
 - support UTF-8 clients
 
 - add regions
 
 - dedupe object set/clear flags
+
+- dedupe set name/description systems (common types)
 
 - add some pizzaz for players who are teleported on room deletion so they have some idea about what is happening
 
@@ -35,3 +38,9 @@
 - add object init scripts
 
 - allow state machines to be created and attached from an 'init' script
+
+- try to re-use swapped vecs to avoid allocating more
+
+- add combat
+
+- add reputation

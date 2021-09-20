@@ -156,15 +156,10 @@ impl GameWorld {
     pub async fn player_action(&mut self, action: Action) {
         let mut world = self.world.write().unwrap();
 
-        match world.get_mut::<Messages>(action.enactor()) {
-            Some(mut messages) => messages.received_input = true,
-            None => {
-                world.entity_mut(action.enactor()).insert(Messages {
-                    received_input: true,
-                    queue: VecDeque::new(),
-                });
-            }
-        }
+        world
+            .get_mut::<Messages>(action.enactor())
+            .unwrap()
+            .received_input = true;
 
         world
             .get_resource_mut::<Events<QueuedAction>>()

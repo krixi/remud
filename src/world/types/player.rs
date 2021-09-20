@@ -59,6 +59,7 @@ pub struct Player {
 pub struct Messages {
     pub received_input: bool,
     pub queue: VecDeque<String>,
+    pub plain_queue: VecDeque<String>,
 }
 
 impl Messages {

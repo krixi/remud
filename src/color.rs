@@ -1,6 +1,7 @@
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::{Regex, Replacer};
-use std::{num::ParseIntError, str::FromStr};
+use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
 // Some code in this module derived from the below link. See link for license.
 // https://github.com/tmux/tmux/blob/8554b80b8b9e70b641847a8534af6d5fbc1a39c7/colour.c
@@ -8,7 +9,7 @@ use std::{num::ParseIntError, str::FromStr};
 pub const CLEAR_COLOR: &str = "\x1b[m";
 
 lazy_static! {
-    static ref COLOR_TAG: Regex = Regex::new(
+    static ref COLOR_TAG_MATCHER: Regex = Regex::new(
         r#"(?P<escape>\|\|)|\|(?P<byte>(1?[0-9]{1,2})|(2[0-4][0-9])|(25[0-5]))\||\|#(?P<true>[[:xdigit:]]{6})\||\|(?P<name>[[:alnum:]]+)\||(?P<clear>\|/\|)"#,
     ).unwrap();
 }
@@ -21,10 +22,36 @@ pub enum ColorSupport {
     TrueColor,
 }
 
+impl ColorSupport {
+    fn supports_color(&self) -> bool {
+        match self {
+            ColorSupport::None => false,
+            ColorSupport::Colors16 | ColorSupport::Colors256 | ColorSupport::TrueColor => true,
+        }
+    }
+
+    fn supported_from_true(&self, color: ColorTrue) -> Option<Color> {
+        match self {
+            ColorSupport::None => None,
+            ColorSupport::Colors16 => Some(Color16::from(Color256::from(color)).into()),
+            ColorSupport::Colors256 => Some(Color256::from(color).into()),
+            ColorSupport::TrueColor => Some(color.into()),
+        }
+    }
+
+    fn supported_from_256(&self, color: Color256) -> Option<Color> {
+        match self {
+            ColorSupport::None => None,
+            ColorSupport::Colors16 => Some(Color16::from(color).into()),
+            ColorSupport::Colors256 | ColorSupport::TrueColor => Some(color.into()),
+        }
+    }
+}
+
 pub fn colorize(message: &str, color_support: ColorSupport) -> String {
     let mut closed = true;
     let replacer = ColorReplacer::new(color_support, &mut closed);
-    let mut message = COLOR_TAG.replace_all(message, replacer).to_string();
+    let mut message = COLOR_TAG_MATCHER.replace_all(message, replacer).to_string();
     if !closed {
         message.push_str(CLEAR_COLOR)
     }
@@ -33,6 +60,7 @@ pub fn colorize(message: &str, color_support: ColorSupport) -> String {
 
 struct ColorReplacer<'a> {
     color_support: ColorSupport,
+    stack: Vec<Color>,
     closed: &'a mut bool,
 }
 
@@ -40,6 +68,7 @@ impl<'a> ColorReplacer<'a> {
     fn new(color_support: ColorSupport, closed: &'a mut bool) -> Self {
         ColorReplacer {
             color_support,
+            stack: Vec::new(),
             closed,
         }
     }
@@ -51,77 +80,110 @@ impl<'a> Replacer for ColorReplacer<'a> {
             dst.push('|')
         } else if let Some(m) = caps.name("byte") {
             if let Ok(color) = Color256::from_str(m.as_str()) {
-                match self.color_support {
-                    ColorSupport::None => (),
-                    ColorSupport::Colors16 => {
-                        let color = Color16::from(color);
-                        dst.push_str(color.to_string().as_str());
-                    }
-                    ColorSupport::Colors256 | ColorSupport::TrueColor => {
-                        dst.push_str(color.to_string().as_str());
-                    }
+                if let Some(color) = self.color_support.supported_from_256(color) {
+                    self.stack.push(color);
+                    dst.push_str(color.to_string().as_str());
+                    *self.closed = false;
                 }
-                *self.closed = true;
             } else {
                 tracing::warn!("Failed to capture matched 256 color: {}", m.as_str());
             }
         } else if let Some(m) = caps.name("true") {
-            if let Ok(color) = Color::from_str(m.as_str()) {
-                match self.color_support {
-                    ColorSupport::None => (),
-                    ColorSupport::Colors16 => {
-                        let color = Color16::from(Color256::from(color));
-                        dst.push_str(color.to_string().as_str());
-                    }
-                    ColorSupport::Colors256 => {
-                        let color = Color256::from(color);
-                        dst.push_str(color.to_string().as_str());
-                    }
-                    ColorSupport::TrueColor => {
-                        dst.push_str(color.to_string().as_str());
-                    }
+            if let Ok(color) = ColorTrue::from_str(m.as_str()) {
+                if let Some(color) = self.color_support.supported_from_true(color) {
+                    self.stack.push(color);
+                    dst.push_str(color.to_string().as_str());
+                    *self.closed = false;
                 }
-                *self.closed = true;
             } else {
                 tracing::warn!("Failed to capture matched true color: {}", m.as_str());
             }
-        } else if let Some(_name) = caps.name("name") {
-            tracing::info!("Unimplemented: named colors");
-            *self.closed = true;
-        } else if caps.name("clear").is_some() {
-            match self.color_support {
-                ColorSupport::None => todo!(),
-                ColorSupport::Colors16 | ColorSupport::Colors256 | ColorSupport::TrueColor => {
-                    dst.push_str(CLEAR_COLOR);
+        } else if let Some(name) = caps.name("name") {
+            if let Some(index) = COLOR_NAME_MAP.get(name.as_str().to_lowercase().as_str()) {
+                if let Some(color) = self.color_support.supported_from_256(Color256::new(*index)) {
+                    self.stack.push(color);
+                    dst.push_str(color.to_string().as_str());
+                    *self.closed = false;
                 }
             }
-            *self.closed = false;
+        } else if caps.name("clear").is_some() {
+            if self.color_support.supports_color() {
+                if !self.stack.is_empty() {
+                    self.stack.pop();
+
+                    if let Some(color) = self.stack.last() {
+                        dst.push_str(color.to_string().as_str())
+                    } else {
+                        *self.closed = true;
+                        dst.push_str(CLEAR_COLOR);
+                    }
+                }
+            }
         } else {
-            tracing::warn!("Unknown color capture occurred.");
+            let capture = caps
+                .iter()
+                .flat_map(|m| m.map(|m| format!("'{}'", m.as_str())))
+                .join(", ");
+            tracing::warn!("Unknown color tag(s) captured: {}", capture);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Color {
+    ColorTrue(ColorTrue),
+    Color256(Color256),
+    Color16(Color16),
+}
+
+impl From<ColorTrue> for Color {
+    fn from(value: ColorTrue) -> Self {
+        Color::ColorTrue(value)
+    }
+}
+
+impl From<Color256> for Color {
+    fn from(value: Color256) -> Self {
+        Color::Color256(value)
+    }
+}
+
+impl From<Color16> for Color {
+    fn from(value: Color16) -> Self {
+        Color::Color16(value)
+    }
+}
+
+impl ToString for Color {
+    fn to_string(&self) -> String {
+        match self {
+            Color::ColorTrue(c) => c.to_string(),
+            Color::Color256(c) => c.to_string(),
+            Color::Color16(c) => c.to_string(),
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Color {
+pub struct ColorTrue {
     r: u8,
     g: u8,
     b: u8,
 }
 
-impl Color {
+impl ColorTrue {
     fn new(r: u8, g: u8, b: u8) -> Self {
-        Color { r, g, b }
+        ColorTrue { r, g, b }
     }
 
     /// Create a new gray using a single color
     fn new_gray(v: u8) -> Self {
-        Color::new(v, v, v)
+        ColorTrue::new(v, v, v)
     }
 
     /// Calculate the distance between this color and another by squaring
     /// and adding the component colors.
-    fn distance_squared(&self, color: Color) -> u32 {
+    fn distance_squared(&self, color: ColorTrue) -> u32 {
         ((self.r as i32 - color.r as i32) * (self.r as i32 - color.r as i32)
             + (self.g as i32 - color.g as i32) * (self.g as i32 - color.g as i32)
             + (self.b as i32 - color.b as i32) * (self.b as i32 - color.b as i32)) as u32
@@ -142,15 +204,15 @@ impl Color {
     }
 }
 
-impl From<Color256> for Color {
+impl From<Color256> for ColorTrue {
     fn from(color: Color256) -> Self {
-        Color::from(COLORS_256[color.0 as usize])
+        ColorTrue::from(COLORS_256[color.0 as usize])
     }
 }
 
-impl From<u32> for Color {
+impl From<u32> for ColorTrue {
     fn from(c: u32) -> Self {
-        Color::new(
+        ColorTrue::new(
             ((c >> 16) & 0xff) as u8,
             ((c >> 8) & 0xff) as u8,
             (c & 0xff) as u8,
@@ -158,20 +220,21 @@ impl From<u32> for Color {
     }
 }
 
-impl FromStr for Color {
+impl FromStr for ColorTrue {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Color::from(u32::from_str_radix(s, 16)?))
+        Ok(ColorTrue::from(u32::from_str_radix(s, 16)?))
     }
 }
 
-impl ToString for Color {
+impl ToString for ColorTrue {
     fn to_string(&self) -> String {
         format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Color256(u8);
 
 impl Color256 {
@@ -194,8 +257,8 @@ impl Color256 {
 //
 // The curve from cube index to color value is defined in
 // CUBE_TO_COLOR_VALUE.
-impl From<Color> for Color256 {
-    fn from(c: Color) -> Self {
+impl From<ColorTrue> for Color256 {
+    fn from(c: ColorTrue) -> Self {
         // Find the closest matching cube color.
         let (qr, qg, qb) = c.six_cube_indices();
         let (cr, cg, cb) = (
@@ -216,10 +279,10 @@ impl From<Color> for Color256 {
         } else {
             (gray_average - 3) / 10
         };
-        let gray = Color::new_gray(8 + (10 * gray_index));
+        let gray = ColorTrue::new_gray(8 + (10 * gray_index));
 
         // Determine if the color is closer to the cube color or the gray.
-        let cube_color = Color::new(cr, cg, cg);
+        let cube_color = ColorTrue::new(cr, cg, cg);
         let color_distance = c.distance_squared(cube_color);
         let gray_distance = c.distance_squared(gray);
         if gray_distance < color_distance {
@@ -244,6 +307,7 @@ impl ToString for Color256 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Color16(u8);
 
 impl From<Color256> for Color16 {
@@ -324,55 +388,416 @@ const COLORS_256_TO_16: [u8; 256] = [
     7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15,
 ];
 
+lazy_static! {
+    static ref COLOR_NAME_MAP: HashMap<&'static str, u8> = {
+        let mut map = HashMap::new();
+        map.insert("aqua", 14);
+        map.insert("aquamarine1", 79);
+        map.insert("aquamarine2", 86);
+        map.insert("aquamarine3", 122);
+        map.insert("black", 0);
+        map.insert("blue", 12);
+        map.insert("blue1", 19);
+        map.insert("blue2", 20);
+        map.insert("blue3", 21);
+        map.insert("blueviolet", 57);
+        map.insert("cadetblue1", 72);
+        map.insert("cadetblue2", 73);
+        map.insert("chartreuse1", 64);
+        map.insert("chartreuse2", 70);
+        map.insert("chartreuse3", 76);
+        map.insert("chartreuse4", 82);
+        map.insert("chartreuse5", 112);
+        map.insert("chartreuse6", 118);
+        map.insert("cornflowerblue", 69);
+        map.insert("cornsilk", 230);
+        map.insert("cyan1", 43);
+        map.insert("cyan2", 50);
+        map.insert("cyan3", 51);
+        map.insert("darkblue", 18);
+        map.insert("darkcyan", 36);
+        map.insert("darkgoldenrod", 136);
+        map.insert("darkgreen", 22);
+        map.insert("darkkhaki", 143);
+        map.insert("darkmagenta1", 90);
+        map.insert("darkmagenta2", 91);
+        map.insert("darkolivegreen1", 107);
+        map.insert("darkolivegreen2", 113);
+        map.insert("darkolivegreen3", 149);
+        map.insert("darkolivegreen4", 155);
+        map.insert("darkolivegreen5", 191);
+        map.insert("darkolivegreen6", 192);
+        map.insert("darkorange1", 130);
+        map.insert("darkorange2", 166);
+        map.insert("darkorange3", 208);
+        map.insert("darkred1", 52);
+        map.insert("darkred2", 88);
+        map.insert("darkseagreen1", 65);
+        map.insert("darkseagreen2", 71);
+        map.insert("darkseagreen3", 108);
+        map.insert("darkseagreen3", 150);
+        map.insert("darkseagreen4", 115);
+        map.insert("darkseagreen5", 151);
+        map.insert("darkseagreen6", 157);
+        map.insert("darkseagreen7", 158);
+        map.insert("darkseagreen8", 193);
+        map.insert("darkslategray1", 87);
+        map.insert("darkslategray2", 116);
+        map.insert("darkslategray3", 123);
+        map.insert("darkturquoise", 44);
+        map.insert("darkviolet1", 92);
+        map.insert("darkviolet2", 128);
+        map.insert("deeppink1", 53);
+        map.insert("deeppink2", 89);
+        map.insert("deeppink3", 125);
+        map.insert("deeppink4", 161);
+        map.insert("deeppink5", 162);
+        map.insert("deeppink6", 197);
+        map.insert("deeppink7", 198);
+        map.insert("deeppink8", 199);
+        map.insert("deepskyblue1", 23);
+        map.insert("deepskyblue2", 24);
+        map.insert("deepskyblue3", 25);
+        map.insert("deepskyblue4", 31);
+        map.insert("deepskyblue5", 32);
+        map.insert("deepskyblue6", 38);
+        map.insert("deepskyblue7", 39);
+        map.insert("dodgerblue1", 26);
+        map.insert("dodgerblue2", 27);
+        map.insert("dodgerblue3", 33);
+        map.insert("fuchsia", 13);
+        map.insert("gold1", 142);
+        map.insert("gold2", 178);
+        map.insert("gold3", 220);
+        map.insert("gray", 8);
+        map.insert("gray0", 16);
+        map.insert("gray100", 231);
+        map.insert("gray11", 234);
+        map.insert("gray15", 235);
+        map.insert("gray19", 236);
+        map.insert("gray23", 237);
+        map.insert("gray27", 238);
+        map.insert("gray3", 232);
+        map.insert("gray30", 239);
+        map.insert("gray35", 240);
+        map.insert("gray37", 59);
+        map.insert("gray39", 241);
+        map.insert("gray42", 242);
+        map.insert("gray46", 243);
+        map.insert("gray50", 244);
+        map.insert("gray53", 102);
+        map.insert("gray54", 245);
+        map.insert("gray58", 246);
+        map.insert("gray62", 247);
+        map.insert("gray63", 139);
+        map.insert("gray66", 248);
+        map.insert("gray69", 145);
+        map.insert("gray7", 233);
+        map.insert("gray70", 249);
+        map.insert("gray74", 250);
+        map.insert("gray78", 251);
+        map.insert("gray82", 252);
+        map.insert("gray84", 188);
+        map.insert("gray85", 253);
+        map.insert("gray89", 254);
+        map.insert("gray93", 255);
+        map.insert("green", 2);
+        map.insert("green1", 28);
+        map.insert("green2", 34);
+        map.insert("green3", 40);
+        map.insert("green4", 46);
+        map.insert("greenyellow", 154);
+        map.insert("honeydew", 194);
+        map.insert("hotpink1", 132);
+        map.insert("hotpink2", 168);
+        map.insert("hotpink3", 169);
+        map.insert("hotpink5", 205);
+        map.insert("hotpink6", 206);
+        map.insert("indianred1", 131);
+        map.insert("indianred2", 167);
+        map.insert("indianred3", 203);
+        map.insert("indianred4", 204);
+        map.insert("khaki1", 185);
+        map.insert("khaki2", 228);
+        map.insert("lightcoral", 210);
+        map.insert("lightcyan1", 152);
+        map.insert("lightcyan2", 195);
+        map.insert("lightgoldenrod1", 179);
+        map.insert("lightgoldenrod2", 186);
+        map.insert("lightgoldenrod3", 221);
+        map.insert("lightgoldenrod4", 222);
+        map.insert("lightgoldenrod5", 227);
+        map.insert("lightgreen1", 119);
+        map.insert("lightgreen2", 120);
+        map.insert("lightpink1", 95);
+        map.insert("lightpink2", 174);
+        map.insert("lightpink3", 217);
+        map.insert("lightsalmon1", 137);
+        map.insert("lightsalmon2", 173);
+        map.insert("lightsalmon3", 216);
+        map.insert("lightseagreen", 37);
+        map.insert("lightskyblue1", 109);
+        map.insert("lightskyblue2", 110);
+        map.insert("lightskyblue3", 153);
+        map.insert("lightslateblue", 105);
+        map.insert("lightslategrey", 103);
+        map.insert("lightsteelblue1", 146);
+        map.insert("lightsteelblue2", 147);
+        map.insert("lightsteelblue3", 189);
+        map.insert("lightyellow", 187);
+        map.insert("lime", 10);
+        map.insert("magenta1", 127);
+        map.insert("magenta2", 163);
+        map.insert("magenta3", 164);
+        map.insert("magenta4", 165);
+        map.insert("magenta5", 200);
+        map.insert("magenta6", 201);
+        map.insert("maroon", 1);
+        map.insert("mediumorchid1", 133);
+        map.insert("mediumorchid2", 134);
+        map.insert("mediumorchid3", 171);
+        map.insert("mediumorchid4", 207);
+        map.insert("mediumpurple1", 60);
+        map.insert("mediumpurple2", 97);
+        map.insert("mediumpurple3", 98);
+        map.insert("mediumpurple4", 104);
+        map.insert("mediumpurple5", 135);
+        map.insert("mediumpurple6", 140);
+        map.insert("mediumpurple7", 141);
+        map.insert("mediumspringgreen", 49);
+        map.insert("mediumturquoise", 80);
+        map.insert("mediumvioletred", 126);
+        map.insert("mistyrose1", 181);
+        map.insert("mistyrose2", 224);
+        map.insert("navajowhite1", 144);
+        map.insert("navajowhite2", 223);
+        map.insert("navy", 4);
+        map.insert("navyblue", 17);
+        map.insert("olive", 3);
+        map.insert("orange1", 58);
+        map.insert("orange2", 94);
+        map.insert("orange3", 172);
+        map.insert("orange4", 214);
+        map.insert("orangered", 202);
+        map.insert("orchid1", 170);
+        map.insert("orchid2", 212);
+        map.insert("orchid3", 213);
+        map.insert("palegreen1", 77);
+        map.insert("palegreen2", 114);
+        map.insert("palegreen3", 121);
+        map.insert("palegreen4", 156);
+        map.insert("paleturquoise1", 66);
+        map.insert("paleturquoise2", 159);
+        map.insert("palevioletred", 211);
+        map.insert("pink1", 175);
+        map.insert("pink2", 218);
+        map.insert("plum", 96);
+        map.insert("plum2", 176);
+        map.insert("plum3", 183);
+        map.insert("plum4", 219);
+        map.insert("purple", 5);
+        map.insert("purple1", 54);
+        map.insert("purple2", 55);
+        map.insert("purple3", 56);
+        map.insert("purple4", 93);
+        map.insert("purple5", 129);
+        map.insert("red", 9);
+        map.insert("red1", 124);
+        map.insert("red2", 160);
+        map.insert("red3", 196);
+        map.insert("rosybrown", 138);
+        map.insert("royalblue", 63);
+        map.insert("salmon", 209);
+        map.insert("sandybrown", 215);
+        map.insert("seagreen1", 78);
+        map.insert("seagreen2", 83);
+        map.insert("seagreen3", 84);
+        map.insert("seagreen4", 85);
+        map.insert("silver", 7);
+        map.insert("skyblue1", 74);
+        map.insert("skyblue2", 111);
+        map.insert("skyblue3", 117);
+        map.insert("slateblue1", 61);
+        map.insert("slateblue2", 62);
+        map.insert("slateblue3", 99);
+        map.insert("springgreen1", 29);
+        map.insert("springgreen2", 35);
+        map.insert("springgreen3", 41);
+        map.insert("springgreen4", 42);
+        map.insert("springgreen5", 47);
+        map.insert("springgreen6", 48);
+        map.insert("steelblue1", 67);
+        map.insert("steelblue2", 68);
+        map.insert("steelblue3", 75);
+        map.insert("steelblue4", 81);
+        map.insert("tan", 180);
+        map.insert("teal", 6);
+        map.insert("thistle1", 182);
+        map.insert("thistle2", 225);
+        map.insert("turquoise1", 30);
+        map.insert("turquoise2", 45);
+        map.insert("violet", 177);
+        map.insert("wheat1", 101);
+        map.insert("wheat2", 229);
+        map.insert("white", 15);
+        map.insert("yellow", 11);
+        map.insert("yellow1", 100);
+        map.insert("yellow2", 106);
+        map.insert("yellow3", 148);
+        map.insert("yellow4", 184);
+        map.insert("yellow5", 190);
+        map.insert("yellow6", 226);
+        map
+    };
+}
+
 #[cfg(test)]
 mod tests {
-    use super::COLOR_TAG;
+    use std::borrow::Cow;
+
+    use crate::color::{ColorReplacer, ColorSupport};
+
+    use super::COLOR_TAG_MATCHER;
 
     #[test]
     fn test_color_escape() {
-        let caps = COLOR_TAG.captures("||").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("||").unwrap();
         assert_eq!(caps.name("escape").unwrap().as_str(), "||");
     }
 
     #[test]
     fn test_256_color() {
-        let caps = COLOR_TAG.captures("|0|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|0|").unwrap();
         assert_eq!(caps.name("byte").unwrap().as_str(), "0");
 
-        let caps = COLOR_TAG.captures("|255|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|255|").unwrap();
         assert_eq!(caps.name("byte").unwrap().as_str(), "255");
 
-        let caps = COLOR_TAG.captures("|44|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|44|").unwrap();
         assert_eq!(caps.name("byte").unwrap().as_str(), "44");
 
-        let caps = COLOR_TAG.captures("|197|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|197|").unwrap();
         assert_eq!(caps.name("byte").unwrap().as_str(), "197");
 
-        let caps = COLOR_TAG.captures("|232|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|232|").unwrap();
         assert_eq!(caps.name("byte").unwrap().as_str(), "232");
     }
 
     #[test]
     fn test_true_color() {
-        let caps = COLOR_TAG.captures("|#000000|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|#000000|").unwrap();
         assert_eq!(caps.name("true").unwrap().as_str(), "000000");
 
-        let caps = COLOR_TAG.captures("|#FfFfFf|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|#FfFfFf|").unwrap();
         assert_eq!(caps.name("true").unwrap().as_str(), "FfFfFf");
 
-        let caps = COLOR_TAG.captures("|#7152d1|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|#7152d1|").unwrap();
         assert_eq!(caps.name("true").unwrap().as_str(), "7152d1");
     }
 
     #[test]
     fn test_named_color() {
-        let caps = COLOR_TAG.captures("|white|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|white|").unwrap();
         assert_eq!(caps.name("name").unwrap().as_str(), "white");
     }
 
     #[test]
     fn test_clear_color() {
-        let caps = COLOR_TAG.captures("|/|").unwrap();
+        let caps = COLOR_TAG_MATCHER.captures("|/|").unwrap();
         assert_eq!(caps.name("clear").unwrap().as_str(), "|/|");
+    }
+
+    #[test]
+    fn test_replacer_closed_true() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        COLOR_TAG_MATCHER.replace_all("|0|text|/|", replacer);
+        assert_eq!(closed, true);
+    }
+
+    #[test]
+    fn test_replacer_closed_false() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        COLOR_TAG_MATCHER.replace("|0|text", replacer);
+        assert_eq!(closed, false);
+    }
+
+    #[test]
+    fn test_replacer_keeps_true() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
+        assert_eq!(result, Cow::from("\x1b[38;2;18;52;86mtext"))
+    }
+
+    #[test]
+    fn test_replacer_lowers_true_to_256() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::Colors256, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
+        assert_eq!(result, Cow::from("\x1b[38;5;23mtext"))
+    }
+
+    #[test]
+    fn test_replacer_lowers_true_to_16() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
+        assert_eq!(result, Cow::from("\x1b[1;36mtext"))
+    }
+
+    #[test]
+    fn test_replacer_keeps_256() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::Colors256, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace("|48|text", replacer);
+        assert_eq!(result, Cow::from("\x1b[38;5;48mtext"))
+    }
+
+    #[test]
+    fn test_replacer_lowers_256_to_16() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace("|48|text", replacer);
+        assert_eq!(result, Cow::from("\x1b[1;92mtext"))
+    }
+
+    #[test]
+    fn test_replacer_removes_color() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|red|x|/|t", replacer);
+        assert_eq!(result, Cow::from("text"));
+    }
+
+    #[test]
+    fn test_replacer_translates_escape() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace_all("||text||", replacer);
+        assert_eq!(result, Cow::from("|text|"));
+    }
+
+    #[test]
+    fn test_replacer_nesting() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let result =
+            COLOR_TAG_MATCHER.replace_all("|#654321|some |#123456|pretty|/| text|/|", replacer);
+        assert_eq!(
+            result,
+            Cow::from(
+                "\x1b[38;2;101;67;33msome \x1b[38;2;18;52;86mpretty\x1b[38;2;101;67;33m text\x1b[m"
+            )
+        )
+    }
+
+    #[test]
+    fn test_replacer_extra_close() {
+        let mut closed = true;
+        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let result = COLOR_TAG_MATCHER.replace_all("|#654321|text|/||/|", replacer);
+        assert_eq!(result, Cow::from("\x1b[38;2;101;67;33mtext\x1b[m"))
     }
 }
