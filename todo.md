@@ -1,3 +1,9 @@
+- add mechanism to automatically clear colors at the end of the message if they were set
+
+- add mechanism for immortal info commands to avoid running through the colorizer
+
+- fix logout message - make instant action when event occurs
+
 - add help command
 
   > help \[topic\]
@@ -6,13 +12,11 @@
 
   > look at <player\>
 
-- add colors
+- consider ways to improve true color -> 256 color degradation (avoiding grays)
+
+- support UTF-8 clients
 
 - add regions
-
-- add agents
-
-- allow agents to wander around regions
 
 - dedupe object set/clear flags
 
@@ -23,8 +27,6 @@
 - add immortal flag for players
 
 - restrict immortal commands to players with the immortal flag
-
-- add script status to web script list api
 
 - remove unique object_id constraint on room_objects/player_objects - objects as prototypes
 

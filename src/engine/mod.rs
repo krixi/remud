@@ -153,8 +153,9 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
-                let message =
-                    String::from("\r\nConnected to ucs://uplink.six.city\r\n\r\nName?\r\n> ");
+                let message = String::from(
+                    "\r\n|#7822a3|Connected|-| to |2|ucs://uplink.six.city|-|\r\n\r\nName?\r\n> ",
+                );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
                 } else {

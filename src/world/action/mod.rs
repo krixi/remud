@@ -47,7 +47,7 @@ use crate::{
                 exits_system, look_at_system, look_system, parse_look, who_system, Exits, Look,
                 LookAt, Who,
             },
-            system::{login_system, logout_system, shutdown_system, Login, Logout, Shutdown},
+            system::{login_system, shutdown_system, Login, Logout, Shutdown},
         },
         types::room::Direction,
     },
@@ -155,7 +155,6 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(get_system.system());
     stage.add_system(inventory_system.system());
     stage.add_system(login_system.system());
-    stage.add_system(logout_system.system());
     stage.add_system(look_at_system.system());
     stage.add_system(look_system.system().label("look"));
     stage.add_system(message_system.system());

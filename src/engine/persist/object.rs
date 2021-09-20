@@ -9,6 +9,34 @@ use crate::{
     },
 };
 
+pub struct Create {
+    id: ObjectId,
+}
+
+impl Create {
+    pub fn new(id: ObjectId) -> Box<Self> {
+        Box::new(Create { id })
+    }
+}
+
+#[async_trait]
+impl Persist for Create {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO objects (id, flags, keywords, name, description) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(self.id)
+        .bind(0)
+        .bind(DEFAULT_OBJECT_KEYWORD)
+        .bind(DEFAULT_OBJECT_NAME)
+        .bind(DEFAULT_OBJECT_DESCRIPTION)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
 pub struct Description {
     id: ObjectId,
     description: String,
@@ -101,34 +129,6 @@ impl Persist for Name {
             .bind(self.id)
             .execute(pool)
             .await?;
-
-        Ok(())
-    }
-}
-
-pub struct New {
-    id: ObjectId,
-}
-
-impl New {
-    pub fn new(id: ObjectId) -> Box<Self> {
-        Box::new(New { id })
-    }
-}
-
-#[async_trait]
-impl Persist for New {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query(
-            "INSERT INTO objects (id, flags, keywords, name, description) VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(self.id)
-        .bind(0)
-        .bind(DEFAULT_OBJECT_KEYWORD)
-        .bind(DEFAULT_OBJECT_NAME)
-        .bind(DEFAULT_OBJECT_DESCRIPTION)
-        .execute(pool)
-        .await?;
 
         Ok(())
     }

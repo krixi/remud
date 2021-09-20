@@ -9,6 +9,8 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use lazy_static::lazy_static;
 use tokio_util::codec::{Decoder, Encoder};
 
+use crate::text::ColorSupport;
+
 #[derive(Debug, Copy, Clone)]
 pub enum Negotiate {
     Dont,
@@ -326,12 +328,22 @@ impl Telnet {
             && matches! {self.terminal_selection_state, TerminalSelectionState::Done(_)}
     }
 
-    // pub fn features(&self) -> Option<TerminalFeatures> {
-    //     if let TerminalSelectionState::Done(Some(terminal_type)) = &self.terminal_selection_state {
-    //         return Some(terminal_type.features);
-    //     }
-    //     None
-    // }
+    pub fn color_support(&self) -> ColorSupport {
+        if let TerminalSelectionState::Done(Some(TerminalType { features, .. })) =
+            self.terminal_selection_state
+        {
+            if features.contains(TerminalFeatures::TRUE_COLOR) {
+                return ColorSupport::TrueColor;
+            } else if features.contains(TerminalFeatures::COLORS_256) {
+                return ColorSupport::Colors256;
+            } else if features.contains(TerminalFeatures::ANSI)
+                || features.contains(TerminalFeatures::VT100)
+            {
+                return ColorSupport::Colors16;
+            }
+        }
+        ColorSupport::None
+    }
 }
 
 const IAC: u8 = 255;

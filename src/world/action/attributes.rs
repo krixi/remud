@@ -28,14 +28,13 @@ pub fn stats_system(
     for action in action_reader.iter() {
         if let Action::Stats(Stats { entity }) = action {
             if let Ok((health, stats)) = stats_query.get_mut(*entity) {
-                messages_query
-                    .get_mut(*entity)
-                    .unwrap()
-                    .queue(format!("Health {} / {}", health.current, health.max));
-                messages_query.get_mut(*entity).unwrap().queue(format!(
-                    "Con {} / Dex {} / Int {} / Str {}",
-                    stats.constitution, stats.dexterity, stats.intellect, stats.strength
-                ));
+                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    messages.queue(format!("Health {} / {}", health.current, health.max));
+                    messages.queue(format!(
+                        "Con {} / Dex {} / Int {} / Str {}",
+                        stats.constitution, stats.dexterity, stats.intellect, stats.strength
+                    ));
+                }
             }
         }
     }

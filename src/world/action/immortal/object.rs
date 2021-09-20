@@ -172,7 +172,7 @@ pub fn object_create_system(
             };
 
             updates.queue(UpdateGroup::new(vec![
-                persist::object::New::new(id),
+                persist::object::Create::new(id),
                 persist::room::AddObject::new(room_id, id),
             ]));
 

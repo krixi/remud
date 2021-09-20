@@ -105,7 +105,7 @@ pub struct Health {
 }
 
 impl Health {
-    pub fn new(attr: Attributes) -> Self {
+    pub fn new(attr: &Attributes) -> Self {
         Health {
             current: attr.constitution * 5.0,
             max: attr.constitution * 5.0,

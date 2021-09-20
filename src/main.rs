@@ -1,6 +1,7 @@
 // #![warn(clippy::pedantic)]
 #![allow(clippy::too_many_arguments)]
 
+pub mod color;
 mod engine;
 mod telnet;
 mod text;
@@ -19,6 +20,7 @@ use tokio_util::codec::Framed;
 use crate::{
     engine::{ClientMessage, ControlMessage, Engine, EngineMessage},
     telnet::{Codec, Frame, Telnet},
+    text::colorize,
     web::build_web_server,
 };
 
@@ -126,6 +128,7 @@ async fn process(
                 if let Some(message) = maybe_message {
                     match message {
                         EngineMessage::Output(message) => {
+                            let message = colorize(message.as_str(), telnet.color_support());
                             match message.into_ascii_string() {
                                 Ok(str) => {
                                     let bytes: Vec<u8> = str.into();
