@@ -1,9 +1,15 @@
+{{ $page := . }}
 {{ with .Params.tags }}
   <div class="text-sm text-gray-500 italic mt-2">
     <span class="not-italic">Tags:</span>
     {{ range . }}
-      {{ $href := print (absURL "tags/") (urlize .) }}
-      <a class="mr-1" href="{{ $href }}">{{ . }}</a>
+      {{ $href := print (relURL "tags/") (urlize .) }}
+      <a
+        class="mr-1"
+        href='{{ relref $page $href }}'
+      >
+          {{ . }}
+      </a>
     {{ end }}
   </div>
 {{ end }}

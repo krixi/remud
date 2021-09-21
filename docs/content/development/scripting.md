@@ -4,7 +4,7 @@ date: 2021-09-16T14:17:25-07:00
 weight: 2
 summary: "Scripting language integration."
 author: "krixi"
-tags: ["api", "scripts"]
+tags: ["api", "scripting"]
 ---
 
 ReMUD uses [Rhai](https://rhai.rs/) as the scripting engine,
@@ -12,7 +12,7 @@ providing a dynamic control layer over the rust-backend primitives.
 
 Scripts in ReMUD are invoked when they are triggered. They are managed by the web-console.
 Each script must have a unique name - they are associated with specific entities by name by invoking the
-[immortals script commands](../immortals#scripts).
+[immortals script commands]({{< relref "./immortals#scripts" >}}).
 
 ## Triggers
 
