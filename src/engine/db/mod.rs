@@ -75,10 +75,10 @@ impl Db {
     pub async fn has_player(&self, user: &str) -> anyhow::Result<bool> {
         let result = sqlx::query("SELECT * FROM players WHERE username = ?")
             .bind(user)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await?;
 
-        Ok(!result.is_empty())
+        Ok(result.is_some())
     }
 
     pub async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {

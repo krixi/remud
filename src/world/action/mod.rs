@@ -35,7 +35,7 @@ use crate::world::action::{
     movement::{move_system, teleport_system, Move, Teleport},
     object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
     observe::{exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who},
-    system::{login_system, shutdown_system, Login, Logout, Shutdown},
+    system::{login_system, shutdown_system, Login, Shutdown},
 };
 
 #[macro_export]
@@ -62,7 +62,6 @@ pub enum Action {
     Get(Get),
     Inventory(Inventory),
     Login(Login),
-    Logout(Logout),
     Look(Look),
     LookAt(LookAt),
     Message(Message),
@@ -102,7 +101,6 @@ impl Action {
             Action::Get(action) => action.entity,
             Action::Inventory(action) => action.entity,
             Action::Login(action) => action.entity,
-            Action::Logout(action) => action.entity,
             Action::Look(action) => action.entity,
             Action::LookAt(action) => action.entity,
             Action::Message(action) => action.entity,

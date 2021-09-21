@@ -14,6 +14,7 @@ use std::{
 };
 
 use bevy_app::Events;
+use bevy_core::Time;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -23,7 +24,7 @@ use crate::{
     engine::persist::{self, DynUpdate, Updates},
     web,
     world::{
-        action::{register_action_systems, system::Logout, Action},
+        action::{register_action_systems, Action},
         fsm::system::state_machine_system,
         scripting::{
             create_script_engine, post_action_script_system, queued_action_script_system,
@@ -58,14 +59,15 @@ impl GameWorld {
             build_schedules();
 
         // Add resources
+        world.insert_resource(Time::default());
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
         world.insert_resource(ScriptRuns::default());
         world.insert_resource(create_script_engine());
 
         // Add events
-        add_events::<QueuedAction>(&mut world, &mut update_schedule);
-        add_events::<Action>(&mut world, &mut update_schedule);
+        add_events::<QueuedAction>(&mut world, &mut pre_event_schedule);
+        add_events::<Action>(&mut world, &mut pre_event_schedule);
 
         // Create emergency room
         add_void_room(&mut world);
@@ -76,6 +78,7 @@ impl GameWorld {
             .unwrap();
         register_action_systems(update);
 
+        pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
         pre_event_schedule.add_system_to_stage(STAGE_UPDATE, queued_action_script_system.system());
         update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
         update_schedule.add_system_to_stage(
@@ -120,9 +123,6 @@ impl GameWorld {
     }
 
     pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        self.player_action(Action::from(Logout { entity: player }))
-            .await;
-
         let mut world = self.world.write().unwrap();
 
         let (name, room) = world
@@ -131,6 +131,23 @@ impl GameWorld {
             .map(|(named, location)| (named.name.clone(), location.room))
             .ok()
             .ok_or(action::Error::MissingComponent(player, "Player"))?;
+
+        let players = world
+            .get::<Room>(room)
+            .unwrap()
+            .players
+            .iter()
+            .filter(|p| **p != player)
+            .copied()
+            .collect_vec();
+
+        let message = format!("{} leaves.", name);
+
+        for player in players {
+            if let Some(mut messages) = world.get_mut::<Messages>(player) {
+                messages.queue(message.clone());
+            }
+        }
 
         if let Some(objects) = world
             .get::<Contents>(player)
@@ -289,6 +306,10 @@ impl GameWorld {
     }
 }
 
+fn time_system(mut time: ResMut<Time>) {
+    time.update()
+}
+
 fn add_void_room(world: &mut World) {
     if world
         .get_resource::<Rooms>()
@@ -323,7 +344,8 @@ fn add_void_room(world: &mut World) {
 
 fn build_schedules() -> (Schedule, Schedule, Schedule) {
     let mut pre_event_schedule = Schedule::default();
-    pre_event_schedule.add_stage(STAGE_UPDATE, SystemStage::parallel());
+    pre_event_schedule.add_stage(STAGE_FIRST, SystemStage::parallel());
+    pre_event_schedule.add_stage_after(STAGE_FIRST, STAGE_UPDATE, SystemStage::parallel());
 
     let mut update_schedule = Schedule::default();
     update_schedule.add_stage(STAGE_FIRST, SystemStage::parallel());

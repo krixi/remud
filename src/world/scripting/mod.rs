@@ -222,7 +222,6 @@ impl TriggerEvent {
             Action::Get(_) => Some(TriggerEvent::Get),
             Action::Inventory(_) => Some(TriggerEvent::Inventory),
             Action::Login(_) => None,
-            Action::Logout(_) => None,
             Action::Look(_) => Some(TriggerEvent::Look),
             Action::LookAt(_) => Some(TriggerEvent::LookAt),
             Action::Message(_) => None,
