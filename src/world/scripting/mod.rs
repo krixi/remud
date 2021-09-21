@@ -242,6 +242,7 @@ impl TriggerEvent {
             Action::RoomRemove(_) => None,
             Action::RoomUnlink(_) => None,
             Action::RoomUpdateDescription(_) => None,
+            Action::RoomUpdateRegions(_) => None,
             Action::Say(_) => Some(TriggerEvent::Say),
             Action::ScriptAttach(_) => None,
             Action::ScriptDetach(_) => None,

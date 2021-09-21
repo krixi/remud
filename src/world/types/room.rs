@@ -10,6 +10,7 @@ pub struct RoomBundle {
     pub room: Room,
     pub description: Description,
     pub contents: Contents,
+    pub regions: Regions,
 }
 
 pub struct Room {
@@ -161,6 +162,19 @@ impl fmt::Display for Direction {
             Direction::West => write!(f, "west"),
             Direction::Up => write!(f, "up"),
             Direction::Down => write!(f, "down"),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Regions {
+    pub list: Vec<String>,
+}
+
+impl Regions {
+    pub fn remove(&mut self, region: &str) {
+        if let Some(position) = self.list.iter().position(|r| r.as_str() == region) {
+            self.list.remove(position);
         }
     }
 }

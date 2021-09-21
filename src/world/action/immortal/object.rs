@@ -47,11 +47,11 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                         "info" => Ok(Action::from(ObjectInfo {entity: player, id })),
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a comma separated list of keywords.".to_string())
+                                Err("Enter a space separated list of keywords.".to_string())
                             } else {
                                 let keywords = tokenizer
                                     .rest()
-                                    .split(',')
+                                    .split(' ')
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
@@ -226,9 +226,9 @@ pub fn object_info_system(
 
             let mut message = format!("Object {}", object.id);
             message.push_str("\r\n  name: ");
-            message.push_str(named.name.as_str());
+            message.push_str(named.name.replace("|", "||").as_str());
             message.push_str("\r\n  description: ");
-            message.push_str(description.text.as_str());
+            message.push_str(description.text.replace("|", "||").as_str());
             message.push_str(format!("\r\n  flags: {:?}", flags.flags).as_str());
             message.push_str("\r\n  keywords: ");
             message.push_str(word_list(keywords.list.clone()).as_str());

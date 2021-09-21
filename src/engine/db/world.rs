@@ -13,7 +13,7 @@ use crate::{
         types::{
             self,
             object::{Object, ObjectBundle, ObjectId, Objects},
-            room::{Direction, Room, RoomBundle, RoomId, Rooms},
+            room::{Direction, Regions, Room, RoomBundle, RoomId, Rooms},
             Configuration, Contents, Description, Id, Keywords, Location, Named,
         },
     },
@@ -57,6 +57,18 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     let mut results = sqlx::query_as::<_, RoomRow>("SELECT id, description FROM rooms").fetch(pool);
 
     while let Some(room) = results.try_next().await? {
+        let regions = sqlx::query(
+            r#"SELECT name FROM regions
+                INNER JOIN room_regions ON region_id = regions.id
+                        AND room_id = ?"#,
+        )
+        .bind(room.id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect_vec();
+
         let id = room.id;
         let entity = world
             .spawn()
@@ -67,6 +79,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
                 },
                 room: Room::try_from(room)?,
                 contents: Contents::default(),
+                regions: Regions { list: regions },
             })
             .id();
         rooms_by_id.insert(RoomId::try_from(id)?, entity);

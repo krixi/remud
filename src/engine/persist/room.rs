@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 use crate::{
     engine::persist::Persist,
@@ -157,25 +157,71 @@ impl Persist for RemoveObject {
     }
 }
 
-pub struct Update {
+pub struct UpdateDescription {
     id: RoomId,
     description: String,
 }
 
-impl Update {
+impl UpdateDescription {
     pub fn new(id: RoomId, description: String) -> Box<Self> {
-        Box::new(Update { id, description })
+        Box::new(UpdateDescription { id, description })
     }
 }
 
 #[async_trait]
-impl Persist for Update {
+impl Persist for UpdateDescription {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
             .bind(self.description.as_str())
             .bind(self.id)
             .execute(pool)
             .await?;
+
+        Ok(())
+    }
+}
+
+pub struct UpdateRegions {
+    id: RoomId,
+    regions: Vec<String>,
+}
+
+impl UpdateRegions {
+    pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
+        Box::new(UpdateRegions { id, regions })
+    }
+}
+
+#[async_trait]
+impl Persist for UpdateRegions {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM room_regions WHERE room_id = ?")
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        for region in self.regions.iter() {
+            let region_id: i64 = if let Ok(region_row) =
+                sqlx::query("SELECT id FROM regions WHERE name = ?")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await
+            {
+                region_row.get("id")
+            } else {
+                sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await?
+                    .get("id")
+            };
+
+            sqlx::query("INSERT INTO room_regions(room_id, region_id) VALUES(?, ?)")
+                .bind(self.id)
+                .bind(region_id)
+                .execute(pool)
+                .await?;
+        }
 
         Ok(())
     }

@@ -17,8 +17,6 @@
 
 - support UTF-8 clients
 
-- add regions
-
 - dedupe object set/clear flags
 
 - dedupe set name/description systems (common types)
@@ -44,3 +42,9 @@
 - add combat
 
 - add reputation
+
+- add world time/timers
+
+- colorize login sequence
+
+- colorize room look

@@ -7,14 +7,14 @@ use itertools::Itertools;
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
     into_action,
-    text::Tokenizer,
+    text::{word_list, Tokenizer},
     world::{
         action::{Action, DEFAULT_ROOM_DESCRIPTION},
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
             player::{Messages, Player},
-            room::{Direction, Room, RoomBundle, RoomId, Rooms},
+            room::{Direction, Regions, Room, RoomBundle, RoomId, Rooms},
             Container, Contents, Description, Id, Location, Named,
         },
         VOID_ROOM_ID,
@@ -92,6 +92,35 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                     Err("Enter a direction.".to_string())
                 }
             }
+            "region" => {
+                if let Some(operation) = tokenizer.next() {
+                    if tokenizer.rest().is_empty() {
+                        Err("Enter one or more space separated regions.".to_string())
+                    } else {
+                        let regions = tokenizer
+                            .rest()
+                            .split(' ')
+                            .map(|s| s.to_string())
+                            .collect_vec();
+
+                        match operation {
+                            "add" => Ok(Action::from(RoomUpdateRegions {
+                                entity: player,
+                                remove: false,
+                                regions,
+                            })),
+                            "remove" => Ok(Action::from(RoomUpdateRegions {
+                                entity: player,
+                                remove: true,
+                                regions,
+                            })),
+                            _ => Err("Enter a valid region operation: add or remove.".to_string()),
+                        }
+                    }
+                } else {
+                    Err("Enter a region operation: add or remove.".to_string())
+                }
+            }
             "remove" => Ok(Action::from(RoomRemove { entity: player })),
             "unlink" => {
                 if let Some(direction) = tokenizer.next() {
@@ -114,12 +143,15 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                 }
             }
             _ => Err(
-                "Enter a valid room subcommand: info, desc, link, new, remove or unlink."
+                "Enter a valid room subcommand: info, desc, link, new, region, remove, or unlink."
                     .to_string(),
             ),
         }
     } else {
-        Err("Enter a room subcommand: info, desc, link, new, remove or unlink.".to_string())
+        Err(
+            "Enter a room subcommand: info, desc, link, new, region, remove, or unlink."
+                .to_string(),
+        )
     }
 }
 
@@ -182,6 +214,7 @@ pub fn room_create_system(
                         text: DEFAULT_ROOM_DESCRIPTION.to_string(),
                     },
                     contents: Contents::default(),
+                    regions: Regions::default(),
                 })
                 .id();
 
@@ -237,7 +270,13 @@ into_action!(RoomInfo);
 pub fn room_info_system(
     mut action_reader: EventReader<Action>,
     player_query: Query<&Location, With<Player>>,
-    room_query: Query<(&Room, &Description, &Contents, Option<&ScriptHooks>)>,
+    room_query: Query<(
+        &Room,
+        &Description,
+        &Regions,
+        &Contents,
+        Option<&ScriptHooks>,
+    )>,
     named_query: Query<&Named>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
@@ -252,12 +291,13 @@ pub fn room_info_system(
                     continue;
                 };
 
-            let (room, description, contents, hooks) = room_query.get(room_entity).unwrap();
+            let (room, description, regions, contents, hooks) =
+                room_query.get(room_entity).unwrap();
 
             let mut message = format!("Room {}", room.id);
 
             message.push_str("\r\n  description: ");
-            message.push_str(description.text.as_str());
+            message.push_str(description.text.replace("|", "||").as_str());
 
             message.push_str("\r\n  exits:");
             room.exits
@@ -265,12 +305,15 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, _, _, _)| (direction, room.id))
+                        .map(|(room, _, _, _, _)| (direction, room.id))
                         .ok()
                 })
                 .for_each(|(direction, room_id)| {
                     message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
                 });
+
+            message.push_str("\r\n  regions: ");
+            message.push_str(word_list(regions.list.clone()).as_str());
 
             message.push_str("\r\n  players:");
             room.players
@@ -284,9 +327,16 @@ pub fn room_info_system(
                 .objects
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
-                .map(|(object, named)| (object.id, named.name.as_str()))
+                .map(|(object, named)| (object.id, &named.name))
                 .for_each(|(id, name)| {
-                    message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
+                    message.push_str(
+                        format!(
+                            "\r\n    object {}: {}",
+                            id,
+                            name.replace("|", "||").as_str()
+                        )
+                        .as_str(),
+                    )
                 });
             message.push_str("\r\n  script hooks:");
             if let Some(ScriptHooks { list }) = hooks {
@@ -362,47 +412,6 @@ pub fn room_link_system(
                     "Linked {} exit to room {}.",
                     direction, destination
                 ));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RoomUpdateDescription {
-    pub entity: Entity,
-    pub description: String,
-}
-
-into_action!(RoomUpdateDescription);
-
-pub fn room_update_description_system(
-    mut action_reader: EventReader<Action>,
-    mut updates: ResMut<Updates>,
-    player_query: Query<&Location, With<Player>>,
-    mut room_query: Query<(&Room, &mut Description)>,
-    mut message_query: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::RoomUpdateDescription(RoomUpdateDescription {
-            entity,
-            description,
-        }) = action
-        {
-            let room_entity = player_query
-                .get(*entity)
-                .map(|location| location.room)
-                .unwrap();
-
-            let room_id = {
-                let (room, mut room_description) = room_query.get_mut(room_entity).unwrap();
-                room_description.text = description.clone();
-                room.id
-            };
-
-            updates.queue(persist::room::Update::new(room_id, description.clone()));
-
-            if let Ok(mut messages) = message_query.get_mut(*entity) {
-                messages.queue(format!("Updated room {} description.", room_id));
             }
         }
     }
@@ -538,12 +547,6 @@ pub fn room_remove_system(
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct RoomUnlink {
-    pub entity: Entity,
-    pub direction: Direction,
-}
-
 into_action!(RoomUnlink);
 
 pub fn room_unlink_system(
@@ -576,6 +579,105 @@ pub fn room_unlink_system(
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {
                 messages.queue(message);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomUnlink {
+    pub entity: Entity,
+    pub direction: Direction,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomUpdateDescription {
+    pub entity: Entity,
+    pub description: String,
+}
+
+into_action!(RoomUpdateDescription);
+
+pub fn room_update_description_system(
+    mut action_reader: EventReader<Action>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<(&Room, &mut Description)>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::RoomUpdateDescription(RoomUpdateDescription {
+            entity,
+            description,
+        }) = action
+        {
+            let room_entity = player_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            let room_id = {
+                let (room, mut room_description) = room_query.get_mut(room_entity).unwrap();
+                room_description.text = description.clone();
+                room.id
+            };
+
+            updates.queue(persist::room::UpdateDescription::new(
+                room_id,
+                description.clone(),
+            ));
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(format!("Updated room {} description.", room_id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomUpdateRegions {
+    pub entity: Entity,
+    pub remove: bool,
+    pub regions: Vec<String>,
+}
+
+into_action!(RoomUpdateRegions);
+
+pub fn room_update_regions_system(
+    mut action_reader: EventReader<Action>,
+    mut updates: ResMut<Updates>,
+    player_query: Query<&Location, With<Player>>,
+    mut room_query: Query<(&Room, &mut Regions)>,
+    mut message_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::RoomUpdateRegions(RoomUpdateRegions {
+            entity,
+            remove,
+            regions,
+        }) = action
+        {
+            let room_entity = player_query
+                .get(*entity)
+                .map(|location| location.room)
+                .unwrap();
+
+            let (room_id, updated_regions) = {
+                let (room, mut current_regions) = room_query.get_mut(room_entity).unwrap();
+                if *remove {
+                    for region in regions {
+                        current_regions.remove(region.as_str())
+                    }
+                } else {
+                    current_regions.list.extend(regions.iter().cloned())
+                }
+                (room.id, current_regions.list.clone())
+            };
+
+            updates.queue(persist::room::UpdateRegions::new(room_id, updated_regions));
+
+            if let Ok(mut messages) = message_query.get_mut(*entity) {
+                messages.queue(format!("Updated room {} regions.", room_id));
             }
         }
     }

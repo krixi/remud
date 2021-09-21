@@ -9,11 +9,11 @@ pub mod system;
 use bevy_ecs::prelude::*;
 use thiserror::Error;
 
-use crate::world::action::attributes::{parse_stats, stats_system, Stats};
 use crate::{
     text::Tokenizer,
     world::{
         action::{
+            attributes::{parse_stats, stats_system, Stats},
             communicate::{
                 emote_system, message_system, parse_me, parse_say, parse_send, say_system,
                 send_system, Emote, Message, Say, SendMessage,
@@ -31,7 +31,8 @@ use crate::{
                 room::{
                     parse_room, room_create_system, room_info_system, room_link_system,
                     room_remove_system, room_unlink_system, room_update_description_system,
-                    RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
+                    room_update_regions_system, RoomCreate, RoomInfo, RoomLink, RoomRemove,
+                    RoomUnlink, RoomUpdateDescription, RoomUpdateRegions,
                 },
                 script::{
                     parse_script, script_attach_system, script_detach_system, ScriptAttach,
@@ -94,9 +95,10 @@ pub enum Action {
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
     RoomLink(RoomLink),
-    RoomUpdateDescription(RoomUpdateDescription),
     RoomRemove(RoomRemove),
     RoomUnlink(RoomUnlink),
+    RoomUpdateDescription(RoomUpdateDescription),
+    RoomUpdateRegions(RoomUpdateRegions),
     Say(Say),
     ScriptAttach(ScriptAttach),
     ScriptDetach(ScriptDetach),
@@ -135,6 +137,7 @@ impl Action {
             Action::RoomLink(action) => action.entity,
             Action::RoomRemove(action) => action.entity,
             Action::RoomUnlink(action) => action.entity,
+            Action::RoomUpdateRegions(action) => action.entity,
             Action::RoomUpdateDescription(action) => action.entity,
             Action::Say(action) => action.entity,
             Action::ScriptAttach(action) => action.entity,
@@ -174,6 +177,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(room_remove_system.system());
     stage.add_system(room_unlink_system.system());
     stage.add_system(room_update_description_system.system());
+    stage.add_system(room_update_regions_system.system());
     stage.add_system(say_system.system().after("look"));
     stage.add_system(script_attach_system.system());
     stage.add_system(script_detach_system.system());

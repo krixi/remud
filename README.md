@@ -12,6 +12,7 @@ Technologies:
 - [Tokio](https://tokio.rs/)
 - [sqlx](https://github.com/launchbadge/sqlx) (currently backed by [SQLite](https://www.sqlite.org/))
 - [bevy_ecs](https://bevyengine.org/)
+- [rhai](https://rhai.rs/)
 
 Docs for this project are built using [Hugo](https://gohugo.io/) - to view them locally, install Hugo and run:
 
@@ -20,7 +21,6 @@ cd docs
 npm install
 hugo serve -D
 ```
-
 
 The web client for this project allows for management of the in-game scripts. To run it:
 
