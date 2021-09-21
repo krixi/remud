@@ -26,12 +26,14 @@ use crate::{
 };
 
 // Valid shapes:
-// object <id> info - displays information about the object
 // object new - creates a new object and puts it on the ground
+// object <id> info - displays information about the object
 // object <id> keywords - sets an object's keywords
-// object <id> short - sets an object's short description
-// object <id> long - sets an object's long description
+// object <id> name - sets an object's short description
+// object <id> description - sets an object's long description
 // object <id> remove - removes an object
+// object <id> set - sets one or more object flags
+// object <id> unset - clears one or more object flags
 pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(token) = tokenizer.next() {
         match token {
@@ -224,15 +226,15 @@ pub fn object_info_system(
             let (object, flags, keywords, named, description, container, location, hooks) =
                 object_query.get(object_entity).unwrap();
 
-            let mut message = format!("Object {}", object.id);
-            message.push_str("\r\n  name: ");
+            let mut message = format!("|white|Object {}|-|", object.id);
+            message.push_str("\r\n  |white|name|-|: ");
             message.push_str(named.name.replace("|", "||").as_str());
-            message.push_str("\r\n  description: ");
+            message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.text.replace("|", "||").as_str());
-            message.push_str(format!("\r\n  flags: {:?}", flags.flags).as_str());
-            message.push_str("\r\n  keywords: ");
+            message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.flags).as_str());
+            message.push_str("\r\n  |white|keywords|-|: ");
             message.push_str(word_list(keywords.list.clone()).as_str());
-            message.push_str("\r\n  container: ");
+            message.push_str("\r\n  |white|container|-|: ");
             if let Some(container) = container {
                 if let Ok(named) = player_query.get(container.entity) {
                     message.push_str("player ");
@@ -247,7 +249,7 @@ pub fn object_info_system(
                     message.push_str(room.id.to_string().as_str());
                 }
             }
-            message.push_str("\r\n  script hooks:");
+            message.push_str("\r\n  |white|script hooks|-|:");
             if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");

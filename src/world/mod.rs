@@ -19,11 +19,24 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use rhai::ParseError;
 
-use crate::{engine::persist::{self, DynUpdate, Updates}, web, world::{action::{register_action_systems, system::Logout, Action}, fsm::system::state_machine_system, scripting::{
+use crate::{
+    engine::persist::{self, DynUpdate, Updates},
+    web,
+    world::{
+        action::{register_action_systems, system::Logout, Action},
+        fsm::system::state_machine_system,
+        scripting::{
             create_script_engine, post_action_script_system, queued_action_script_system,
             run_post_action_scripts, run_pre_action_scripts, script_compiler_system, QueuedAction,
             Script, ScriptName, ScriptRuns, TriggerEvent,
-        }, types::{Configuration, Contents, Description, Id, Location, Named, player::{Messages, Player, Players}, room::{Regions, Room, RoomBundle, RoomId, Rooms}}}};
+        },
+        types::{
+            player::{Messages, Player, Players},
+            room::{Regions, Room, RoomBundle, RoomId, Rooms},
+            Configuration, Contents, Description, Id, Location, Named,
+        },
+    },
+};
 
 pub const STAGE_FIRST: &str = "first";
 pub const STAGE_UPDATE: &str = "update";
@@ -291,7 +304,7 @@ fn add_void_room(world: &mut World) {
                 text: description.clone(),
             },
             contents: Contents::default(),
-            regions: Regions::default()
+            regions: Regions::default(),
         };
         let void_room = world.spawn().insert_bundle(bundle).id();
         world

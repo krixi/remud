@@ -1,4 +1,5 @@
 pub mod attributes;
+pub mod commands;
 pub mod communicate;
 pub mod immortal;
 pub mod movement;
@@ -6,54 +7,35 @@ pub mod object;
 pub mod observe;
 pub mod system;
 
-use std::collections::HashMap;
-
 use bevy_ecs::prelude::*;
 use thiserror::Error;
 
-use crate::{
-    text::Tokenizer,
-    world::{
-        action::{
-            attributes::{parse_stats, stats_system, Stats},
-            communicate::{
-                emote_system, message_system, parse_me, parse_say, parse_send, say_system,
-                send_system, Emote, Message, Say, SendMessage,
-            },
-            immortal::{
-                object::{
-                    object_clear_flags_system, object_create_system, object_info_system,
-                    object_remove_system, object_set_flags_system,
-                    object_update_description_system, object_update_keywords_system,
-                    object_update_name_system, parse_object, ObjectCreate, ObjectInfo,
-                    ObjectRemove, ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
-                    ObjectUpdateKeywords, ObjectUpdateName,
-                },
-                player::{parse_player, player_info_system, PlayerInfo},
-                room::{
-                    parse_room, room_create_system, room_info_system, room_link_system,
-                    room_remove_system, room_unlink_system, room_update_description_system,
-                    room_update_regions_system, RoomCreate, RoomInfo, RoomLink, RoomRemove,
-                    RoomUnlink, RoomUpdateDescription, RoomUpdateRegions,
-                },
-                script::{
-                    parse_script, script_attach_system, script_detach_system, ScriptAttach,
-                    ScriptDetach,
-                },
-            },
-            movement::{move_system, parse_teleport, teleport_system, Move, Teleport},
-            object::{
-                drop_system, get_system, inventory_system, parse_drop, parse_get, Drop, Get,
-                Inventory,
-            },
-            observe::{
-                exits_system, look_at_system, look_system, parse_look, who_system, Exits, Look,
-                LookAt, Who,
-            },
-            system::{login_system, shutdown_system, Login, Logout, Shutdown},
-        },
-        types::room::Direction,
+use crate::world::action::{
+    attributes::{stats_system, Stats},
+    communicate::{
+        emote_system, message_system, say_system, send_system, Emote, Message, Say, SendMessage,
     },
+    immortal::{
+        object::{
+            object_clear_flags_system, object_create_system, object_info_system,
+            object_remove_system, object_set_flags_system, object_update_description_system,
+            object_update_keywords_system, object_update_name_system, ObjectCreate, ObjectInfo,
+            ObjectRemove, ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
+            ObjectUpdateKeywords, ObjectUpdateName,
+        },
+        player::{player_info_system, PlayerInfo},
+        room::{
+            room_create_system, room_info_system, room_link_system, room_remove_system,
+            room_unlink_system, room_update_description_system, room_update_regions_system,
+            RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
+            RoomUpdateRegions,
+        },
+        script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
+    },
+    movement::{move_system, teleport_system, Move, Teleport},
+    object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
+    observe::{exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who},
+    system::{login_system, shutdown_system, Login, Logout, Shutdown},
 };
 
 #[macro_export]
@@ -71,60 +53,6 @@ pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
 pub const DEFAULT_OBJECT_NAME: &str = "an object";
 pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
-
-pub struct Commands {
-    list: HashMap<&'static str, Command>,
-    prefixes: HashMap<char, &'static str>,
-}
-
-impl Commands {
-    pub fn new(commands: Vec<Command>, prefixes: Vec<PrefixCommand>) -> Self {
-        let list = commands.into_iter().map(|c| (c.name, c)).collect();
-        let prefixes = prefixes
-            .into_iter()
-            .map(|p| (p.prefix, p.command))
-            .collect();
-        Commands { list, prefixes }
-    }
-
-    pub fn parse(&self, actor: Entity, input: &str) -> Result<Action, String> {
-        if let Some(c) = input.chars().next() {
-            if let Some(command) = self.prefixes.get(&c) {
-                let mut tokenizer = Tokenizer::new(&input[c.len_utf8()..]);
-                if let Some(command) = self.list.get(command) {
-                    return (command.parser)(actor, &mut tokenizer);
-                } else {
-                    return Err("I don't know what that means.".to_string());
-                }
-            }
-        }
-
-        let mut tokenizer = Tokenizer::new(input);
-        if let Some(command) = tokenizer.next() {
-            if let Some(command) = self.list.get(command) {
-                (command.parser)(actor, &mut tokenizer)
-            } else {
-                Err("I don't know what that means.".to_string())
-            }
-        } else {
-            Err("Go on, then.".to_string())
-        }
-    }
-}
-
-type CommandParser = fn(Entity, &mut Tokenizer) -> Result<Action, String>;
-
-pub struct Command {
-    name: &'static str,
-    parser: CommandParser,
-    help: &'static str,
-    immortal: bool,
-}
-
-pub struct PrefixCommand {
-    prefix: char,
-    command: &'static str,
-}
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -248,76 +176,4 @@ pub fn register_action_systems(stage: &mut SystemStage) {
 pub enum Error {
     #[error("{0:?} has no {1}.")]
     MissingComponent(Entity, &'static str),
-}
-
-pub fn parse(player: Entity, input: &str) -> Result<Action, String> {
-    if let Some(message) = input.strip_prefix('\'').map(ToString::to_string) {
-        if message.is_empty() {
-            return Err("Say what?".to_string());
-        }
-
-        return Ok(Action::from(Say {
-            entity: player,
-            message,
-        }));
-    } else if let Some(emote) = input.strip_prefix(';').map(ToString::to_string) {
-        if emote.is_empty() {
-            return Err("Do what?".to_string());
-        }
-
-        return Ok(Action::from(Emote {
-            entity: player,
-            emote,
-        }));
-    }
-
-    let mut tokenizer = Tokenizer::new(input);
-    if let Some(token) = tokenizer.next() {
-        match token.to_lowercase().as_str() {
-            "down" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::Down,
-            })),
-            "drop" => parse_drop(player, tokenizer),
-            "east" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::East,
-            })),
-            "exits" => Ok(Action::from(Exits { entity: player })),
-            "get" => parse_get(player, tokenizer),
-            "inventory" => Ok(Action::from(Inventory { entity: player })),
-            "look" => parse_look(player, tokenizer),
-            "me" => parse_me(player, tokenizer),
-            "north" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::North,
-            })),
-            "object" => parse_object(player, tokenizer),
-            "player" => parse_player(player, tokenizer),
-            "room" => parse_room(player, tokenizer),
-            "say" => parse_say(player, tokenizer),
-            "script" => parse_script(player, tokenizer),
-            "scripts" => parse_script(player, tokenizer),
-            "stats" => parse_stats(player, tokenizer),
-            "send" => parse_send(player, tokenizer),
-            "shutdown" => Ok(Action::from(Shutdown { entity: player })),
-            "south" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::South,
-            })),
-            "teleport" => parse_teleport(player, tokenizer),
-            "up" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::Up,
-            })),
-            "west" => Ok(Action::from(Move {
-                entity: player,
-                direction: Direction::West,
-            })),
-            "who" => Ok(Action::from(Who { entity: player })),
-            _ => Err("I don't know what that means.".to_string()),
-        }
-    } else {
-        Err("Go on, then.".to_string())
-    }
 }

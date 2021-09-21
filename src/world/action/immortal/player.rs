@@ -9,7 +9,7 @@ use crate::{
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
-            player::{Messages, Players},
+            player::{Messages, Player, Players},
             room::Room,
             Contents, Location, Named,
         },
@@ -47,7 +47,7 @@ into_action!(PlayerInfo);
 pub fn player_info_system(
     mut action_reader: EventReader<Action>,
     players: Res<Players>,
-    player_query: Query<(&Contents, &Location, Option<&ScriptHooks>)>,
+    player_query: Query<(&Player, &Contents, &Location, Option<&ScriptHooks>)>,
     room_query: Query<&Room>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
@@ -63,15 +63,18 @@ pub fn player_info_system(
                 continue;
             };
 
-            let (contents, location, hooks) = player_query.get(player).unwrap();
+            let (player, contents, location, hooks) = player_query.get(player).unwrap();
             let room = room_query.get(location.room).unwrap();
 
-            let mut message = format!("Player {}", name);
+            let mut message = format!("|white|Player {}|-|", name);
 
-            message.push_str("\r\n  room: ");
+            message.push_str("\r\n  |white|id|-|: ");
+            message.push_str(player.id.to_string().as_str());
+
+            message.push_str("\r\n  |white|room|-|: ");
             message.push_str(room.id.to_string().as_str());
 
-            message.push_str("\r\n  inventory:");
+            message.push_str("\r\n  |white|inventory|-|:");
             contents
                 .objects
                 .iter()
@@ -84,7 +87,7 @@ pub fn player_info_system(
                 .for_each(|(id, name)| {
                     message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
                 });
-            message.push_str("\r\n  script hooks:");
+            message.push_str("\r\n  |white|script hooks|-|:");
             if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");

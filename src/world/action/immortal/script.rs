@@ -22,7 +22,6 @@ use crate::{
 
 // script <name> attach-pre [object|player|room] <id/name>
 // script <name> attach [object|player|room] <id/name>
-// script <name> detach-pre [object|player|room] <id/name>
 // script <name> detach [object|player|room] <id/name>
 pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(script) = tokenizer.next() {

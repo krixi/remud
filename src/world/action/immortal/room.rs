@@ -27,6 +27,8 @@ use crate::{
 // room new [direction] - creates a room to the [Direction] of this one with a two way link
 // room desc [description] - sets the description of a room
 // room link [direction] [room ID] - links the current room to another in a given direction (one way)
+// room unlink [direction] - removes an exit from this room
+// room region - sets the list of regions for the current room
 // room remove - removes the current room and moves everything in it to the void room
 pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(subcommand) = tokenizer.next() {
@@ -92,7 +94,7 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                     Err("Enter a direction.".to_string())
                 }
             }
-            "region" => {
+            "regions" => {
                 if let Some(operation) = tokenizer.next() {
                     if tokenizer.rest().is_empty() {
                         Err("Enter one or more space separated regions.".to_string())
@@ -294,12 +296,12 @@ pub fn room_info_system(
             let (room, description, regions, contents, hooks) =
                 room_query.get(room_entity).unwrap();
 
-            let mut message = format!("Room {}", room.id);
+            let mut message = format!("|white|Room {}|-|", room.id);
 
-            message.push_str("\r\n  description: ");
+            message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.text.replace("|", "||").as_str());
 
-            message.push_str("\r\n  exits:");
+            message.push_str("\r\n  |white|exits|-|:");
             room.exits
                 .iter()
                 .filter_map(|(direction, room)| {
@@ -312,17 +314,21 @@ pub fn room_info_system(
                     message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
                 });
 
-            message.push_str("\r\n  regions: ");
-            message.push_str(word_list(regions.list.clone()).as_str());
+            message.push_str("\r\n  |white|regions|-|: ");
+            if regions.list.is_empty() {
+                message.push_str("none");
+            } else {
+                message.push_str(word_list(regions.list.clone()).as_str());
+            }
 
-            message.push_str("\r\n  players:");
+            message.push_str("\r\n  |white|players|-|:");
             room.players
                 .iter()
                 .filter_map(|player| named_query.get(*player).ok())
                 .map(|named| named.name.as_str())
                 .for_each(|name| message.push_str(format!("\r\n    {}", name).as_str()));
 
-            message.push_str("\r\n  objects:");
+            message.push_str("\r\n  |white|objects|-|:");
             contents
                 .objects
                 .iter()
@@ -338,7 +344,7 @@ pub fn room_info_system(
                         .as_str(),
                     )
                 });
-            message.push_str("\r\n  script hooks:");
+            message.push_str("\r\n  |white|script hooks|-|:");
             if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
                     message.push_str(" none");

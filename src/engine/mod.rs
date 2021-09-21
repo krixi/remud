@@ -27,7 +27,7 @@ use crate::{
         WebResponse,
     },
     world::{
-        action::{observe::Look, parse, system::Login, Action},
+        action::{commands::Commands, observe::Look, system::Login, Action},
         GameWorld,
     },
     ClientId,
@@ -58,6 +58,7 @@ pub struct Engine {
     clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
+    commands: Commands,
     db: Db,
     tick: u64,
 }
@@ -72,6 +73,7 @@ impl Engine {
         let world = db.load_world().await?;
 
         let game_world = GameWorld::new(world);
+        let commands = Commands::default();
 
         Ok(Engine {
             engine_rx,
@@ -80,6 +82,7 @@ impl Engine {
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
+            commands,
             db,
             tick: 0,
         })
@@ -156,7 +159,7 @@ impl Engine {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from(
-                    "\r\nConnected to |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
+                    "\r\n|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
                 );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
@@ -449,7 +452,7 @@ impl Engine {
                 }
                 State::InGame { player } => {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
-                    match parse(*player, &input) {
+                    match self.commands.parse(*player, &input, false) {
                         Ok(action) => self.game_world.player_action(action).await,
                         Err(message) => {
                             client

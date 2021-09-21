@@ -107,16 +107,14 @@ impl<'a> Replacer for ColorReplacer<'a> {
                 }
             }
         } else if caps.name("clear").is_some() {
-            if self.color_support.supports_color() {
-                if !self.stack.is_empty() {
-                    self.stack.pop();
+            if self.color_support.supports_color() && !self.stack.is_empty() {
+                self.stack.pop();
 
-                    if let Some(color) = self.stack.last() {
-                        dst.push_str(color.to_string().as_str())
-                    } else {
-                        *self.closed = true;
-                        dst.push_str(CLEAR_COLOR);
-                    }
+                if let Some(color) = self.stack.last() {
+                    dst.push_str(color.to_string().as_str())
+                } else {
+                    *self.closed = true;
+                    dst.push_str(CLEAR_COLOR);
                 }
             }
         } else {

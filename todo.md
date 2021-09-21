@@ -1,11 +1,4 @@
-- add mechanism for immortal info commands to avoid running through the colorizer
-
 - fix logout message - make instant action when event occurs
-
-- add help command
-
-  > help \[topic\]
-  > ?\[topic\]
 
 - add ability to look at players
 
@@ -44,7 +37,5 @@
 - add reputation
 
 - add world time/timers
-
-- colorize login sequence
 
 - colorize room look
