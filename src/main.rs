@@ -128,7 +128,7 @@ async fn process(
                 if let Some(message) = maybe_message {
                     match message {
                         EngineMessage::Output(message) => {
-                            let message = colorize(message.as_str(), telnet.color_support());
+                            let message = colorize(format!("|Gray69|{}", message).as_str(), telnet.color_support());
                             match message.into_ascii_string() {
                                 Ok(str) => {
                                     let bytes: Vec<u8> = str.into();

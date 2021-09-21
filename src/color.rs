@@ -10,7 +10,7 @@ pub const CLEAR_COLOR: &str = "\x1b[m";
 
 lazy_static! {
     static ref COLOR_TAG_MATCHER: Regex = Regex::new(
-        r#"(?P<escape>\|\|)|\|(?P<byte>(1?[0-9]{1,2})|(2[0-4][0-9])|(25[0-5]))\||\|#(?P<true>[[:xdigit:]]{6})\||\|(?P<name>[[:alnum:]]+)\||(?P<clear>\|/\|)"#,
+        r#"(?P<escape>\|\|)|\|(?P<byte>(1?[0-9]{1,2})|(2[0-4][0-9])|(25[0-5]))\||\|#(?P<true>[[:xdigit:]]{6})\||\|(?P<name>[[:alnum:]]+)\||(?P<clear>\|-\|)"#,
     ).unwrap();
 }
 
@@ -703,15 +703,15 @@ mod tests {
 
     #[test]
     fn test_clear_color() {
-        let caps = COLOR_TAG_MATCHER.captures("|/|").unwrap();
-        assert_eq!(caps.name("clear").unwrap().as_str(), "|/|");
+        let caps = COLOR_TAG_MATCHER.captures("|-|").unwrap();
+        assert_eq!(caps.name("clear").unwrap().as_str(), "|-|");
     }
 
     #[test]
     fn test_replacer_closed_true() {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
-        COLOR_TAG_MATCHER.replace_all("|0|text|/|", replacer);
+        COLOR_TAG_MATCHER.replace_all("|0|text|-|", replacer);
         assert_eq!(closed, true);
     }
 
@@ -744,7 +744,7 @@ mod tests {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
-        assert_eq!(result, Cow::from("\x1b[1;36mtext"))
+        assert_eq!(result, Cow::from("\x1b[36mtext"))
     }
 
     #[test]
@@ -760,14 +760,14 @@ mod tests {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|48|text", replacer);
-        assert_eq!(result, Cow::from("\x1b[1;92mtext"))
+        assert_eq!(result, Cow::from("\x1b[92mtext"))
     }
 
     #[test]
     fn test_replacer_removes_color() {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
-        let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|maroon|x|/|t", replacer);
+        let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|Red1|x|-|t", replacer);
         assert_eq!(result, Cow::from("text"));
     }
 
@@ -784,7 +784,7 @@ mod tests {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
         let result =
-            COLOR_TAG_MATCHER.replace_all("|#654321|some |#123456|pretty|/| text|/|", replacer);
+            COLOR_TAG_MATCHER.replace_all("|#654321|some |#123456|pretty|-| text|-|", replacer);
         assert_eq!(
             result,
             Cow::from(
@@ -797,7 +797,7 @@ mod tests {
     fn test_replacer_extra_close() {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
-        let result = COLOR_TAG_MATCHER.replace_all("|#654321|text|/||/|", replacer);
-        assert_eq!(result, Cow::from("\x1b[38;2;101;67;33mtext\x1b[m"))
+        let result = COLOR_TAG_MATCHER.replace_all("|#654321|text|-| |-|", replacer);
+        assert_eq!(result, Cow::from("\x1b[38;2;101;67;33mtext\x1b[m "))
     }
 }

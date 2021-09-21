@@ -17,13 +17,15 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
-use crate::web::JsonScriptResponse;
 use crate::{
     engine::{
         client::{Client, Clients, State},
         db::Db,
     },
-    web::{JsonScript, JsonScriptInfo, JsonScriptName, WebMessage, WebRequest, WebResponse},
+    web::{
+        JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse, WebMessage, WebRequest,
+        WebResponse,
+    },
     world::{
         action::{observe::Look, parse, system::Login, Action},
         GameWorld,
@@ -154,7 +156,7 @@ impl Engine {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from(
-                    "\r\nConnected to |white|ucs://uplink.six.city|/|\r\n\r\n|green|Name?\r\n|/||white|> ",
+                    "\r\nConnected to |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
                 );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
@@ -256,7 +258,7 @@ impl Engine {
                                 tracing::error!("Player presence check error: {}", e);
                                 client
                                     .send(
-                                        "|maroon|Error retrieving user.|/|\r\n|green|Name?\r\n|/||white|> "
+                                        "|Red1|Error retrieving user.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
                                             .into(),
                                     )
                                     .await;
@@ -268,14 +270,16 @@ impl Engine {
                             if self.game_world.player_online(name).await {
                                 client
                                     .send(
-                                        "|maroon|User currently online.|/|\r\n|green|Name?\r\n|/||white|> "
+                                        "|Red1|User currently online.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
                                             .into(),
                                     )
                                     .await;
                                 return;
                             }
                             client
-                                .send("|green|User located.\r\nPassword?\r\n|/||white|> ".into())
+                                .send(
+                                    "|SteelBlue3|User located.\r\nPassword?\r\n|-||white|> ".into(),
+                                )
                                 .await;
                             client.set_state(State::LoginPassword {
                                 name: name.to_string(),
@@ -283,7 +287,7 @@ impl Engine {
                         } else {
                             client
                                 .send(
-                                    "|green|New user detected.|/|\r\n|green|Password?\r\n|/|>"
+                                    "|SteelBlue3|New user detected.|-|\r\n|SteelBlue3|Password?\r\n|-|>"
                                         .into(),
                                 )
                                 .await;
@@ -294,7 +298,7 @@ impl Engine {
                     } else {
                         client
                             .send(
-                                "|maroon|Invalid username.|/|\r\n|green|Name?\r\n|/||white|> "
+                                "|Red1|Invalid username.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
                                     .into(),
                             )
                             .await;
@@ -306,7 +310,7 @@ impl Engine {
                     if input.len() < 5 {
                         client
                             .send(
-                                "|maroon|Weak password detected.|/|\r\n|green|Password?\r\n|/||white|> "
+                                "|Red1|Weak password detected.|-|\r\n|SteelBlue3|Password?\r\n|-||white|> "
                                     .into(),
                             )
                             .await;
@@ -333,7 +337,7 @@ impl Engine {
                     };
 
                     client
-                        .send("|green|Password accepted.\r\nVerify?\r\n|/||white|> ".into())
+                        .send("|SteelBlue3|Password accepted.\r\nVerify?\r\n|-||white|> ".into())
                         .await;
                     client.set_state(State::VerifyPassword {
                         name: name.clone(),

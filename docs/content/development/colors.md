@@ -16,7 +16,7 @@ Colors are added to strings using color tags. Currently, only foreground text ca
 - `|#123456|`: start a hex color
 - `|4|`: start a color using the specific xterm-256 color index
 - `|Aquamarine1|`: start a named color (see the list below)
-- `|/|`: end a color, resuming the previous color (if any)
+- `|-|`: end a color, resuming the previous color (if any)
 - `||`: an escape to print a pipe
 
 It is generally recommended to use named colors if possible: the degredation function from true to 256 color has a tendancy to select the closest gray instead of the closest color. This will provide the most consistent experience for clients with less-than true color support.

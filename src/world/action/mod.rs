@@ -6,6 +6,8 @@ pub mod object;
 pub mod observe;
 pub mod system;
 
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::*;
 use thiserror::Error;
 
@@ -69,6 +71,60 @@ pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
 pub const DEFAULT_OBJECT_NAME: &str = "an object";
 pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
+
+pub struct Commands {
+    list: HashMap<&'static str, Command>,
+    prefixes: HashMap<char, &'static str>,
+}
+
+impl Commands {
+    pub fn new(commands: Vec<Command>, prefixes: Vec<PrefixCommand>) -> Self {
+        let list = commands.into_iter().map(|c| (c.name, c)).collect();
+        let prefixes = prefixes
+            .into_iter()
+            .map(|p| (p.prefix, p.command))
+            .collect();
+        Commands { list, prefixes }
+    }
+
+    pub fn parse(&self, actor: Entity, input: &str) -> Result<Action, String> {
+        if let Some(c) = input.chars().next() {
+            if let Some(command) = self.prefixes.get(&c) {
+                let mut tokenizer = Tokenizer::new(&input[c.len_utf8()..]);
+                if let Some(command) = self.list.get(command) {
+                    return (command.parser)(actor, &mut tokenizer);
+                } else {
+                    return Err("I don't know what that means.".to_string());
+                }
+            }
+        }
+
+        let mut tokenizer = Tokenizer::new(input);
+        if let Some(command) = tokenizer.next() {
+            if let Some(command) = self.list.get(command) {
+                (command.parser)(actor, &mut tokenizer)
+            } else {
+                Err("I don't know what that means.".to_string())
+            }
+        } else {
+            Err("Go on, then.".to_string())
+        }
+    }
+}
+
+type CommandParser = fn(Entity, &mut Tokenizer) -> Result<Action, String>;
+
+pub struct Command {
+    name: &'static str,
+    parser: CommandParser,
+    help: &'static str,
+    immortal: bool,
+}
+
+pub struct PrefixCommand {
+    prefix: char,
+    command: &'static str,
+}
 
 #[derive(Debug, Clone)]
 pub enum Action {
