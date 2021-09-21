@@ -275,7 +275,7 @@ impl Engine {
                                 return;
                             }
                             client
-                                .send("|Lime|User located.\r\nPassword?\r\n|/||white|> ".into())
+                                .send("|green|User located.\r\nPassword?\r\n|/||white|> ".into())
                                 .await;
                             client.set_state(State::LoginPassword {
                                 name: name.to_string(),
