@@ -91,7 +91,7 @@ impl Engine {
 
                     for (player, mut messages) in self.game_world.messages().await {
                         if let Some(client) = self.clients.by_player(player) {
-                            messages.push_back("> ".to_string());
+                            messages.push_back("|white|> ".to_string());
                             client.send_batch(self.tick, messages).await;
                         } else {
                             tracing::error!("Attempting to send messages to player without client: {:?}", player);
@@ -154,7 +154,7 @@ impl Engine {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from(
-                    "\r\n|#7822a3|Connected|/| to |Chartreuse2|ucs://uplink.six.city|/|\r\n\r\nName?\r\n> ",
+                    "\r\nConnected to |white|ucs://uplink.six.city|/|\r\n\r\n|green|Name?\r\n|/||white|> ",
                 );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
@@ -255,7 +255,10 @@ impl Engine {
                             Err(e) => {
                                 tracing::error!("Player presence check error: {}", e);
                                 client
-                                    .send("Error retrieving user.\r\nName?\r\n> ".into())
+                                    .send(
+                                        "|maroon|Error retrieving user.|/|\r\n|green|Name?\r\n|/||white|> "
+                                            .into(),
+                                    )
                                     .await;
                                 return;
                             }
@@ -264,24 +267,37 @@ impl Engine {
                         if has_user {
                             if self.game_world.player_online(name).await {
                                 client
-                                    .send("User currently online.\r\nName?\r\n> ".into())
+                                    .send(
+                                        "|maroon|User currently online.|/|\r\n|green|Name?\r\n|/||white|> "
+                                            .into(),
+                                    )
                                     .await;
                                 return;
                             }
-                            client.send("User located.\r\nPassword?\r\n> ".into()).await;
+                            client
+                                .send("|Lime|User located.\r\nPassword?\r\n|/||white|> ".into())
+                                .await;
                             client.set_state(State::LoginPassword {
                                 name: name.to_string(),
                             });
                         } else {
                             client
-                                .send("New user detected.\r\nPassword?\r\n>".into())
+                                .send(
+                                    "|green|New user detected.|/|\r\n|green|Password?\r\n|/|>"
+                                        .into(),
+                                )
                                 .await;
                             client.set_state(State::CreatePassword {
                                 name: name.to_string(),
                             });
                         }
                     } else {
-                        client.send("Invalid username.\r\nName?\r\n> ".into()).await;
+                        client
+                            .send(
+                                "|maroon|Invalid username.|/|\r\n|green|Name?\r\n|/||white|> "
+                                    .into(),
+                            )
+                            .await;
                     }
                 }
                 State::CreatePassword { name } => {
@@ -289,7 +305,10 @@ impl Engine {
 
                     if input.len() < 5 {
                         client
-                            .send("Weak password detected.\r\nPassword?\r\n> ".into())
+                            .send(
+                                "|maroon|Weak password detected.|/|\r\n|green|Password?\r\n|/||white|> "
+                                    .into(),
+                            )
                             .await;
                         return;
                     }
@@ -304,14 +323,17 @@ impl Engine {
                         Err(e) => {
                             tracing::error!("Create password hash error: {}", e);
                             client
-                                .send("Error computing password hash.\r\nPassword?\r\n> ".into())
+                                .send(
+                                    "Error computing password hash.\r\nPassword?\r\n|white|> "
+                                        .into(),
+                                )
                                 .await;
                             return;
                         }
                     };
 
                     client
-                        .send("Password accepted.\r\nVerify?\r\n> ".into())
+                        .send("|green|Password accepted.\r\nVerify?\r\n|/||white|> ".into())
                         .await;
                     client.set_state(State::VerifyPassword {
                         name: name.clone(),
@@ -326,9 +348,9 @@ impl Engine {
                         Err(e) => {
                             if let VerifyError::Unknown(e) = e {
                                 tracing::error!("Create verify password failure: {}", e);
-                                client.verification_failed_creation(name.as_str()).await;
-                                return;
                             }
+                            client.verification_failed_creation(name.as_str()).await;
+                            return;
                         }
                     }
 
@@ -387,9 +409,9 @@ impl Engine {
                         Err(e) => {
                             if let VerifyError::Unknown(e) = e {
                                 tracing::error!("Login verify password failure: {}", e);
-                                client.verification_failed_creation(name.as_str()).await;
-                                return;
                             }
+                            client.verification_failed_login().await;
+                            return;
                         }
                     }
 
@@ -425,7 +447,11 @@ impl Engine {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
                     match parse(*player, &input) {
                         Ok(action) => self.game_world.player_action(action).await,
-                        Err(message) => client.send(format!("{}\r\n> ", message).into()).await,
+                        Err(message) => {
+                            client
+                                .send(format!("{}\r\n|white|> ", message).into())
+                                .await
+                        }
                     }
                 }
             }

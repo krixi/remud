@@ -63,7 +63,7 @@ impl Client {
     }
 
     pub async fn verification_failed_creation(&mut self, name: &str) {
-        self.send("Verification failed.\r\nPassword?\r\n> ".into())
+        self.send("|maroon|Verification failed.|/|\r\n|green|Password?\r\n|/||white|> ".into())
             .await;
         self.set_state(State::CreatePassword {
             name: name.to_string(),
@@ -71,19 +71,19 @@ impl Client {
     }
 
     pub async fn verification_failed_login(&mut self) {
-        self.send("Verification failed.\r\nName?\r\n> ".into())
+        self.send("|maroon|Verification failed.|/|\r\n|green|Name?\r\n|/||white|> ".into())
             .await;
         self.set_state(State::LoginName {});
     }
 
     pub async fn spawn_failed(&mut self) {
-        self.send("User instantiation failed.\r\nName?\r\n> ".into())
+        self.send("|maroon|User instantiation failed.|/|\r\n|green|Name?\r\n|/||white|> ".into())
             .await;
         self.set_state(State::LoginName {});
     }
 
     pub async fn verified(&mut self) {
-        self.send("Password verified.\r\n\r\nWelcome to City Six.\r\n\r\n".into())
+        self.send("|green|Password verified.|/|\r\n\r\n|white|Welcome to City Six.\r\n\r\n".into())
             .await;
     }
 }

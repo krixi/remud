@@ -320,10 +320,10 @@ impl ToString for Color16 {
     fn to_string(&self) -> String {
         if self.0 < 8 {
             let code = self.0 + 30;
-            format!("\x1b[1;{}m", code)
+            format!("\x1b[{}m", code)
         } else {
             let code = self.0 - 8 + 90;
-            format!("\x1b[1;{}m", code)
+            format!("\x1b[{}m", code)
         }
     }
 }
@@ -767,7 +767,7 @@ mod tests {
     fn test_replacer_removes_color() {
         let mut closed = true;
         let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
-        let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|red|x|/|t", replacer);
+        let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|maroon|x|/|t", replacer);
         assert_eq!(result, Cow::from("text"));
     }
 
