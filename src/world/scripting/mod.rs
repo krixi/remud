@@ -124,7 +124,7 @@ pub struct ScriptRun {
     pub script: ScriptName,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct ScriptHooks {
     pub list: Vec<ScriptHook>,
 }
@@ -148,7 +148,7 @@ impl ScriptHooks {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ScriptHook {
     pub trigger: ScriptTrigger,
     pub script: ScriptName,
@@ -229,10 +229,16 @@ impl TriggerEvent {
             Action::Move(_) => Some(TriggerEvent::Move),
             Action::ObjectCreate(_) => None,
             Action::ObjectInfo(_) => None,
+            Action::ObjectInheritFields(_) => None,
             Action::ObjectRemove(_) => None,
             Action::ObjectUpdateFlags(_) => None,
             Action::ObjectUpdateKeywords(_) => None,
             Action::PlayerInfo(_) => None,
+            Action::PrototypeCreate(_) => None,
+            Action::PrototypeInfo(_) => None,
+            Action::PrototypeRemove(_) => None,
+            Action::PrototypeUpdateFlags(_) => None,
+            Action::PrototypeUpdateKeywords(_) => None,
             Action::RoomCreate(_) => None,
             Action::RoomInfo(_) => None,
             Action::RoomLink(_) => None,

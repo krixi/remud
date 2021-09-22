@@ -17,17 +17,16 @@ use crate::{
         scripting::{ScriptHook, ScriptHooks},
         types::{
             self,
-            object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects},
+            object::{
+                InheritableFields, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, Prototype,
+                PrototypeId, Prototypes,
+            },
             player::{Messages, Player},
             room::Room,
-            ActionTarget, Container, Contents, Description, Id, Keywords, Location, Named,
+            ActionTarget, Container, Contents, Description, Flags, Id, Keywords, Location, Named,
         },
     },
 };
-
-pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
-pub const DEFAULT_OBJECT_NAME: &str = "an object";
-pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
 // Valid shapes:
 // object new - creates a new object and puts it on the ground
@@ -41,16 +40,37 @@ pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely u
 pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(token) = tokenizer.next() {
         match token {
-            "new" => Ok(Action::from(ObjectCreate { actor: player })),
+            "new" => {
+                if let Some(id) = tokenizer.next() {
+                    let prototype_id = PrototypeId::from_str(id).map_err(|e| e.to_string())?;
+                    Ok(Action::from(ObjectCreate {
+                        actor: player,
+                        prototype_id,
+                    }))
+                } else {
+                    Err("Enter a prototype ID.".to_string())
+                }
+            }
             maybe_id => {
-                let id = match ObjectId::from_str(maybe_id) {
-                    Ok(id) => id,
-                    Err(e) => return Err(e.to_string()),
-                };
+                let id = ObjectId::from_str(maybe_id).map_err(|e| e.to_string())?;
 
                 if let Some(token) = tokenizer.next() {
                     match token {
                         "info" => Ok(Action::from(ObjectInfo {actor: player, id })),
+                        "inherit" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a space separated list of fields to inherit.".to_string())
+                            } else {
+                                match tokenizer.rest().split_whitespace().map(|s| InheritableFields::from_str(s)).try_collect() {
+                                    Ok(fields) => Ok(Action::from(ObjectInheritFields {
+                                    actor: player,
+                                    id,
+                                    fields
+                                })),
+                                    Err(_) => Err("Enter valid inheritable fields: desc, flags, hooks, keywords, and name".to_string()),
+                                }
+                            }
+                        }
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of keywords.".to_string())
@@ -121,6 +141,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
 #[derive(Debug, Clone)]
 pub struct ObjectCreate {
     pub actor: Entity,
+    pub prototype_id: PrototypeId,
 }
 
 into_action!(ObjectCreate);
@@ -128,14 +149,32 @@ into_action!(ObjectCreate);
 pub fn object_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
+    prototypes: Res<Prototypes>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
+    prototypes_query: Query<(&Named, &Description, &Flags, &Keywords)>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::ObjectCreate(ObjectCreate { actor }) = action {
+        if let Action::ObjectCreate(ObjectCreate {
+            actor,
+            prototype_id,
+        }) = action
+        {
+            let prototype = match prototypes.by_id(*prototype_id) {
+                Some(entity) => entity,
+                None => {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                        messages.queue(format!("Prototype {} does not exist.", prototype_id))
+                    }
+                    continue;
+                }
+            };
+
+            let (named, description, flags, keywords) = prototypes_query.get(prototype).unwrap();
+
             let room_entity = player_query
                 .get(*actor)
                 .map(|location| location.room)
@@ -145,20 +184,17 @@ pub fn object_create_system(
 
             let object_entity = commands
                 .spawn_bundle(ObjectBundle {
-                    object: Object { id },
+                    object: Object {
+                        id,
+                        prototype,
+                        inherit_scripts: true,
+                    },
                     id: Id::Object(id),
-                    flags: types::Flags {
-                        flags: ObjectFlags::empty(),
-                    },
-                    keywords: Keywords {
-                        list: vec![DEFAULT_OBJECT_KEYWORD.to_string()],
-                    },
-                    name: Named {
-                        name: DEFAULT_OBJECT_NAME.to_string(),
-                    },
-                    description: Description {
-                        text: DEFAULT_OBJECT_DESCRIPTION.to_string(),
-                    },
+                    flags: flags.clone(),
+                    name: named.clone(),
+                    description: description.clone(),
+                    keywords: keywords.clone(),
+                    hooks: ScriptHooks::default(),
                 })
                 .insert(Location { room: room_entity })
                 .id();
@@ -169,8 +205,8 @@ pub fn object_create_system(
                 room.id
             };
 
-            updates.queue(UpdateGroup::new(vec![
-                persist::object::Create::new(id),
+            updates.persist(UpdateGroup::new(vec![
+                persist::object::Create::new(id, *prototype_id),
                 persist::room::AddObject::new(room_id, id),
             ]));
 
@@ -196,15 +232,16 @@ pub fn object_info_system(
     objects: Res<Objects>,
     object_query: Query<(
         &Object,
-        &types::Flags,
-        &Keywords,
         &Named,
         &Description,
+        &types::Flags,
+        &Keywords,
+        &ScriptHooks,
         Option<&Container>,
         Option<&Location>,
-        Option<&ScriptHooks>,
         Option<&StateMachine>,
     )>,
+    prototype_query: Query<&Prototype>,
     room_query: Query<&Room>,
     player_query: Query<&Named, With<Player>>,
     mut messages_query: Query<&mut Messages>,
@@ -220,17 +257,31 @@ pub fn object_info_system(
                 continue;
             };
 
-            let (object, flags, keywords, named, description, container, location, hooks, fsm) =
+            let (object, named, description, flags, keywords, hooks, container, location, fsm) =
                 object_query.get(object_entity).unwrap();
 
+            let prototype_id = prototype_query.get(object.prototype).unwrap().id;
+
             let mut message = format!("|white|Object {}|-|", object.id);
+
+            message.push_str("\r\n  |white|prototype|-|: ");
+            message.push_str(prototype_id.to_string().as_str());
+
+            message.push_str("\r\n  |white|inherit scripts|-|: ");
+            message.push_str(&object.inherit_scripts.to_string());
+
             message.push_str("\r\n  |white|name|-|: ");
             message.push_str(named.name.replace("|", "||").as_str());
+
             message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.text.replace("|", "||").as_str());
-            message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.flags).as_str());
+
+            message.push_str("\r\n  |white|flags|-|: ");
+            message.push_str(format!("{:?}", flags.flags).as_str());
+
             message.push_str("\r\n  |white|keywords|-|: ");
             message.push_str(word_list(keywords.list.clone()).as_str());
+
             message.push_str("\r\n  |white|container|-|: ");
             if let Some(container) = container {
                 if let Ok(named) = player_query.get(container.entity) {
@@ -246,17 +297,16 @@ pub fn object_info_system(
                     message.push_str(room.id.to_string().as_str());
                 }
             }
+
             message.push_str("\r\n  |white|script hooks|-|:");
-            if let Some(ScriptHooks { list }) = hooks {
-                if list.is_empty() {
-                    message.push_str(" none");
-                }
-                for ScriptHook { trigger, script } in list.iter() {
+            if hooks.list.is_empty() {
+                message.push_str(" none");
+            } else {
+                for ScriptHook { trigger, script } in hooks.list.iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
-            } else {
-                message.push_str(" none");
             }
+
             message.push_str("\r\n  |white|fsm|-|:");
             if let Some(StateMachine { states, current }) = fsm {
                 for state in states.keys().sorted() {
@@ -278,49 +328,64 @@ pub fn object_info_system(
 }
 
 #[derive(Debug, Clone)]
-pub struct ObjectUpdateKeywords {
+pub struct ObjectInheritFields {
     pub actor: Entity,
     pub id: ObjectId,
-    pub keywords: Vec<String>,
+    pub fields: Vec<InheritableFields>,
 }
 
-into_action!(ObjectUpdateKeywords);
+into_action!(ObjectInheritFields);
 
-pub fn object_update_keywords_system(
+pub fn object_inherit_fields_system(
+    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
+    mut object_query: Query<&mut Object>,
+    prototype_query: Query<(&Named, &Description, &Flags, &Keywords, &ScriptHooks)>,
     mut updates: ResMut<Updates>,
-    mut object_query: Query<(&Object, &mut Keywords)>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
-            actor,
-            id,
-            keywords,
-        }) = action
-        {
+        if let Action::ObjectInheritFields(ObjectInheritFields { actor, id, fields }) = action {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Object {} not found.", id));
                 }
                 continue;
             };
 
-            let id = {
-                let (object, mut current_keywords) = object_query.get_mut(object_entity).unwrap();
+            let mut object = object_query.get_mut(object_entity).unwrap();
 
-                current_keywords.list = keywords.clone();
+            let (named, description, flags, keywords, hooks) =
+                prototype_query.get(object.prototype).unwrap();
 
-                object.id
-            };
+            for field in fields {
+                match field {
+                    InheritableFields::Name => {
+                        commands.entity(object_entity).insert(named.clone());
+                    }
+                    InheritableFields::Description => {
+                        commands.entity(object_entity).insert(description.clone());
+                    }
+                    InheritableFields::Flags => {
+                        commands.entity(object_entity).insert(flags.clone());
+                    }
+                    InheritableFields::Keywords => {
+                        commands.entity(object_entity).insert(keywords.clone());
+                    }
+                    InheritableFields::Hooks => {
+                        object.inherit_scripts = true;
+                        commands.entity(object_entity).insert(hooks.clone());
+                    }
+                }
+            }
 
-            updates.queue(persist::object::Keywords::new(id, keywords.clone()));
+            updates.persist(persist::object::Inherit::new(*id, fields.clone()));
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated object {} keywords.", id));
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                messages.queue(format!("Object {} fields set to inherit.", id));
             }
         }
     }
@@ -373,10 +438,53 @@ pub fn object_remove_system(
                 .unwrap()
                 .remove(object_entity);
 
-            updates.queue(persist::object::Remove::new(*id));
+            updates.persist(persist::object::Remove::new(*id));
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Object {} removed.", id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectUpdateKeywords {
+    pub actor: Entity,
+    pub id: ObjectId,
+    pub keywords: Vec<String>,
+}
+
+into_action!(ObjectUpdateKeywords);
+
+pub fn object_update_keywords_system(
+    mut action_reader: EventReader<Action>,
+    objects: Res<Objects>,
+    mut updates: ResMut<Updates>,
+    mut object_query: Query<&mut Keywords>,
+    mut messages: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
+            actor,
+            id,
+            keywords,
+        }) = action
+        {
+            let object_entity = if let Some(object) = objects.by_id(*id) {
+                object
+            } else {
+                if let Ok(mut messages) = messages.get_mut(*actor) {
+                    messages.queue(format!("Object {} not found.", id));
+                }
+                continue;
+            };
+
+            object_query.get_mut(object_entity).unwrap().list = keywords.clone();
+
+            updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
+
+            if let Ok(mut messages) = messages.get_mut(*actor) {
+                messages.queue(format!("Updated object {} keywords.", id));
             }
         }
     }
@@ -396,7 +504,7 @@ pub fn object_update_flags_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
-    mut object_query: Query<(&Object, &mut types::Flags)>,
+    mut object_query: Query<&mut types::Flags>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -426,8 +534,8 @@ pub fn object_update_flags_system(
                 }
             };
 
-            let (id, flags) = {
-                let (object, mut flags) = object_query.get_mut(object_entity).unwrap();
+            let flags = {
+                let mut flags = object_query.get_mut(object_entity).unwrap();
 
                 if *clear {
                     flags.flags.remove(changed_flags);
@@ -435,10 +543,10 @@ pub fn object_update_flags_system(
                     flags.flags.insert(changed_flags);
                 }
 
-                (object.id, flags.flags)
+                flags.flags
             };
 
-            updates.queue(persist::object::Flags::new(id, flags));
+            updates.persist(persist::object::Flags::new(*id, flags));
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
                 messages.queue(format!("Updated object {} flags.", id));

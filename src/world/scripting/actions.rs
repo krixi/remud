@@ -61,7 +61,7 @@ pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseEr
     world
         .get_resource_mut::<Updates>()
         .unwrap()
-        .queue(persist::script::Create::new(
+        .persist(persist::script::Create::new(
             script.name.to_string(),
             script.trigger.to_string(),
             script.code,
@@ -294,7 +294,7 @@ pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseEr
     world
         .get_resource_mut::<Updates>()
         .unwrap()
-        .queue(persist::script::Update::new(
+        .persist(persist::script::Update::new(
             script.name.to_string(),
             script.trigger.to_string(),
             script.code,
@@ -320,7 +320,7 @@ pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), web::Err
     world
         .get_resource_mut::<Updates>()
         .unwrap()
-        .queue(persist::script::Delete::new(name.to_string()));
+        .persist(persist::script::Delete::new(name.to_string()));
 
     Ok(())
 }

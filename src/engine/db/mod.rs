@@ -9,13 +9,20 @@ use std::{
 };
 
 use bevy_ecs::prelude::*;
+use futures::TryStreamExt;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
-    scripting::{Script, ScriptHook, ScriptName, TriggerEvent, TriggerKind},
-    types::room::RoomId,
+    scripting::{Script, ScriptHook, ScriptHooks, ScriptName, TriggerEvent, TriggerKind},
+    types::{
+        self,
+        object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes},
+        player::Player,
+        room::RoomId,
+        Contents, Description, Id, Keywords, Named,
+    },
 };
 
 lazy_static! {
@@ -111,24 +118,148 @@ impl Db {
     ) -> anyhow::Result<Entity> {
         player::load_player(&self.pool, world, name).await
     }
-}
 
-#[derive(Debug, sqlx::FromRow)]
-struct ObjectRow {
-    id: i64,
-    flags: i64,
-    container: i64,
-    keywords: String,
-    description: String,
-    name: String,
-}
+    pub async fn reload_prototype(
+        &self,
+        world: Arc<RwLock<World>>,
+        prototype: PrototypeId,
+    ) -> anyhow::Result<()> {
+        let mut results = sqlx::query_as::<_, ObjectRow>(
+            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
+                        COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
+                        COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
+                    FROM objects
+                    INNER JOIN room_objects ON room_objects.object_id = objects.id
+                    INNER JOIN prototypes ON objects.prototype_id = prototypes.id
+                    WHERE prototypes.id = ?"#,
+        )
+        .bind(prototype)
+        .fetch(&self.pool);
 
-impl ObjectRow {
-    fn keywords(&self) -> Vec<String> {
-        self.keywords
-            .split(',')
-            .map(ToString::to_string)
-            .collect_vec()
+        while let Some(object_row) = results.try_next().await? {
+            let object_id = ObjectId::try_from(object_row.id)?;
+            let object = world
+                .read()
+                .unwrap()
+                .get_resource::<Objects>()
+                .unwrap()
+                .by_id(object_id)
+                .unwrap();
+
+            let prototype_id = object_row.prototype_id;
+            let prototype = world
+                .read()
+                .unwrap()
+                .get_resource::<Prototypes>()
+                .unwrap()
+                .by_id(PrototypeId::try_from(object_row.prototype_id)?)
+                .unwrap();
+
+            let bundle = object_row.into_object_bundle(prototype)?;
+
+            world
+                .write()
+                .unwrap()
+                .entity_mut(object)
+                .insert_bundle(bundle);
+
+            let inherit_scripts = world
+                .read()
+                .unwrap()
+                .get::<Object>(object)
+                .unwrap()
+                .inherit_scripts;
+
+            if inherit_scripts {
+                let mut results = sqlx::query_as::<_, HookRow>(
+                    r#"SELECT kind, script, trigger FROM prototype_scripts WHERE prototype_id = ?"#,
+                )
+                .bind(prototype_id)
+                .fetch(&self.pool);
+
+                while let Some(hook_row) = results.try_next().await? {
+                    let hook = ScriptHook::try_from(hook_row)?;
+
+                    world
+                        .write()
+                        .unwrap()
+                        .get_mut::<ScriptHooks>(object)
+                        .unwrap()
+                        .list
+                        .push(hook);
+                }
+            }
+        }
+
+        let player_objects = {
+            let mut world = world.write().unwrap();
+            world
+                .query_filtered::<&Contents, With<Player>>()
+                .iter(&*world)
+                .flat_map(|contents| contents.objects.iter().copied())
+                .dedup()
+                .collect_vec()
+        };
+
+        for object in player_objects {
+            let id = world.read().unwrap().get::<Object>(object).unwrap().id;
+            let object_row = sqlx::query_as::<_, ObjectRow>(
+            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
+                        COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
+                        COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
+                    FROM objects
+                    INNER JOIN prototypes ON objects.prototype_id = prototypes.id
+                    WHERE objects.id = ?"#,
+            )
+            .bind(id)
+            .fetch_one(&self.pool).await?;
+
+            let prototype_id = object_row.prototype_id;
+            let prototype = world
+                .read()
+                .unwrap()
+                .get_resource::<Prototypes>()
+                .unwrap()
+                .by_id(PrototypeId::try_from(object_row.prototype_id)?)
+                .unwrap();
+
+            let bundle = object_row.into_object_bundle(prototype)?;
+
+            world
+                .write()
+                .unwrap()
+                .entity_mut(object)
+                .insert_bundle(bundle);
+
+            let inherit_scripts = world
+                .read()
+                .unwrap()
+                .get::<Object>(object)
+                .unwrap()
+                .inherit_scripts;
+
+            if inherit_scripts {
+                let mut results = sqlx::query_as::<_, HookRow>(
+                    r#"SELECT kind, script, trigger FROM prototype_scripts WHERE prototype_id = ?"#,
+                )
+                .bind(prototype_id)
+                .fetch(&self.pool);
+
+                while let Some(hook_row) = results.try_next().await? {
+                    let hook = ScriptHook::try_from(hook_row)?;
+
+                    world
+                        .write()
+                        .unwrap()
+                        .get_mut::<ScriptHooks>(object)
+                        .unwrap()
+                        .list
+                        .push(hook);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -172,5 +303,52 @@ impl TryFrom<HookRow> for ScriptHook {
         let trigger = kind.with_trigger(trigger);
 
         Ok(ScriptHook { script, trigger })
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ObjectRow {
+    id: i64,
+    prototype_id: i64,
+    inherit_scripts: bool,
+    container: Option<i64>,
+    flags: i64,
+    name: String,
+    keywords: String,
+    description: String,
+}
+
+impl ObjectRow {
+    fn into_object_bundle(self, prototype: Entity) -> anyhow::Result<ObjectBundle> {
+        let id = ObjectId::try_from(self.id)?;
+
+        Ok(ObjectBundle {
+            id: Id::Object(id),
+            object: Object {
+                id,
+                prototype,
+                inherit_scripts: self.inherit_scripts,
+            },
+            flags: types::Flags {
+                flags: ObjectFlags::from_bits_truncate(self.flags),
+            },
+            name: Named {
+                name: self.name.clone(),
+            },
+            description: Description {
+                text: self.description.clone(),
+            },
+            keywords: Keywords {
+                list: self.keywords(),
+            },
+            hooks: ScriptHooks::default(),
+        })
+    }
+
+    fn keywords(&self) -> Vec<String> {
+        self.keywords
+            .split(',')
+            .map(ToString::to_string)
+            .collect_vec()
     }
 }

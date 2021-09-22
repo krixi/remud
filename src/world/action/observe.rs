@@ -126,7 +126,7 @@ pub fn look_system(
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
                 .filter(|(_, flags)| !flags.flags.contains(ObjectFlags::SUBTLE))
-                .map(|(named, _)| named.name.clone())
+                .map(|(named, _)| named.name.to_string())
                 .collect_vec();
 
             if !objects.is_empty() {
@@ -167,15 +167,15 @@ pub fn look_at_system(
                 .map(|location| location.room)
                 .and_then(|room| room_query.get(room).ok())
                 .and_then(|room| {
-                    room.players
-                        .iter()
-                        .filter_map(|player| player_query.get(*player).ok())
-                        .find(|(name, _)| {
-                            keywords
-                                .iter()
-                                .any(|keyword| keyword.as_str() == name.name.as_str())
-                        })
-                        .map(|(_, description)| description.text.as_str())
+                    if keywords.len() == 1 {
+                        room.players
+                            .iter()
+                            .filter_map(|player| player_query.get(*player).ok())
+                            .find(|(name, _)| keywords[0].as_str() == name.name.as_str())
+                            .map(|(_, description)| description.text.as_str())
+                    } else {
+                        None
+                    }
                 })
                 .or_else(|| {
                     looker_query

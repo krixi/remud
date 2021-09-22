@@ -85,7 +85,7 @@ pub fn message_system(
             let room_entity = if let Ok(location) = messaging_query.get(*actor) {
                 location.room
             } else {
-                tracing::warn!("Entity {:?} cannot say without Named and Location.", actor);
+                tracing::warn!("Entity {:?} cannot message without Location.", actor);
                 continue;
             };
 
@@ -129,6 +129,8 @@ pub fn say_system(
 ) {
     for action in action_reader.iter() {
         if let Action::Say(Say { actor, message }) = action {
+            tracing::info!("saying {}", message);
+
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
                 (named.name.as_str(), location.room)
             } else {

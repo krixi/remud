@@ -92,9 +92,10 @@ impl Engine {
         loop {
             tokio::select! {
                 _ = self.ticker.tick() => {
-                    self.game_world.run().await;
+                    self.game_world.run();
 
-                    for (player, mut messages) in self.game_world.messages().await {
+                    // Dispatch all queued messages to players
+                    for (player, mut messages) in self.game_world.messages() {
                         if let Some(client) = self.clients.by_player(player) {
                             messages.push_back("|white|> ".to_string());
                             client.send_batch(self.tick, messages).await;
@@ -103,8 +104,9 @@ impl Engine {
                         }
                     }
 
+                    // Dispatch all persistance requests
                     let mut handles = Vec::new();
-                    for update in self.game_world.updates().await {
+                    for update in self.game_world.updates() {
                         let pool = self.db.get_pool().clone();
                         handles.push(tokio::spawn(async move {
                             match update.enact(&pool).await {
@@ -115,7 +117,17 @@ impl Engine {
                     }
                     join_all(handles).await;
 
-                    if self.game_world.should_shutdown().await {
+                    // Reload changed prototypes
+                    let prototype_reloads = self.game_world.prototype_reloads();
+                    for prototype in prototype_reloads {
+                        match self.db.reload_prototype(self.game_world.get_world(), prototype).await {
+                            Ok(_) => (),
+                            Err(e) => tracing::error!("Failed to reload prototype {}: {}", prototype, e),
+                        };
+                    }
+
+                    // Shutdown if requested
+                    if self.game_world.should_shutdown() {
                         break
                     }
 
@@ -148,7 +160,7 @@ impl Engine {
                 tracing::info!("{}> {:?} disconnected", self.tick, client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
-                    if let Err(e) = self.game_world.despawn_player(player).await {
+                    if let Err(e) = self.game_world.despawn_player(player) {
                         tracing::error!("Failed to despawn player: {}", e);
                     }
                 }
@@ -270,7 +282,7 @@ impl Engine {
                         };
 
                         if has_user {
-                            if self.game_world.player_online(name).await {
+                            if self.game_world.player_online(name) {
                                 client
                                     .send(
                                         "|Red1|User currently online.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
@@ -361,7 +373,7 @@ impl Engine {
                         }
                     }
 
-                    let spawn_room = self.game_world.spawn_room().await;
+                    let spawn_room = self.game_world.spawn_room();
                     match self.db.create_player(name.as_str(), hash, spawn_room).await {
                         Ok(_) => (),
                         Err(e) => {
@@ -388,14 +400,11 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(Action::from(Login { actor: player }))
-                        .await;
-                    self.game_world
-                        .player_action(Action::from(Look {
-                            actor: player,
-                            direction: None,
-                        }))
-                        .await;
+                        .player_action(Action::from(Login { actor: player }));
+                    self.game_world.player_action(Action::from(Look {
+                        actor: player,
+                        direction: None,
+                    }));
 
                     spawned_player = Some(player);
                 }
@@ -439,21 +448,18 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(Action::from(Login { actor: player }))
-                        .await;
-                    self.game_world
-                        .player_action(Action::from(Look {
-                            actor: player,
-                            direction: None,
-                        }))
-                        .await;
+                        .player_action(Action::from(Login { actor: player }));
+                    self.game_world.player_action(Action::from(Look {
+                        actor: player,
+                        direction: None,
+                    }));
 
                     spawned_player = Some(player);
                 }
                 State::InGame { player } => {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
                     match self.commands.parse(*player, &input, false) {
-                        Ok(action) => self.game_world.player_action(action).await,
+                        Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
                             client
                                 .send(format!("{}\r\n|white|> ", message).into())

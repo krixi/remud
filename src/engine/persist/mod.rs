@@ -1,5 +1,6 @@
 pub mod object;
 pub mod player;
+pub mod prototype;
 pub mod room;
 pub mod script;
 
@@ -8,22 +9,35 @@ use std::mem;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-pub type DynUpdate = Box<dyn Persist + Send + Sync>;
+use crate::world::types::object::PrototypeId;
+
+pub type DynPersist = Box<dyn Persist + Send + Sync>;
 
 #[derive(Default)]
 pub struct Updates {
-    updates: Vec<DynUpdate>,
+    updates: Vec<DynPersist>,
+    reloads: Vec<PrototypeId>,
 }
 
 impl Updates {
-    pub fn queue(&mut self, update: DynUpdate) {
+    pub fn persist(&mut self, update: DynPersist) {
         self.updates.push(update);
     }
 
-    pub fn take(&mut self) -> Vec<DynUpdate> {
+    pub fn reload(&mut self, prototype: PrototypeId) {
+        self.reloads.push(prototype);
+    }
+
+    pub fn take_updates(&mut self) -> Vec<DynPersist> {
         let mut updates = Vec::new();
         mem::swap(&mut self.updates, &mut updates);
         updates
+    }
+
+    pub fn take_reloads(&mut self) -> Vec<PrototypeId> {
+        let mut reloads = Vec::new();
+        mem::swap(&mut self.reloads, &mut reloads);
+        reloads
     }
 }
 
@@ -34,15 +48,15 @@ pub trait Persist {
 
 // An list of Persist operations that must be completed in order.
 pub struct UpdateGroup {
-    list: Vec<DynUpdate>,
+    list: Vec<DynPersist>,
 }
 
 impl UpdateGroup {
-    pub fn new(list: Vec<DynUpdate>) -> Box<Self> {
+    pub fn new(list: Vec<DynPersist>) -> Box<Self> {
         Box::new(UpdateGroup { list })
     }
 
-    pub fn append(&mut self, update: DynUpdate) {
+    pub fn append(&mut self, update: DynPersist) {
         self.list.push(update);
     }
 }

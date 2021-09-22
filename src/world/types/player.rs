@@ -6,7 +6,10 @@ use std::{
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::{Attributes, Contents, Description, Health, Id, Location, Named};
+use crate::world::{
+    scripting::ScriptHooks,
+    types::{Attributes, Contents, Description, Health, Id, Location, Named},
+};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -50,6 +53,7 @@ pub struct PlayerBundle {
     pub messages: Messages,
     pub attributes: Attributes,
     pub health: Health,
+    pub hooks: ScriptHooks,
 }
 
 pub struct Player {

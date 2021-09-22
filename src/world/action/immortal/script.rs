@@ -12,7 +12,7 @@ use crate::{
         action::Action,
         scripting::{Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, Scripts},
         types::{
-            object::{ObjectId, Objects},
+            object::{Object, ObjectId, Objects, Prototype, Prototypes},
             player::{Messages, Player, Players},
             room::{RoomId, Rooms},
             Id,
@@ -120,11 +120,14 @@ pub fn script_attach_system(
     mut action_reader: EventReader<Action>,
     scripts: Res<Scripts>,
     objects: Res<Objects>,
+    prototypes: Res<Prototypes>,
     rooms: Res<Rooms>,
     players: Res<Players>,
     mut updates: ResMut<Updates>,
+    prototype_query: Query<&Prototype>,
     script_query: Query<&Script>,
     player_query: Query<&Player>,
+    mut object_query: Query<&mut Object>,
     mut hook_query: Query<&mut ScriptHooks>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -147,6 +150,16 @@ pub fn script_attach_system(
 
             let target_entity = match target {
                 Either::Left(id) => match id {
+                    Id::Prototype(id) => {
+                        if let Some(prototype) = prototypes.by_id(*id) {
+                            prototype
+                        } else {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                                messages.queue(format!("Target prototype {} not found.", id));
+                            }
+                            continue;
+                        }
+                    }
                     Id::Object(id) => {
                         if let Some(object) = objects.by_id(*id) {
                             object
@@ -213,18 +226,30 @@ pub fn script_attach_system(
                 Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id),
             };
 
-            updates.queue(persist::script::Attach::new(id, script.clone(), trigger));
+            let copy = match id {
+                Id::Object(_) => {
+                    let mut object = object_query.get_mut(target_entity).unwrap();
+                    if object.inherit_scripts {
+                        object.inherit_scripts = false;
+                        Some(prototype_query.get(object.prototype).unwrap().id)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            updates.persist(persist::script::Attach::new(
+                id,
+                script.clone(),
+                trigger,
+                copy,
+            ));
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
                     Either::Left(id) => {
-                        match id {
-                            Id::Player(_) => unreachable!("Players are referenced by name."),
-                            Id::Object(id) => messages
-                                .queue(format!("Script {} attached to object {}.", script, id)),
-                            Id::Room(id) => messages
-                                .queue(format!("Script {} attached to room {}.", script, id)),
-                        }
+                        messages.queue(format!("Script {} attached to {:?}.", script, id))
                     }
                     Either::Right(name) => {
                         messages.queue(format!("Script {} attached to player {}.", script, name))
@@ -247,12 +272,15 @@ into_action!(ScriptDetach);
 pub fn script_detach_system(
     mut action_reader: EventReader<Action>,
     scripts: Res<Scripts>,
+    prototypes: Res<Prototypes>,
     objects: Res<Objects>,
     rooms: Res<Rooms>,
     players: Res<Players>,
     mut updates: ResMut<Updates>,
     script_query: Query<&Script>,
     player_query: Query<&Player>,
+    prototype_query: Query<&Prototype>,
+    mut object_query: Query<&mut Object>,
     mut hook_query: Query<&mut ScriptHooks>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -274,6 +302,16 @@ pub fn script_detach_system(
 
             let target_entity = match target {
                 Either::Left(id) => match id {
+                    Id::Prototype(id) => {
+                        if let Some(prototype) = prototypes.by_id(*id) {
+                            prototype
+                        } else {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                                messages.queue(format!("Target prototype {} not found.", id));
+                            }
+                            continue;
+                        }
+                    }
                     Id::Object(id) => {
                         if let Some(object) = objects.by_id(*id) {
                             object
@@ -344,22 +382,31 @@ pub fn script_detach_system(
                 Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id),
             };
 
-            updates.queue(persist::script::Detach::new(
+            let copy = match id {
+                Id::Object(_) => {
+                    let mut object = object_query.get_mut(target_entity).unwrap();
+                    if object.inherit_scripts {
+                        object.inherit_scripts = false;
+                        Some(prototype_query.get(object.prototype).unwrap().id)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            updates.persist(persist::script::Detach::new(
                 id,
                 script.clone(),
                 remove_trigger.unwrap(),
+                copy,
             ));
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
-                    Either::Left(id) => match id {
-                        Id::Player(_) => unreachable!("Players are referenced by name."),
-                        Id::Object(id) => messages
-                            .queue(format!("Script {} detached from object {}.", script, id)),
-                        Id::Room(id) => {
-                            messages.queue(format!("Script {} detached from room {}.", script, id))
-                        }
-                    },
+                    Either::Left(id) => {
+                        messages.queue(format!("Script {} detached from {:?}.", script, id))
+                    }
                     Either::Right(name) => {
                         messages.queue(format!("Script {} detached from player {}.", script, name))
                     }

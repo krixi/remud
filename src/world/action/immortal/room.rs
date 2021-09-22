@@ -238,6 +238,7 @@ pub fn room_create_system(
                     },
                     contents: Contents::default(),
                     regions: Regions::default(),
+                    hooks: ScriptHooks::default(),
                 })
                 .id();
 
@@ -269,7 +270,7 @@ pub fn room_create_system(
                     direction.opposite(),
                 ));
             }
-            updates.queue(update);
+            updates.persist(update);
 
             let mut message = format!("Created room {}", new_room_id);
             if let Some(direction) = direction {
@@ -433,7 +434,7 @@ pub fn room_link_system(
                 from_room.id
             };
 
-            updates.queue(persist::room::AddExit::new(
+            updates.persist(persist::room::AddExit::new(
                 from_room_id,
                 *destination,
                 *direction,
@@ -562,14 +563,14 @@ pub fn room_remove_system(
                 })
                 .collect_vec();
 
-            updates.queue(persist::room::Delete::new(room_id));
+            updates.persist(persist::room::Delete::new(room_id));
 
             for id in present_player_ids {
-                updates.queue(persist::player::Room::new(id, *VOID_ROOM_ID));
+                updates.persist(persist::player::Room::new(id, *VOID_ROOM_ID));
             }
 
             for id in present_object_ids {
-                updates.queue(persist::room::AddObject::new(*VOID_ROOM_ID, id));
+                updates.persist(persist::room::AddObject::new(*VOID_ROOM_ID, id));
             }
 
             if let Ok(mut messages) = message_query.get_mut(*actor) {
@@ -607,7 +608,7 @@ pub fn room_unlink_system(
                 (room.id, removed)
             };
 
-            updates.queue(persist::room::RemoveExit::new(room_id, *direction));
+            updates.persist(persist::room::RemoveExit::new(room_id, *direction));
 
             let message = if removed {
                 format!("Removed exit {}.", direction.as_to_str())
@@ -663,9 +664,9 @@ pub fn room_update_regions_system(
             };
 
             if *remove {
-                updates.queue(persist::room::RemoveRegions::new(room_id, updated_regions));
+                updates.persist(persist::room::RemoveRegions::new(room_id, updated_regions));
             } else {
-                updates.queue(persist::room::AddRegions::new(room_id, updated_regions));
+                updates.persist(persist::room::AddRegions::new(room_id, updated_regions));
             }
 
             if let Ok(mut messages) = message_query.get_mut(*actor) {

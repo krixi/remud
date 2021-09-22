@@ -128,6 +128,7 @@ pub fn move_system(
                         .push(*actor);
                 }
                 Id::Room(_) => todo!(),
+                Id::Prototype(_) => todo!(),
             }
 
             location.room = destination;
@@ -148,7 +149,7 @@ pub fn move_system(
             match id {
                 Id::Player(id) => {
                     // TODO: why is there a * below?
-                    updates.queue(persist::player::Room::new(*id, destination_id));
+                    updates.persist(persist::player::Room::new(*id, destination_id));
                     pre_events.send(
                         Action::Look(Look {
                             actor: *actor,
@@ -162,9 +163,10 @@ pub fn move_system(
                         persist::room::RemoveObject::new(room_id, *id),
                         persist::room::AddObject::new(destination_id, *id),
                     ]);
-                    updates.queue(group);
+                    updates.persist(group);
                 }
                 Id::Room(_) => todo!(),
+                Id::Prototype(_) => todo!(),
             }
         }
     }
@@ -265,6 +267,7 @@ pub fn teleport_system(
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
+                Id::Prototype(_) => todo!(),
             }
 
             location.room = destination;
@@ -281,7 +284,7 @@ pub fn teleport_system(
             // Dispatch a storage update to the new location.
             match id {
                 Id::Player(id) => {
-                    updates.queue(persist::player::Room::new(*id, *room_id));
+                    updates.persist(persist::player::Room::new(*id, *room_id));
                     pre_events.send(QueuedAction {
                         action: Action::Look(Look {
                             actor: *actor,
@@ -291,6 +294,7 @@ pub fn teleport_system(
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
+                Id::Prototype(_) => todo!(),
             }
         }
     }

@@ -21,7 +21,7 @@ use lazy_static::lazy_static;
 use rhai::ParseError;
 
 use crate::{
-    engine::persist::{self, DynUpdate, Updates},
+    engine::persist::{self, DynPersist, Updates},
     web,
     world::{
         action::{register_action_systems, Action},
@@ -29,9 +29,10 @@ use crate::{
         scripting::{
             create_script_engine, post_action_script_system, queued_action_script_system,
             run_post_action_scripts, run_pre_action_scripts, script_compiler_system, QueuedAction,
-            Script, ScriptName, ScriptRuns, TriggerEvent,
+            Script, ScriptHooks, ScriptName, ScriptRuns, TriggerEvent,
         },
         types::{
+            object::PrototypeId,
             player::{Messages, Player, Players},
             room::{Regions, Room, RoomBundle, RoomId, Rooms},
             Configuration, Contents, Description, Id, Location, Named,
@@ -97,7 +98,7 @@ impl GameWorld {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub fn run(&mut self) {
         let world = self.world.clone();
 
         self.pre_event_schedule
@@ -114,7 +115,7 @@ impl GameWorld {
         run_post_action_scripts(world);
     }
 
-    pub async fn should_shutdown(&self) -> bool {
+    pub fn should_shutdown(&self) -> bool {
         self.world
             .read()
             .unwrap()
@@ -122,7 +123,7 @@ impl GameWorld {
             .map_or(true, |configuration| configuration.shutdown)
     }
 
-    pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
+    pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         let mut world = self.world.write().unwrap();
 
         let (name, room) = world
@@ -170,7 +171,7 @@ impl GameWorld {
         Ok(())
     }
 
-    pub async fn player_action(&mut self, action: Action) {
+    pub fn player_action(&mut self, action: Action) {
         let mut world = self.world.write().unwrap();
 
         world
@@ -184,7 +185,7 @@ impl GameWorld {
             .send(QueuedAction { action });
     }
 
-    pub async fn player_online(&self, name: &str) -> bool {
+    pub fn player_online(&self, name: &str) -> bool {
         self.world
             .read()
             .unwrap()
@@ -194,7 +195,7 @@ impl GameWorld {
             .is_some()
     }
 
-    pub async fn spawn_room(&self) -> RoomId {
+    pub fn spawn_room(&self) -> RoomId {
         self.world
             .read()
             .unwrap()
@@ -203,7 +204,7 @@ impl GameWorld {
             .spawn_room
     }
 
-    pub async fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
+    pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
         let mut world = self.world.write().unwrap();
 
         let players_with_messages = world
@@ -235,13 +236,22 @@ impl GameWorld {
         outgoing
     }
 
-    pub async fn updates(&mut self) -> Vec<DynUpdate> {
+    pub fn updates(&mut self) -> Vec<DynPersist> {
         self.world
             .write()
             .unwrap()
             .get_resource_mut::<Updates>()
             .unwrap()
-            .take()
+            .take_updates()
+    }
+
+    pub fn prototype_reloads(&mut self) -> Vec<PrototypeId> {
+        self.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<Updates>()
+            .unwrap()
+            .take_reloads()
     }
 
     pub fn get_world(&self) -> Arc<RwLock<World>> {
@@ -328,6 +338,7 @@ fn add_void_room(world: &mut World) {
             },
             contents: Contents::default(),
             regions: Regions::default(),
+            hooks: ScriptHooks::default(),
         };
         let void_room = world.spawn().insert_bundle(bundle).id();
         world
@@ -338,7 +349,7 @@ fn add_void_room(world: &mut World) {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::room::Create::new(*VOID_ROOM_ID, name, description));
+            .persist(persist::room::Create::new(*VOID_ROOM_ID, name, description));
 
         tracing::warn!("Void room was deleted and has been recreated.");
     }

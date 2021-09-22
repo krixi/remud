@@ -2,7 +2,10 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::{Contents, Description, Id, Named};
+use crate::world::{
+    scripting::ScriptHooks,
+    types::{Contents, Description, Id, Named},
+};
 
 #[derive(Bundle)]
 pub struct RoomBundle {
@@ -12,6 +15,7 @@ pub struct RoomBundle {
     pub description: Description,
     pub contents: Contents,
     pub regions: Regions,
+    pub hooks: ScriptHooks,
 }
 
 pub struct Room {

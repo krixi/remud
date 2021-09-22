@@ -3,7 +3,7 @@ use std::fmt;
 use bevy_ecs::prelude::Entity;
 
 use crate::world::types::{
-    object::{ObjectFlags, ObjectId},
+    object::{ObjectFlags, ObjectId, PrototypeId},
     player::PlayerId,
     room::RoomId,
 };
@@ -15,6 +15,7 @@ pub mod room;
 #[derive(Debug, Clone, Copy)]
 pub enum Id {
     Player(PlayerId),
+    Prototype(PrototypeId),
     Object(ObjectId),
     Room(RoomId),
 }
@@ -23,6 +24,7 @@ impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Id::Player(id) => write!(f, "{}", id),
+            Id::Prototype(id) => write!(f, "{}", id),
             Id::Object(id) => write!(f, "{}", id),
             Id::Room(id) => write!(f, "{}", id),
         }
@@ -32,6 +34,7 @@ impl fmt::Display for Id {
 #[derive(Debug, Clone)]
 pub enum ActionTarget {
     PlayerSelf,
+    Prototype(PrototypeId),
     Object(ObjectId),
     CurrentRoom,
 }
@@ -50,9 +53,24 @@ impl Contents {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Named {
     pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Description {
+    pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Keywords {
+    pub list: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flags {
+    pub flags: ObjectFlags,
 }
 
 #[derive(Debug)]
@@ -63,21 +81,6 @@ pub struct Location {
 #[derive(Debug)]
 pub struct Container {
     pub entity: Entity,
-}
-
-#[derive(Debug)]
-pub struct Description {
-    pub text: String,
-}
-
-#[derive(Debug)]
-pub struct Keywords {
-    pub list: Vec<String>,
-}
-
-#[derive(Debug)]
-pub struct Flags {
-    pub flags: ObjectFlags,
 }
 
 // Resources

@@ -5,7 +5,7 @@ use crate::{
     engine::persist::Persist,
     world::{
         scripting::{ScriptName, ScriptTrigger},
-        types::Id,
+        types::{object::PrototypeId, Id},
     },
 };
 
@@ -13,14 +13,21 @@ pub struct Attach {
     target: Id,
     script: ScriptName,
     trigger: ScriptTrigger,
+    copy: Option<PrototypeId>,
 }
 
 impl Attach {
-    pub fn new(target: Id, script: ScriptName, trigger: ScriptTrigger) -> Box<Self> {
+    pub fn new(
+        target: Id,
+        script: ScriptName,
+        trigger: ScriptTrigger,
+        copy: Option<PrototypeId>,
+    ) -> Box<Self> {
         Box::new(Attach {
             target,
             script,
             trigger,
+            copy,
         })
     }
 }
@@ -40,7 +47,32 @@ impl Persist for Attach {
                 .execute(pool)
                 .await?;
             }
+            Id::Prototype(id) => {
+                sqlx::query(
+                "INSERT INTO prototype_scripts (prototype_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(self.trigger.kind().to_string())
+                .bind(self.script.to_string())
+                .bind(self.trigger.trigger().to_string())
+                .execute(pool)
+                .await?;
+            }
             Id::Object(id) => {
+                if let Some(prototype) = self.copy {
+                    sqlx::query(
+                    "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE prototype_scripts.prototype_id = ?",
+                    )
+                    .bind(prototype)
+                    .execute(pool)
+                    .await?;
+
+                    sqlx::query("UPDATE objects SET inherit_scripts = false WHERE id = ?")
+                        .bind(id)
+                        .execute(pool)
+                        .await?;
+                }
+
                 sqlx::query(
                 "INSERT INTO object_scripts (object_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
                 )
@@ -102,14 +134,21 @@ pub struct Detach {
     target: Id,
     script: ScriptName,
     trigger: ScriptTrigger,
+    copy: Option<PrototypeId>,
 }
 
 impl Detach {
-    pub fn new(target: Id, script: ScriptName, trigger: ScriptTrigger) -> Box<Self> {
+    pub fn new(
+        target: Id,
+        script: ScriptName,
+        trigger: ScriptTrigger,
+        copy: Option<PrototypeId>,
+    ) -> Box<Self> {
         Box::new(Detach {
             target,
             script,
             trigger,
+            copy,
         })
     }
 }
@@ -129,7 +168,32 @@ impl Persist for Detach {
                 .execute(pool)
                 .await?;
             }
+            Id::Prototype(id) => {
+                sqlx::query(
+                "DELETE FROM prototype_scripts WHERE prototype_id = ? AND kind = ? AND script = ? AND trigger = ?",
+                )
+                .bind(id.to_string())
+                .bind(self.trigger.kind().to_string())
+                .bind(self.script.to_string())
+                .bind(self.trigger.trigger().to_string())
+                .execute(pool)
+                .await?;
+            }
             Id::Object(id) => {
+                if let Some(prototype) = self.copy {
+                    sqlx::query(
+                    "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE prototype_scripts.prototype_id = ?",
+                    )
+                    .bind(prototype)
+                    .execute(pool)
+                    .await?;
+
+                    sqlx::query("UPDATE objects SET inherit_scripts = false WHERE id = ?")
+                        .bind(id)
+                        .execute(pool)
+                        .await?;
+                }
+
                 sqlx::query(
                 "DELETE FROM object_scripts WHERE object_id = ? AND kind = ? AND script = ? AND trigger = ?",
                 )

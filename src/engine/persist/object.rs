@@ -3,37 +3,28 @@ use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::{
-        action::immortal::object::{
-            DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
-        },
-        types::object::{ObjectFlags, ObjectId},
-    },
+    world::types::object::{InheritableFields, ObjectFlags, ObjectId, PrototypeId},
 };
 
 pub struct Create {
     id: ObjectId,
+    prototype: PrototypeId,
 }
 
 impl Create {
-    pub fn new(id: ObjectId) -> Box<Self> {
-        Box::new(Create { id })
+    pub fn new(id: ObjectId, prototype: PrototypeId) -> Box<Self> {
+        Box::new(Create { id, prototype })
     }
 }
 
 #[async_trait]
 impl Persist for Create {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query(
-            "INSERT INTO objects (id, flags, keywords, name, description) VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(self.id)
-        .bind(0)
-        .bind(DEFAULT_OBJECT_KEYWORD)
-        .bind(DEFAULT_OBJECT_NAME)
-        .bind(DEFAULT_OBJECT_DESCRIPTION)
-        .execute(pool)
-        .await?;
+        sqlx::query("INSERT INTO objects (id, prototype_id) VALUES (?, ?)")
+            .bind(self.id)
+            .bind(self.prototype)
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
@@ -59,6 +50,63 @@ impl Persist for Description {
             .execute(pool)
             .await?;
 
+        Ok(())
+    }
+}
+
+pub struct Inherit {
+    id: ObjectId,
+    fields: Vec<InheritableFields>,
+}
+
+impl Inherit {
+    pub fn new(id: ObjectId, fields: Vec<InheritableFields>) -> Box<Self> {
+        Box::new(Inherit { id, fields })
+    }
+}
+
+#[async_trait]
+impl Persist for Inherit {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        for field in self.fields.iter() {
+            match field {
+                InheritableFields::Flags => {
+                    sqlx::query("UPDATE objects SET flags = null WHERE id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+                }
+                InheritableFields::Name => {
+                    sqlx::query("UPDATE objects SET name = null WHERE id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+                }
+                InheritableFields::Description => {
+                    sqlx::query("UPDATE objects SET description = null WHERE id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+                }
+                InheritableFields::Keywords => {
+                    sqlx::query("UPDATE objects SET keywords = null WHERE id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+                }
+                InheritableFields::Hooks => {
+                    sqlx::query("UPDATE objects SET inherit_scripts = true WHERE id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+
+                    sqlx::query("DELETE FROM object_scripts WHERE object_id = ?")
+                        .bind(self.id)
+                        .execute(pool)
+                        .await?;
+                }
+            }
+        }
         Ok(())
     }
 }

@@ -17,11 +17,17 @@ use crate::world::action::{
     },
     immortal::{
         object::{
-            object_create_system, object_info_system, object_remove_system,
-            object_update_flags_system, object_update_keywords_system, ObjectCreate, ObjectInfo,
-            ObjectRemove, ObjectUpdateFlags, ObjectUpdateKeywords,
+            object_create_system, object_info_system, object_inherit_fields_system,
+            object_remove_system, object_update_flags_system, object_update_keywords_system,
+            ObjectCreate, ObjectInfo, ObjectInheritFields, ObjectRemove, ObjectUpdateFlags,
+            ObjectUpdateKeywords,
         },
         player::{player_info_system, PlayerInfo},
+        prototype::{
+            prototype_create_system, prototype_info_system, prototype_remove_system,
+            prototype_update_flags_system, prototype_update_keywords_system, PrototypeCreate,
+            PrototypeInfo, PrototypeRemove, PrototypeUpdateFlags, PrototypeUpdateKeywords,
+        },
         room::{
             room_create_system, room_info_system, room_link_system, room_remove_system,
             room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
@@ -61,10 +67,16 @@ pub enum Action {
     Move(Move),
     ObjectCreate(ObjectCreate),
     ObjectInfo(ObjectInfo),
+    ObjectInheritFields(ObjectInheritFields),
     ObjectRemove(ObjectRemove),
     ObjectUpdateFlags(ObjectUpdateFlags),
     ObjectUpdateKeywords(ObjectUpdateKeywords),
     PlayerInfo(PlayerInfo),
+    PrototypeCreate(PrototypeCreate),
+    PrototypeInfo(PrototypeInfo),
+    PrototypeRemove(PrototypeRemove),
+    PrototypeUpdateFlags(PrototypeUpdateFlags),
+    PrototypeUpdateKeywords(PrototypeUpdateKeywords),
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
     RoomLink(RoomLink),
@@ -98,10 +110,16 @@ impl Action {
             Action::Move(action) => action.actor,
             Action::ObjectCreate(action) => action.actor,
             Action::ObjectInfo(action) => action.actor,
+            Action::ObjectInheritFields(action) => action.actor,
             Action::ObjectRemove(action) => action.actor,
             Action::ObjectUpdateFlags(action) => action.actor,
             Action::ObjectUpdateKeywords(action) => action.actor,
             Action::PlayerInfo(action) => action.actor,
+            Action::PrototypeCreate(action) => action.actor,
+            Action::PrototypeInfo(action) => action.actor,
+            Action::PrototypeRemove(action) => action.actor,
+            Action::PrototypeUpdateFlags(action) => action.actor,
+            Action::PrototypeUpdateKeywords(action) => action.actor,
             Action::RoomCreate(action) => action.actor,
             Action::RoomInfo(action) => action.actor,
             Action::RoomLink(action) => action.actor,
@@ -135,10 +153,16 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(move_system.system());
     stage.add_system(object_create_system.system());
     stage.add_system(object_info_system.system());
+    stage.add_system(object_inherit_fields_system.system());
     stage.add_system(object_remove_system.system());
     stage.add_system(object_update_flags_system.system());
     stage.add_system(object_update_keywords_system.system());
     stage.add_system(player_info_system.system());
+    stage.add_system(prototype_create_system.system());
+    stage.add_system(prototype_info_system.system());
+    stage.add_system(prototype_remove_system.system());
+    stage.add_system(prototype_update_flags_system.system());
+    stage.add_system(prototype_update_keywords_system.system());
     stage.add_system(room_create_system.system());
     stage.add_system(room_info_system.system());
     stage.add_system(room_link_system.system());

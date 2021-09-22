@@ -9,8 +9,10 @@ use crate::{
     world::{
         action::Action,
         types::{
-            object::ObjectFlags, player::Messages, room::Room, Container, Contents, Flags, Id,
-            Keywords, Location, Named,
+            object::{Object, ObjectFlags},
+            player::Messages,
+            room::Room,
+            Container, Contents, Flags, Id, Keywords, Location, Named,
         },
     },
 };
@@ -45,7 +47,7 @@ pub fn drop_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     mut dropping_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
-    mut object_query: Query<(&Id, &Named, &Keywords)>,
+    object_query: Query<(&Object, &Named, &Keywords)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -56,7 +58,7 @@ pub fn drop_system(
                 if let Ok((id, location, contents)) = dropping_query.get_mut(*actor) {
                     let pos = contents.objects.iter().position(|object| {
                         object_query
-                            .get_mut(*object)
+                            .get(*object)
                             .map(|(_, _, object_keywords)| {
                                 {
                                     keywords
@@ -89,31 +91,25 @@ pub fn drop_system(
                 };
 
                 let (object_id, name) = {
-                    let (id, named, _) = object_query.get_mut(object_entity).unwrap();
+                    let (object, named, _) = object_query.get(object_entity).unwrap();
                     commands
                         .entity(object_entity)
                         .insert(Location { room: room_entity })
                         .remove::<Container>();
 
-                    let id = if let Id::Object(id) = id {
-                        *id
-                    } else {
-                        tracing::warn!("Object {:?} does not have an object ID.", object_entity);
-                        continue;
-                    };
-
-                    (id, named.name.as_str())
+                    (object.id, named.name.as_str())
                 };
 
                 // Persist the changes for the object's position
                 match entity_id {
                     Id::Player(player_id) => {
-                        updates.queue(persist::player::RemoveObject::new(player_id, object_id))
+                        updates.persist(persist::player::RemoveObject::new(player_id, object_id))
                     }
                     Id::Object(_) => todo!(),
                     Id::Room(_) => todo!(),
+                    Id::Prototype(_) => todo!(),
                 }
-                updates.queue(persist::room::AddObject::new(room_id, object_id));
+                updates.persist(persist::room::AddObject::new(room_id, object_id));
 
                 format!("You drop {}.", name)
             } else {
@@ -157,8 +153,7 @@ pub fn get_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     mut getting_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
-    mut object_query: Query<(&Id, &Named, &Keywords)>,
-    flags_query: Query<&Flags>,
+    object_query: Query<(&Object, &Named, &Keywords, &Flags)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -179,8 +174,8 @@ pub fn get_system(
                 .map(|(_, contents)| {
                     contents.objects.iter().position(|object| {
                         object_query
-                            .get_mut(*object)
-                            .map(|(_, _, object_keywords)| {
+                            .get(*object)
+                            .map(|(_, _, object_keywords, _)| {
                                 {
                                     keywords
                                         .iter()
@@ -199,18 +194,12 @@ pub fn get_system(
 
                     let object_entity = contents.objects[pos];
 
-                    if flags_query
-                        .get(object_entity)
-                        .unwrap()
-                        .flags
-                        .contains(ObjectFlags::FIXED)
-                    {
+                    let (_, named, _, flags) = object_query.get(object_entity).unwrap();
+                    if flags.flags.contains(ObjectFlags::FIXED) {
                         if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                            let (_, named, _) = object_query.get_mut(object_entity).unwrap();
-                            messages.queue(format!(
-                                "Try as you might, you cannot pick up {}.",
-                                named.name
-                            ));
+                            let name = named.name.as_str();
+                            messages
+                                .queue(format!("Try as you might, you cannot pick up {}.", name));
                         }
                         continue;
                     }
@@ -226,32 +215,26 @@ pub fn get_system(
                     .expect("Location has valid Room");
 
                 let (object_id, name) = {
-                    let (id, named, _) = object_query.get_mut(object_entity).unwrap();
+                    let (object, named, _, _) = object_query.get(object_entity).unwrap();
 
                     commands
                         .entity(object_entity)
                         .insert(Container { entity: *actor })
                         .remove::<Location>();
 
-                    let id = if let Id::Object(id) = id {
-                        *id
-                    } else {
-                        tracing::warn!("Object {:?} does not have an object ID.", object_entity);
-                        continue;
-                    };
-
-                    (id, named.name.as_str())
+                    (object.id, named.name.as_str())
                 };
 
                 // Persist the changes for the object's position
                 match entity_id {
                     Id::Player(player_id) => {
-                        updates.queue(persist::player::AddObject::new(player_id, object_id))
+                        updates.persist(persist::player::AddObject::new(player_id, object_id))
                     }
                     Id::Object(_) => todo!(),
                     Id::Room(_) => todo!(),
+                    Id::Prototype(_) => todo!(),
                 }
-                updates.queue(persist::room::RemoveObject::new(room_id, object_id));
+                updates.persist(persist::room::RemoveObject::new(room_id, object_id));
 
                 format!("You pick up {}.", name)
             } else {
@@ -299,15 +282,11 @@ pub fn inventory_system(
                 message.push_str(" nothing.|-|");
             } else {
                 message.push_str(":|-|");
-                contents
-                    .objects
-                    .iter()
-                    .filter_map(|object| object_query.get(*object).ok())
-                    .map(|named| named.name.as_str())
-                    .for_each(|desc| {
-                        message.push_str("\r\n  ");
-                        message.push_str(desc)
-                    });
+                for object_entity in contents.objects.iter() {
+                    let named = object_query.get(*object_entity).unwrap();
+                    message.push_str("\r\n  ");
+                    message.push_str(named.name.as_str());
+                }
             }
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
