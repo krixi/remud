@@ -6,7 +6,7 @@ use std::{
 
 use bevy_ecs::prelude::*;
 
-use crate::world::types::{Attributes, Contents, Health, Id, Location, Named};
+use crate::world::types::{Attributes, Contents, Description, Health, Id, Location, Named};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -44,6 +44,7 @@ pub struct PlayerBundle {
     pub id: Id,
     pub player: Player,
     pub name: Named,
+    pub description: Description,
     pub location: Location,
     pub contents: Contents,
     pub messages: Messages,
@@ -72,6 +73,7 @@ impl Messages {
 #[derive(Default)]
 pub struct Players {
     by_name: HashMap<String, Entity>,
+    id_by_name: HashMap<String, PlayerId>,
 }
 
 impl Players {
@@ -79,11 +81,13 @@ impl Players {
         self.by_name.get(name).copied()
     }
 
-    pub fn insert(&mut self, player: Entity, name: String) {
-        self.by_name.insert(name, player);
+    pub fn insert(&mut self, player: Entity, name: String, id: PlayerId) {
+        self.by_name.insert(name.clone(), player);
+        self.id_by_name.insert(name, id);
     }
 
     pub fn remove(&mut self, name: &str) {
         self.by_name.remove(name);
+        self.id_by_name.remove(name);
     }
 }

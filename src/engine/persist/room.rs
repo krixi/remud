@@ -62,23 +62,69 @@ impl Persist for AddObject {
         Ok(())
     }
 }
+pub struct AddRegions {
+    id: RoomId,
+    regions: Vec<String>,
+}
+
+impl AddRegions {
+    pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
+        Box::new(AddRegions { id, regions })
+    }
+}
+
+#[async_trait]
+impl Persist for AddRegions {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        for region in self.regions.iter() {
+            let region_id: i64 = if let Ok(region_row) =
+                sqlx::query("SELECT id FROM regions WHERE name = ?")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await
+            {
+                region_row.get("id")
+            } else {
+                sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await?
+                    .get("id")
+            };
+
+            sqlx::query("INSERT INTO room_regions(room_id, region_id) VALUES(?, ?)")
+                .bind(self.id)
+                .bind(region_id)
+                .execute(pool)
+                .await?;
+        }
+
+        Ok(())
+    }
+}
 
 pub struct Create {
     id: RoomId,
+    name: String,
     description: String,
 }
 
 impl Create {
-    pub fn new(id: RoomId, description: String) -> Box<Self> {
-        Box::new(Create { id, description })
+    pub fn new(id: RoomId, name: String, description: String) -> Box<Self> {
+        Box::new(Create {
+            id,
+            name,
+            description,
+        })
     }
 }
 
 #[async_trait]
 impl Persist for Create {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO rooms (id, description) VALUES (?, ?)")
+        sqlx::query("INSERT INTO rooms (id, name, description) VALUES (?, ?, ?)")
             .bind(self.id)
+            .bind(self.name.as_str())
             .bind(self.description.as_str())
             .execute(pool)
             .await?;
@@ -101,6 +147,54 @@ impl Delete {
 impl Persist for Delete {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM rooms WHERE id = ?")
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct Description {
+    id: RoomId,
+    description: String,
+}
+
+impl Description {
+    pub fn new(id: RoomId, description: String) -> Box<Self> {
+        Box::new(Description { id, description })
+    }
+}
+
+#[async_trait]
+impl Persist for Description {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
+            .bind(self.description.as_str())
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct Name {
+    id: RoomId,
+    name: String,
+}
+
+impl Name {
+    pub fn new(id: RoomId, name: String) -> Box<Self> {
+        Box::new(Name { id, name })
+    }
+}
+
+#[async_trait]
+impl Persist for Name {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE rooms SET name = ? WHERE id = ?")
+            .bind(self.name.as_str())
             .bind(self.id)
             .execute(pool)
             .await?;
@@ -152,71 +246,6 @@ impl Persist for RemoveObject {
             .bind(self.object_id)
             .execute(pool)
             .await?;
-
-        Ok(())
-    }
-}
-
-pub struct UpdateDescription {
-    id: RoomId,
-    description: String,
-}
-
-impl UpdateDescription {
-    pub fn new(id: RoomId, description: String) -> Box<Self> {
-        Box::new(UpdateDescription { id, description })
-    }
-}
-
-#[async_trait]
-impl Persist for UpdateDescription {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
-            .bind(self.description.as_str())
-            .bind(self.id)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct AddRegions {
-    id: RoomId,
-    regions: Vec<String>,
-}
-
-impl AddRegions {
-    pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
-        Box::new(AddRegions { id, regions })
-    }
-}
-
-#[async_trait]
-impl Persist for AddRegions {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        for region in self.regions.iter() {
-            let region_id: i64 = if let Ok(region_row) =
-                sqlx::query("SELECT id FROM regions WHERE name = ?")
-                    .bind(region)
-                    .fetch_one(pool)
-                    .await
-            {
-                region_row.get("id")
-            } else {
-                sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
-                    .bind(region)
-                    .fetch_one(pool)
-                    .await?
-                    .get("id")
-            };
-
-            sqlx::query("INSERT INTO room_regions(room_id, region_id) VALUES(?, ?)")
-                .bind(self.id)
-                .bind(region_id)
-                .execute(pool)
-                .await?;
-        }
 
         Ok(())
     }

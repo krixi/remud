@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct Login {
-    pub entity: Entity,
+    pub actor: Entity,
 }
 
 into_action!(Login);
@@ -28,9 +28,9 @@ pub fn login_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Login(Login { entity }) = action {
+        if let Action::Login(Login { actor }) = action {
             let (name, room) = player_query
-                .get(*entity)
+                .get(*actor)
                 .map(|(named, location)| (named.name.as_str(), location.room))
                 .unwrap();
 
@@ -39,7 +39,7 @@ pub fn login_system(
                 .unwrap()
                 .players
                 .iter()
-                .filter(|player| **player != *entity)
+                .filter(|player| **player != *actor)
                 .copied()
                 .collect_vec();
 
@@ -56,7 +56,7 @@ pub fn login_system(
 
 #[derive(Debug, Clone)]
 pub struct Shutdown {
-    pub entity: Entity,
+    pub actor: Entity,
 }
 
 into_action!(Shutdown);

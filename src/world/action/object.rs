@@ -27,14 +27,14 @@ pub fn parse_drop(player: Entity, tokenizer: Tokenizer) -> Result<Action, String
         .collect_vec();
 
     Ok(Action::from(Drop {
-        entity: player,
+        actor: player,
         keywords,
     }))
 }
 
 #[derive(Debug, Clone)]
 pub struct Drop {
-    pub entity: Entity,
+    pub actor: Entity,
     pub keywords: Vec<String>,
 }
 
@@ -50,10 +50,10 @@ pub fn drop_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Drop(Drop { entity, keywords }) = action {
+        if let Action::Drop(Drop { actor, keywords }) = action {
             // Find entity to drop in contents of dropping entity, if it exists. Grab some other data as well.
             let (entity_id, room_entity, pos) =
-                if let Ok((id, location, contents)) = dropping_query.get_mut(*entity) {
+                if let Ok((id, location, contents)) = dropping_query.get_mut(*actor) {
                     let pos = contents.objects.iter().position(|object| {
                         object_query
                             .get_mut(*object)
@@ -68,14 +68,14 @@ pub fn drop_system(
                     });
                     (*id, location.room, pos)
                 } else {
-                    tracing::warn!("Entity {:?} cannot drop an item without Contents.", entity);
+                    tracing::warn!("Entity {:?} cannot drop an item without Contents.", actor);
                     continue;
                 };
 
             let message = if let Some(pos) = pos {
                 // Move the object from the entity to the room
                 let object_entity = dropping_query
-                    .get_mut(*entity)
+                    .get_mut(*actor)
                     .map(|(_, _, mut contents)| contents.objects.remove(pos))
                     .unwrap();
 
@@ -120,7 +120,7 @@ pub fn drop_system(
                 format!("You don't have \"{}\".", keywords.join(" "))
             };
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         };
@@ -139,14 +139,14 @@ pub fn parse_get(player: Entity, tokenizer: Tokenizer) -> Result<Action, String>
         .collect_vec();
 
     Ok(Action::from(Get {
-        entity: player,
+        actor: player,
         keywords,
     }))
 }
 
 #[derive(Debug, Clone)]
 pub struct Get {
-    pub entity: Entity,
+    pub actor: Entity,
     pub keywords: Vec<String>,
 }
 
@@ -163,13 +163,13 @@ pub fn get_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Get(Get { entity, keywords }) = action {
+        if let Action::Get(Get { actor, keywords }) = action {
             // Get the room that entity is in.
             let (entity_id, room_entity) =
-                if let Ok((id, location, _)) = getting_query.get_mut(*entity) {
+                if let Ok((id, location, _)) = getting_query.get_mut(*actor) {
                     (*id, location.room)
                 } else {
-                    tracing::warn!("Entity {:?} without Contents cannot get an item.", entity);
+                    tracing::warn!("Entity {:?} without Contents cannot get an item.", actor);
                     continue;
                 };
 
@@ -205,7 +205,7 @@ pub fn get_system(
                         .flags
                         .contains(ObjectFlags::FIXED)
                     {
-                        if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             let (_, named, _) = object_query.get_mut(object_entity).unwrap();
                             messages.queue(format!(
                                 "Try as you might, you cannot pick up {}.",
@@ -221,7 +221,7 @@ pub fn get_system(
                 };
 
                 getting_query
-                    .get_mut(*entity)
+                    .get_mut(*actor)
                     .map(|(_, _, mut contents)| contents.objects.push(object_entity))
                     .expect("Location has valid Room");
 
@@ -230,7 +230,7 @@ pub fn get_system(
 
                     commands
                         .entity(object_entity)
-                        .insert(Container { entity: *entity })
+                        .insert(Container { entity: *actor })
                         .remove::<Location>();
 
                     let id = if let Id::Object(id) = id {
@@ -261,7 +261,7 @@ pub fn get_system(
                 )
             };
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         };
@@ -270,7 +270,7 @@ pub fn get_system(
 
 #[derive(Debug, Clone)]
 pub struct Inventory {
-    pub entity: Entity,
+    pub actor: Entity,
 }
 
 into_action!(Inventory);
@@ -282,15 +282,15 @@ pub fn inventory_system(
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Inventory(Inventory { entity }) = action {
+        if let Action::Inventory(Inventory { actor }) = action {
             let mut message = "|white|You have".to_string();
 
-            let contents = if let Ok(contents) = inventory_query.get(*entity) {
+            let contents = if let Ok(contents) = inventory_query.get(*actor) {
                 contents
             } else {
                 tracing::warn!(
                     "Cannot request inventory of entity {:?} without Contents",
-                    entity
+                    actor
                 );
                 continue;
             };
@@ -310,7 +310,7 @@ pub fn inventory_system(
                     });
             }
 
-            if let Ok(mut messages) = messages.get_mut(*entity) {
+            if let Ok(mut messages) = messages.get_mut(*actor) {
                 messages.queue(message);
             }
         }

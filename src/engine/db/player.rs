@@ -31,11 +31,12 @@ pub async fn load_player(
     name: &str,
 ) -> anyhow::Result<Entity> {
     let (player, id) = {
-        let player_row =
-            sqlx::query_as::<_, PlayerRow>("SELECT id, room FROM players WHERE username = ?")
-                .bind(name)
-                .fetch_one(pool)
-                .await?;
+        let player_row = sqlx::query_as::<_, PlayerRow>(
+            "SELECT id, description, room FROM players WHERE username = ?",
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
 
         let mut world = world.write().unwrap();
 
@@ -63,6 +64,9 @@ pub async fn load_player(
                 name: Named {
                     name: name.to_string(),
                 },
+                description: Description {
+                    text: player_row.description,
+                },
                 location: Location { room },
                 player: Player { id },
                 contents: Contents::default(),
@@ -82,7 +86,7 @@ pub async fn load_player(
         world
             .get_resource_mut::<Players>()
             .unwrap()
-            .insert(player, name.to_string());
+            .insert(player, name.to_string(), id);
 
         (player, id)
     };
@@ -100,7 +104,7 @@ async fn load_player_inventory(
     player: Entity,
 ) -> anyhow::Result<()> {
     let mut results = sqlx::query_as::<_, ObjectRow>(
-        r#"SELECT objects.id, flags, player_id AS container, keywords, name, description
+        r#"SELECT objects.id, flags, player_id AS container, keywords, name, objects.description
                 FROM objects
                 INNER JOIN player_objects ON player_objects.object_id = objects.id
                 INNER JOIN players ON player_objects.player_id = players.id
@@ -184,5 +188,6 @@ async fn load_player_scripts(
 #[derive(Debug, sqlx::FromRow)]
 struct PlayerRow {
     id: i64,
+    description: String,
     room: i64,
 }

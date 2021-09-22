@@ -7,7 +7,7 @@ use itertools::Itertools;
 use sqlx::{Row, SqlitePool};
 
 use crate::{
-    engine::db::{ExitRow, HookRow, ObjectRow, RoomRow, ScriptRow},
+    engine::db::{HookRow, ObjectRow, ScriptRow},
     world::{
         scripting::{Script, ScriptHook, ScriptHooks, Scripts},
         types::{
@@ -54,7 +54,8 @@ async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Res
 async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
     let mut rooms_by_id = HashMap::new();
 
-    let mut results = sqlx::query_as::<_, RoomRow>("SELECT id, description FROM rooms").fetch(pool);
+    let mut results =
+        sqlx::query_as::<_, RoomRow>("SELECT id, name, description FROM rooms").fetch(pool);
 
     while let Some(room) = results.try_next().await? {
         let regions = sqlx::query(
@@ -69,20 +70,25 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         .map(|row| row.get::<String, _>("name"))
         .collect_vec();
 
-        let id = room.id;
+        let id = RoomId::try_from(room.id)?;
         let entity = world
             .spawn()
             .insert_bundle(RoomBundle {
-                id: Id::Room(RoomId::try_from(id)?),
+                id: Id::Room(id),
+                name: Named { name: room.name },
                 description: Description {
                     text: room.description.clone(),
                 },
-                room: Room::try_from(room)?,
+                room: Room {
+                    id,
+                    exits: HashMap::new(),
+                    players: Vec::new(),
+                },
                 contents: Contents::default(),
                 regions: Regions { list: regions },
             })
             .id();
-        rooms_by_id.insert(RoomId::try_from(id)?, entity);
+        rooms_by_id.insert(id, entity);
     }
 
     let highest_id = sqlx::query("SELECT MAX(id) AS max_id FROM rooms")
@@ -276,4 +282,34 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
     }
 
     Ok(())
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RoomObjectRow {
+    room_id: i64,
+    object_id: i64,
+}
+
+impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RoomObjectRow) -> Result<Self, Self::Error> {
+        let room_id = RoomId::try_from(value.room_id)?;
+        let object_id = ObjectId::try_from(value.object_id)?;
+        Ok((room_id, object_id))
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RoomRow {
+    id: i64,
+    name: String,
+    description: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExitRow {
+    room_from: i64,
+    room_to: i64,
+    direction: String,
 }

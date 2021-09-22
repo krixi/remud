@@ -33,12 +33,12 @@ pub fn parse_look(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                     .collect_vec();
 
                 Ok(Action::from(LookAt {
-                    entity: player,
+                    actor: player,
                     keywords,
                 }))
             } else if let Ok(direction) = Direction::from_str(token) {
                 Ok(Action::from(Look {
-                    entity: player,
+                    actor: player,
                     direction: Some(direction),
                 }))
             } else {
@@ -46,7 +46,7 @@ pub fn parse_look(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
             }
         }
         None => Ok(Action::from(Look {
-            entity: player,
+            actor: player,
             direction: None,
         })),
     }
@@ -54,7 +54,7 @@ pub fn parse_look(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
 
 #[derive(Debug, Clone)]
 pub struct Look {
-    pub entity: Entity,
+    pub actor: Entity,
     pub direction: Option<Direction>,
 }
 
@@ -63,27 +63,27 @@ into_action!(Look);
 pub fn look_system(
     mut action_reader: EventReader<Action>,
     looker_query: Query<&Location, With<Player>>,
-    room_query: Query<(&Room, &Description, &Contents)>,
+    room_query: Query<(&Room, &Named, &Description, &Contents)>,
     player_query: Query<&Named>,
     object_query: Query<(&Named, &Flags)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Look(Look { entity, direction }) = action {
+        if let Action::Look(Look { actor, direction }) = action {
             let current_room = looker_query
-                .get(*entity)
+                .get(*actor)
                 .map(|location| location.room)
                 .unwrap();
 
             let target_room = if let Some(direction) = direction {
                 if let Some(room) = room_query
                     .get(current_room)
-                    .map(|(room, _, _)| room.exits.get(direction))
+                    .map(|(room, _, _, _)| room.exits.get(direction))
                     .expect("Location has a valid room.")
                 {
                     *room
                 } else {
-                    if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(format!("There is no room {}.", direction.as_to_str()));
                     }
                     continue;
@@ -92,14 +92,16 @@ pub fn look_system(
                 current_room
             };
 
-            let (room, description, contents) = room_query.get(target_room).unwrap();
+            let (room, named, description, contents) = room_query.get(target_room).unwrap();
 
-            let mut message = description.text.clone();
+            let mut message = format!("|white|{}|-|\r\n", named.name.as_str());
+
+            message.push_str(description.text.as_str());
 
             let present_names = room
                 .players
                 .iter()
-                .filter(|present_player| **present_player != *entity)
+                .filter(|present_player| **present_player != *actor)
                 .filter_map(|player| player_query.get(*player).ok())
                 .map(|named| named.name.clone())
                 .sorted()
@@ -133,7 +135,7 @@ pub fn look_system(
                 message.push('.');
             }
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -142,7 +144,7 @@ pub fn look_system(
 
 #[derive(Debug, Clone)]
 pub struct LookAt {
-    pub entity: Entity,
+    pub actor: Entity,
     pub keywords: Vec<String>,
 }
 
@@ -151,31 +153,51 @@ into_action!(LookAt);
 pub fn look_at_system(
     mut action_reader: EventReader<Action>,
     looker_query: Query<&Location, With<Player>>,
+    room_query: Query<&Room>,
     contents_query: Query<&Contents>,
+    player_query: Query<(&Named, &Description)>,
     object_query: Query<(&Description, &Keywords)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::LookAt(LookAt { entity, keywords }) = action {
+        if let Action::LookAt(LookAt { actor, keywords }) = action {
             let description = looker_query
-                .get(*entity)
+                .get(*actor)
                 .ok()
                 .map(|location| location.room)
-                .and_then(|room| contents_query.get(room).ok())
-                .and_then(|contents| {
-                    contents
-                        .objects
+                .and_then(|room| room_query.get(room).ok())
+                .and_then(|room| {
+                    room.players
                         .iter()
-                        .filter_map(|object| object_query.get(*object).ok())
-                        .find(|(_, object_keywords)| {
+                        .filter_map(|player| player_query.get(*player).ok())
+                        .find(|(name, _)| {
                             keywords
                                 .iter()
-                                .all(|keyword| object_keywords.list.contains(keyword))
+                                .any(|keyword| keyword.as_str() == name.name.as_str())
                         })
-                        .map(|(description, _)| description.text.as_str())
+                        .map(|(_, description)| description.text.as_str())
                 })
                 .or_else(|| {
-                    contents_query.get(*entity).ok().and_then(|contents| {
+                    looker_query
+                        .get(*actor)
+                        .ok()
+                        .map(|location| location.room)
+                        .and_then(|room| contents_query.get(room).ok())
+                        .and_then(|contents| {
+                            contents
+                                .objects
+                                .iter()
+                                .filter_map(|object| object_query.get(*object).ok())
+                                .find(|(_, object_keywords)| {
+                                    keywords
+                                        .iter()
+                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                })
+                                .map(|(description, _)| description.text.as_str())
+                        })
+                })
+                .or_else(|| {
+                    contents_query.get(*actor).ok().and_then(|contents| {
                         contents
                             .objects
                             .iter()
@@ -198,7 +220,7 @@ pub fn look_at_system(
                 )
             };
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -207,7 +229,7 @@ pub fn look_at_system(
 
 #[derive(Debug, Clone)]
 pub struct Exits {
-    pub entity: Entity,
+    pub actor: Entity,
 }
 
 into_action!(Exits);
@@ -219,9 +241,9 @@ pub fn exits_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Exits(Exits { entity }) = action {
+        if let Action::Exits(Exits { actor }) = action {
             let current_room = exiter_query
-                .get(*entity)
+                .get(*actor)
                 .map(|location| location.room)
                 .unwrap();
 
@@ -243,7 +265,7 @@ pub fn exits_system(
                 format!("There are exits {}.", word_list(exits))
             };
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -252,7 +274,7 @@ pub fn exits_system(
 
 #[derive(Debug, Clone)]
 pub struct Who {
-    pub entity: Entity,
+    pub actor: Entity,
 }
 
 into_action!(Who);
@@ -263,7 +285,7 @@ pub fn who_system(
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Who(Who { entity }) = action {
+        if let Action::Who(Who { actor }) = action {
             let players = player_query
                 .iter()
                 .map(|named| format!("  {}", named.name))
@@ -272,7 +294,7 @@ pub fn who_system(
 
             let message = format!("Online players:\r\n{}", players);
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }

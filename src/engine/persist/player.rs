@@ -33,6 +33,30 @@ impl Persist for AddObject {
     }
 }
 
+pub struct Description {
+    id: PlayerId,
+    description: String,
+}
+
+impl Description {
+    pub fn new(id: PlayerId, description: String) -> Box<Self> {
+        Box::new(Description { id, description })
+    }
+}
+
+#[async_trait]
+impl Persist for Description {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE players SET description = ? WHERE id = ?")
+            .bind(self.description.as_str())
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct RemoveObject {
     player_id: PlayerId,
     object_id: ObjectId,

@@ -19,7 +19,7 @@ pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> 
         Err("Do what?".to_string())
     } else {
         Ok(Action::from(Emote {
-            entity: player,
+            actor: player,
             emote: tokenizer.rest().to_string(),
         }))
     }
@@ -27,7 +27,7 @@ pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> 
 
 #[derive(Debug, Clone)]
 pub struct Emote {
-    pub entity: Entity,
+    pub actor: Entity,
     pub emote: String,
 }
 
@@ -40,13 +40,13 @@ pub fn emote_system(
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Emote(Emote { entity, emote }) = action {
-            let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*entity) {
+        if let Action::Emote(Emote { actor, emote }) = action {
+            let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*actor) {
                 (named.name.as_str(), location.room)
             } else {
                 tracing::warn!(
                     "Entity {:?} cannot emote without Named and Location.",
-                    entity
+                    actor
                 );
                 continue;
             };
@@ -68,7 +68,7 @@ pub fn emote_system(
 
 #[derive(Debug, Clone)]
 pub struct Message {
-    pub entity: Entity,
+    pub actor: Entity,
     pub message: String,
 }
 
@@ -81,11 +81,11 @@ pub fn message_system(
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Message(Message { entity, message }) = action {
-            let room_entity = if let Ok(location) = messaging_query.get(*entity) {
+        if let Action::Message(Message { actor, message }) = action {
+            let room_entity = if let Ok(location) = messaging_query.get(*actor) {
                 location.room
             } else {
-                tracing::warn!("Entity {:?} cannot say without Named and Location.", entity);
+                tracing::warn!("Entity {:?} cannot say without Named and Location.", actor);
                 continue;
             };
 
@@ -107,7 +107,7 @@ pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<Action, String>
         Err("Say what?".to_string())
     } else {
         Ok(Action::from(Say {
-            entity: player,
+            actor: player,
             message: tokenizer.rest().to_string(),
         }))
     }
@@ -115,7 +115,7 @@ pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<Action, String>
 
 #[derive(Debug, Clone)]
 pub struct Say {
-    pub entity: Entity,
+    pub actor: Entity,
     pub message: String,
 }
 
@@ -128,11 +128,11 @@ pub fn say_system(
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Say(Say { entity, message }) = action {
-            let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*entity) {
+        if let Action::Say(Say { actor, message }) = action {
+            let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
                 (named.name.as_str(), location.room)
             } else {
-                tracing::warn!("Entity {:?} cannot say without Named and Location.", entity);
+                tracing::warn!("Entity {:?} cannot say without Named and Location.", actor);
                 continue;
             };
 
@@ -143,7 +143,7 @@ pub fn say_system(
                 .expect("Location contains a valid room.");
 
             for player in &room.players {
-                if *player == *entity {
+                if *player == *actor {
                     if let Ok(mut messages) = present_query.get_mut(*player) {
                         messages.queue(format!("You say \"{}\"", message));
                     }
@@ -161,7 +161,7 @@ pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
             Err(format!("Send what to {}?", target))
         } else {
             Ok(Action::from(SendMessage {
-                entity: player,
+                actor: player,
                 recipient: target.to_string(),
                 message: tokenizer.rest().to_string(),
             }))
@@ -173,7 +173,7 @@ pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
 
 #[derive(Debug, Clone)]
 pub struct SendMessage {
-    pub entity: Entity,
+    pub actor: Entity,
     pub recipient: String,
     pub message: String,
 }
@@ -192,22 +192,22 @@ pub fn send_system(
 ) {
     for action in action_reader.iter() {
         if let Action::Send(SendMessage {
-            entity,
+            actor,
             recipient,
             message,
         }) = action
         {
-            let name = if let Ok(named) = saying_query.get(*entity) {
+            let name = if let Ok(named) = saying_query.get(*actor) {
                 named.name.as_str()
             } else {
-                tracing::warn!("Nameless entity {:?} cannot send a message.", entity);
+                tracing::warn!("Nameless entity {:?} cannot send a message.", actor);
                 continue;
             };
 
             let recipient = if let Some(recipient) = players.by_name(recipient.as_str()) {
                 recipient
             } else {
-                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!(
                         "Your term beeps in irritation: \"User '{}' not found.\"",
                         recipient
@@ -217,8 +217,8 @@ pub fn send_system(
                 continue;
             };
 
-            if recipient == *entity {
-                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if recipient == *actor {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue("Your term trills: \"Invalid recipient: Self.\"".to_string());
                 };
 
@@ -230,7 +230,7 @@ pub fn send_system(
                 .expect("Recipient player has Messages.")
                 .queue(format!("{} sends \"{}\"", name, message));
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue("Your term chirps happily: \"Message sent.\"".to_string());
             };
         }

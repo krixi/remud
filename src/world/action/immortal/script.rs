@@ -29,9 +29,9 @@ pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
 
         if let Some(command) = tokenizer.next() {
             match command {
-                "attach" => parse_params(player, script, tokenizer, Command::Attach),
-                "attach-pre" => parse_params(player, script, tokenizer, Command::AttachPre),
-                "detach" => parse_params(player, script, tokenizer, Command::Detach),
+                "attach" => parse_params(player, script, tokenizer, ScriptCommand::Attach),
+                "attach-pre" => parse_params(player, script, tokenizer, ScriptCommand::AttachPre),
+                "detach" => parse_params(player, script, tokenizer, ScriptCommand::Detach),
                 _ => Err("Enter a valid subcommand: attach, attach-pre, detach.".to_string()),
             }
         } else {
@@ -46,7 +46,7 @@ fn parse_params(
     player: Entity,
     script: ScriptName,
     mut tokenizer: Tokenizer,
-    command: Command,
+    command: ScriptCommand,
 ) -> Result<Action, String> {
     if let Some(target_type) = tokenizer.next() {
         if let Some(id) = tokenizer.next() {
@@ -72,31 +72,31 @@ fn parse_params(
     }
 }
 
-enum Command {
+enum ScriptCommand {
     Attach,
     AttachPre,
     Detach,
 }
 
-impl Command {
-    fn into_action(self, entity: Entity, script: ScriptName, id: Either<Id, String>) -> Action {
+impl ScriptCommand {
+    fn into_action(self, actor: Entity, script: ScriptName, id: Either<Id, String>) -> Action {
         match self {
-            Command::Attach => ScriptAttach {
-                entity,
+            ScriptCommand::Attach => ScriptAttach {
+                actor,
                 script,
                 pre: false,
                 target: id,
             }
             .into(),
-            Command::AttachPre => ScriptAttach {
-                entity,
+            ScriptCommand::AttachPre => ScriptAttach {
+                actor,
                 script,
                 pre: true,
                 target: id,
             }
             .into(),
-            Command::Detach => ScriptDetach {
-                entity,
+            ScriptCommand::Detach => ScriptDetach {
+                actor,
                 script,
                 target: id,
             }
@@ -107,7 +107,7 @@ impl Command {
 
 #[derive(Debug, Clone)]
 pub struct ScriptAttach {
-    pub entity: Entity,
+    pub actor: Entity,
     pub script: ScriptName,
     pub pre: bool,
     pub target: Either<Id, String>,
@@ -130,7 +130,7 @@ pub fn script_attach_system(
 ) {
     for action in action_reader.iter() {
         if let Action::ScriptAttach(ScriptAttach {
-            entity,
+            actor,
             script,
             pre,
             target,
@@ -139,7 +139,7 @@ pub fn script_attach_system(
             let script_entity = if let Some(script) = scripts.by_name(script) {
                 script
             } else {
-                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Script {} not found.", script));
                 }
                 continue;
@@ -151,7 +151,7 @@ pub fn script_attach_system(
                         if let Some(object) = objects.by_id(*id) {
                             object
                         } else {
-                            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                                 messages.queue(format!("Target object {} not found.", id));
                             }
                             continue;
@@ -161,7 +161,7 @@ pub fn script_attach_system(
                         if let Some(room) = rooms.by_id(*id) {
                             room
                         } else {
-                            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                                 messages.queue(format!("Target room {} not found.", id));
                             }
                             continue;
@@ -173,7 +173,7 @@ pub fn script_attach_system(
                     if let Some(player) = players.by_name(name) {
                         player
                     } else {
-                        if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Target player {} not found.", name));
                         }
                         continue;
@@ -196,7 +196,7 @@ pub fn script_attach_system(
 
             if let Ok(mut hooks) = hook_query.get_mut(target_entity) {
                 if hooks.list.contains(&hook) {
-                    if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(format!("Script {} already attached to entity.", script));
                     }
                     continue;
@@ -215,7 +215,7 @@ pub fn script_attach_system(
 
             updates.queue(persist::script::Attach::new(id, script.clone(), trigger));
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
                     Either::Left(id) => {
                         match id {
@@ -237,7 +237,7 @@ pub fn script_attach_system(
 
 #[derive(Debug, Clone)]
 pub struct ScriptDetach {
-    pub entity: Entity,
+    pub actor: Entity,
     pub script: ScriptName,
     pub target: Either<Id, String>,
 }
@@ -258,7 +258,7 @@ pub fn script_detach_system(
 ) {
     for action in action_reader.iter() {
         if let Action::ScriptDetach(ScriptDetach {
-            entity,
+            actor,
             script,
             target,
         }) = action
@@ -266,7 +266,7 @@ pub fn script_detach_system(
             let script_entity = if let Some(script) = scripts.by_name(script) {
                 script
             } else {
-                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Script {} not found.", script));
                 }
                 continue;
@@ -278,7 +278,7 @@ pub fn script_detach_system(
                         if let Some(object) = objects.by_id(*id) {
                             object
                         } else {
-                            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                                 messages.queue(format!("Target object {} not found.", id));
                             }
                             continue;
@@ -288,7 +288,7 @@ pub fn script_detach_system(
                         if let Some(room) = rooms.by_id(*id) {
                             room
                         } else {
-                            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                                 messages.queue(format!("Target room {} not found.", id));
                             }
                             continue;
@@ -300,7 +300,7 @@ pub fn script_detach_system(
                     if let Some(player) = players.by_name(name) {
                         player
                     } else {
-                        if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Target player {} not found.", name));
                         }
                         continue;
@@ -333,7 +333,7 @@ pub fn script_detach_system(
             }
 
             if remove_trigger.is_none() {
-                if let Ok(mut messages) = messages_query.get_mut(*entity) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Script {} not found on target.", script));
                 }
                 continue;
@@ -350,7 +350,7 @@ pub fn script_detach_system(
                 remove_trigger.unwrap(),
             ));
 
-            if let Ok(mut messages) = messages_query.get_mut(*entity) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
                     Either::Left(id) => match id {
                         Id::Player(_) => unreachable!("Players are referenced by name."),

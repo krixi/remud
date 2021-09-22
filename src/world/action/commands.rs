@@ -13,6 +13,7 @@ use crate::{
             communicate::{parse_me, parse_say, parse_send},
             immortal::{
                 object::parse_object, player::parse_player, room::parse_room, script::parse_script,
+                UpdateDescription,
             },
             movement::{parse_teleport, Move},
             object::{parse_drop, parse_get, Inventory},
@@ -20,7 +21,7 @@ use crate::{
             system::Shutdown,
             Action,
         },
-        types::room::Direction,
+        types::{room::Direction, ActionTarget},
     },
 };
 
@@ -241,11 +242,22 @@ fn default_commands() -> Vec<Command> {
         "down",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::Down,
             }))
         },
         Help::new("down", "Moves you to the room below, if possible."),
+    ));
+    commands.push(Command::new(
+        "description",
+        |actor, tokenizer| {
+            Ok(Action::from(UpdateDescription {
+                actor,
+                target: ActionTarget::PlayerSelf,
+                description: tokenizer.rest().to_string(),
+            }))
+        },
+        Help::new("", ""),
     ));
     commands.push(Command::new(
         "drop",
@@ -260,7 +272,7 @@ fn default_commands() -> Vec<Command> {
         "east",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::East,
             }))
         },
@@ -268,7 +280,7 @@ fn default_commands() -> Vec<Command> {
     ));
     commands.push(Command::new(
         "exits",
-        |actor, _| Ok(Action::from(Exits { entity: actor })),
+        |actor, _| Ok(Action::from(Exits { actor })),
         Help::new("exits", "Lists the exits from the current room."),
     ));
     commands.push(Command::new(
@@ -282,7 +294,7 @@ fn default_commands() -> Vec<Command> {
     ));
     commands.push(Command::new(
         "inventory",
-        |actor, _| Ok(Action::from(Inventory { entity: actor })),
+        |actor, _| Ok(Action::from(Inventory { actor })),
         Help::new("inventory", "Displays a list of items in your inventory."),
     ));
     commands.push(Command::new(
@@ -307,7 +319,7 @@ fn default_commands() -> Vec<Command> {
         "north",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::North,
             }))
         },
@@ -354,6 +366,8 @@ fn default_commands() -> Vec<Command> {
         .with_subhelp("info", Help::new("help info", "Displays information about the current room."))
         .with_subhelp("new", Help::new("room new [<direction>]", "Creates a new room. If direction is omitted, the new room will not have any exits and thus not be attached to the world. If a direction is used, the room will be connected in that direction from the current room and a reciprocal exit will be created from the new room to the current room.")
         .with_example("room new west"))
+        .with_subhelp("name", Help::new("room name <text>", "Sets a room's name. Room names should be in title case and avoid terminating punctuation.")
+        .with_example("room name Tattoo Shop"))
         .with_subhelp("desc", Help::new("room desc <text>", "Sets a room's description. Descriptions are prose and should contain one or more complete sentences.")
         .with_example("room desc This tattoo shop has seen better days. Most corners of the room are grungy, and the chair is torn from wear. A tattoo gun rests on the chair-side table."))
         .with_subhelp("link", Help::new("room link <direction> <destination room ID>", "Adds an exit to the current room in the specified direction which leads to the specified room ID.")
@@ -401,7 +415,7 @@ fn default_commands() -> Vec<Command> {
     commands.push(
         Command::new(
             "shutdown",
-            |actor, _| Ok(Action::from(Shutdown { entity: actor })),
+            |actor, _| Ok(Action::from(Shutdown { actor })),
             Help::new("shutdown", "Immediately shuts down ReMUD."),
         )
         .restricted(),
@@ -410,7 +424,7 @@ fn default_commands() -> Vec<Command> {
         "south",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::South,
             }))
         },
@@ -428,7 +442,7 @@ fn default_commands() -> Vec<Command> {
         "up",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::Up,
             }))
         },
@@ -438,7 +452,7 @@ fn default_commands() -> Vec<Command> {
         "west",
         |actor, _| {
             Ok(Action::from(Move {
-                entity: actor,
+                actor,
                 direction: Direction::West,
             }))
         },
@@ -446,7 +460,7 @@ fn default_commands() -> Vec<Command> {
     ));
     commands.push(Command::new(
         "who",
-        |actor, _| Ok(Action::from(Who { entity: actor })),
+        |actor, _| Ok(Action::from(Who { actor })),
         Help::new("who", "Retrieves a list of online players."),
     ));
     commands
