@@ -116,7 +116,7 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PrototypeCreate {
     pub actor: Entity,
 }
@@ -170,7 +170,7 @@ pub fn prototype_create_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PrototypeInfo {
     pub actor: Entity,
     pub id: PrototypeId,
@@ -228,7 +228,7 @@ pub fn prototype_info_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PrototypeUpdateKeywords {
     pub actor: Entity,
     pub id: PrototypeId,
@@ -272,7 +272,7 @@ pub fn prototype_update_keywords_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PrototypeRemove {
     pub actor: Entity,
     pub id: PrototypeId,
@@ -340,7 +340,7 @@ pub fn prototype_remove_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PrototypeUpdateFlags {
     pub actor: Entity,
     pub id: PrototypeId,

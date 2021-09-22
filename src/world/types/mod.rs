@@ -12,7 +12,7 @@ pub mod object;
 pub mod player;
 pub mod room;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Id {
     Player(PlayerId),
     Prototype(PrototypeId),
@@ -31,7 +31,7 @@ impl fmt::Display for Id {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum ActionTarget {
     PlayerSelf,
     Prototype(PrototypeId),

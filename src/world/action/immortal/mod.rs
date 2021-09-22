@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UpdateDescription {
     pub actor: Entity,
     pub target: ActionTarget,
@@ -117,7 +117,7 @@ pub fn update_description_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UpdateName {
     pub actor: Entity,
     pub target: ActionTarget,

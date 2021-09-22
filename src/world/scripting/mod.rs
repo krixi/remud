@@ -1,5 +1,6 @@
 pub mod actions;
 mod modules;
+pub mod timed_actions;
 
 use std::{
     collections::HashMap,
@@ -21,7 +22,7 @@ use crate::world::{
     fsm::{StateId, StateMachineBuilder},
     scripting::{
         actions::{run_post_event_script, run_pre_event_script},
-        modules::{event_api, self_api, states_api, world_api},
+        modules::{event_api, self_api, states_api, time_api, world_api},
     },
     types::{room::Room, Container, Contents, Location},
 };
@@ -396,14 +397,18 @@ pub fn create_script_engine() -> ScriptEngine {
     let mut engine = rhai::Engine::default();
 
     engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+
     engine.register_type_with_name::<StateMachineBuilder>("StateMachineBuilder");
+    engine.register_fn("fsm_builder", StateMachineBuilder::default);
+    engine.register_fn("add_state", StateMachineBuilder::add_state);
+
     engine.register_type_with_name::<StateId>("StateId");
+    engine.register_static_module("StateId", exported_module!(states_api).into());
+
     engine.register_global_module(exported_module!(world_api).into());
     engine.register_global_module(exported_module!(event_api).into());
     engine.register_global_module(exported_module!(self_api).into());
-    engine.register_static_module("StateId", exported_module!(states_api).into());
-    engine.register_fn("fsm_builder", StateMachineBuilder::default);
-    engine.register_fn("add_state", StateMachineBuilder::add_state);
+    engine.register_global_module(exported_module!(time_api).into());
 
     ScriptEngine {
         engine: Arc::new(RwLock::new(engine)),

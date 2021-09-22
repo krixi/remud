@@ -175,7 +175,7 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomCreate {
     pub actor: Entity,
     pub direction: Option<Direction>,
@@ -285,7 +285,7 @@ pub fn room_create_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomInfo {
     pub actor: Entity,
 }
@@ -390,7 +390,7 @@ pub fn room_info_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomLink {
     pub actor: Entity,
     pub direction: Direction,
@@ -450,7 +450,7 @@ pub fn room_link_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomRemove {
     pub actor: Entity,
 }
@@ -580,7 +580,7 @@ pub fn room_remove_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomUnlink {
     pub actor: Entity,
     pub direction: Direction,
@@ -623,7 +623,7 @@ pub fn room_unlink_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomUpdateRegions {
     pub actor: Entity,
     pub remove: bool,

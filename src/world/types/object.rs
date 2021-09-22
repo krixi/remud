@@ -35,6 +35,12 @@ impl FromStr for PrototypeId {
     }
 }
 
+impl From<PrototypeId> for Id {
+    fn from(prototype: PrototypeId) -> Self {
+        Id::Prototype(prototype)
+    }
+}
+
 impl fmt::Display for PrototypeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.0)
@@ -164,7 +170,7 @@ pub struct Object {
     pub inherit_scripts: bool,
 }
 
-#[derive(Copy, Clone, Debug, EnumString)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, EnumString)]
 pub enum InheritableFields {
     #[strum(serialize = "flags")]
     Flags,

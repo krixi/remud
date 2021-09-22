@@ -34,7 +34,7 @@ pub fn parse_drop(player: Entity, tokenizer: Tokenizer) -> Result<Action, String
     }))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Drop {
     pub actor: Entity,
     pub keywords: Vec<String>,
@@ -140,7 +140,7 @@ pub fn parse_get(player: Entity, tokenizer: Tokenizer) -> Result<Action, String>
     }))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Get {
     pub actor: Entity,
     pub keywords: Vec<String>,
@@ -251,7 +251,7 @@ pub fn get_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Inventory {
     pub actor: Entity,
 }

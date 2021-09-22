@@ -53,7 +53,7 @@ macro_rules! into_action {
     };
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Action {
     Drop(Drop),
     Emote(Emote),

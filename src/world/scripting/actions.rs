@@ -110,7 +110,7 @@ pub fn run_post_event_script(
     world: Arc<RwLock<World>>,
     event: &Action,
     entity: Entity,
-    script: ScriptName,
+    script_name: ScriptName,
 ) {
     let script = {
         if let Some(script) = world
@@ -118,13 +118,13 @@ pub fn run_post_event_script(
             .unwrap()
             .get_resource::<Scripts>()
             .unwrap()
-            .by_name(&script)
+            .by_name(&script_name)
         {
             script
         } else {
             tracing::warn!(
                 "Skipping execution of {:?}, unable to find named script.",
-                script
+                script_name
             );
             return;
         }
@@ -175,7 +175,7 @@ pub fn run_post_event_script(
         .consume_ast_with_scope(&mut scope, &ast)
     {
         Ok(_) => (),
-        Err(e) => tracing::warn!("Script execution error: {}", e),
+        Err(e) => tracing::warn!("Script {} execution error: {}", script_name, e),
     };
 }
 

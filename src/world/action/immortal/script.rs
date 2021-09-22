@@ -12,7 +12,7 @@ use crate::{
         action::Action,
         scripting::{Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, Scripts},
         types::{
-            object::{Object, ObjectId, Objects, Prototype, Prototypes},
+            object::{Object, ObjectId, Objects, Prototype, PrototypeId, Prototypes},
             player::{Messages, Player, Players},
             room::{RoomId, Rooms},
             Id,
@@ -56,19 +56,26 @@ fn parse_params(
                     script,
                     Either::Left(id.parse::<ObjectId>().map_err(|e| e.to_string())?.into()),
                 )),
+                "prototype" => Ok(command.into_action(
+                    player,
+                    script,
+                    Either::Left(id.parse::<PrototypeId>().map_err(|e| e.to_string())?.into()),
+                )),
                 "player" => Ok(command.into_action(player, script, Either::Right(id.to_string()))),
                 "room" => Ok(command.into_action(
                     player,
                     script,
                     Either::Left(id.parse::<RoomId>().map_err(|e| e.to_string())?.into()),
                 )),
-                _ => Err("Enter a valid target type: object, player, or room.".to_string()),
+                _ => Err(
+                    "Enter a valid target type: object, player, prototype, or room.".to_string(),
+                ),
             }
         } else {
-            Err("Enter a room ID, object ID, or player name.".to_string())
+            Err("Enter a room ID, object ID, prototype ID, or player name.".to_string())
         }
     } else {
-        Err("Enter a target type: object, player, or room.".to_string())
+        Err("Enter a target type: object, player, prototype, or room.".to_string())
     }
 }
 
@@ -105,7 +112,7 @@ impl ScriptCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ScriptAttach {
     pub actor: Entity,
     pub script: ScriptName,
@@ -260,7 +267,7 @@ pub fn script_attach_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ScriptDetach {
     pub actor: Entity,
     pub script: ScriptName,

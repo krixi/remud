@@ -28,8 +28,9 @@ use crate::{
         fsm::system::state_machine_system,
         scripting::{
             create_script_engine, post_action_script_system, queued_action_script_system,
-            run_post_action_scripts, run_pre_action_scripts, script_compiler_system, QueuedAction,
-            Script, ScriptHooks, ScriptName, ScriptRuns, TriggerEvent,
+            run_post_action_scripts, run_pre_action_scripts, script_compiler_system,
+            timed_actions::{timed_actions_system, TimedActions},
+            QueuedAction, Script, ScriptHooks, ScriptName, ScriptRuns, TriggerEvent,
         },
         types::{
             object::PrototypeId,
@@ -64,6 +65,7 @@ impl GameWorld {
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
         world.insert_resource(ScriptRuns::default());
+        world.insert_resource(TimedActions::default());
         world.insert_resource(create_script_engine());
 
         // Add events
@@ -80,7 +82,12 @@ impl GameWorld {
         register_action_systems(update);
 
         pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
-        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, queued_action_script_system.system());
+        pre_event_schedule
+            .add_system_to_stage(STAGE_UPDATE, timed_actions_system.system().before("queued"));
+        pre_event_schedule.add_system_to_stage(
+            STAGE_UPDATE,
+            queued_action_script_system.system().label("queued"),
+        );
         update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
         update_schedule.add_system_to_stage(
             STAGE_UPDATE,

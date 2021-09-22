@@ -22,6 +22,19 @@ pub mod event_api {
 }
 
 #[export_module]
+pub mod time_api {
+    use std::time::Duration;
+
+    pub fn ms(value: i64) -> Duration {
+        Duration::from_millis(if value >= 0 { value as u64 } else { 0 })
+    }
+
+    pub fn secs(value: i64) -> Duration {
+        Duration::from_secs(if value >= 0 { value as u64 } else { 0 })
+    }
+}
+
+#[export_module]
 pub mod world_api {
     use std::sync::{Arc, RwLock};
 
@@ -124,6 +137,8 @@ pub mod world_api {
 
 #[export_module]
 pub mod self_api {
+    use std::time::Duration;
+
     use bevy_app::Events;
 
     use crate::world::{
@@ -132,7 +147,7 @@ pub mod self_api {
             Action,
         },
         fsm::{StateMachine, StateMachineBuilder},
-        scripting::{modules::Me, QueuedAction},
+        scripting::{modules::Me, timed_actions::TimedActions, QueuedAction},
     };
 
     #[rhai_fn(pure, get = "entity")]
@@ -153,6 +168,22 @@ pub mod self_api {
                     emote,
                 })
                 .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn emote_after(me: &mut Me, duration: Duration, emote: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<TimedActions>()
+            .unwrap()
+            .send_after(
+                Action::from(Emote {
+                    actor: me.entity,
+                    emote,
+                }),
+                duration,
             );
     }
 
@@ -189,6 +220,22 @@ pub mod self_api {
     }
 
     #[rhai_fn(pure)]
+    pub fn message_after(me: &mut Me, duration: Duration, message: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<TimedActions>()
+            .unwrap()
+            .send_after(
+                Action::from(Message {
+                    actor: me.entity,
+                    message,
+                }),
+                duration,
+            );
+    }
+
+    #[rhai_fn(pure)]
     pub fn say(me: &mut Me, message: String) {
         me.world
             .write()
@@ -201,6 +248,22 @@ pub mod self_api {
                     message,
                 })
                 .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn say_after(me: &mut Me, duration: Duration, message: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<TimedActions>()
+            .unwrap()
+            .send_after(
+                Action::from(Say {
+                    actor: me.entity,
+                    message,
+                }),
+                duration,
             );
     }
 
@@ -218,6 +281,23 @@ pub mod self_api {
                     message,
                 })
                 .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn send_after(me: &mut Me, duration: Duration, recipient: String, message: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<TimedActions>()
+            .unwrap()
+            .send_after(
+                Action::from(SendMessage {
+                    actor: me.entity,
+                    recipient,
+                    message,
+                }),
+                duration,
             );
     }
 }

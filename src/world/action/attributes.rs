@@ -13,7 +13,7 @@ pub fn parse_stats(player: Entity, mut _tokenizer: Tokenizer) -> Result<Action, 
     Ok(Action::from(Stats { actor: player }))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Stats {
     pub actor: Entity,
 }

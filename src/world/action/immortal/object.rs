@@ -138,7 +138,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ObjectCreate {
     pub actor: Entity,
     pub prototype_id: PrototypeId,
@@ -219,7 +219,7 @@ pub fn object_create_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ObjectInfo {
     pub actor: Entity,
     pub id: ObjectId,
@@ -327,7 +327,7 @@ pub fn object_info_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ObjectInheritFields {
     pub actor: Entity,
     pub id: ObjectId,
@@ -391,7 +391,7 @@ pub fn object_inherit_fields_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ObjectRemove {
     pub actor: Entity,
     pub id: ObjectId,
@@ -447,7 +447,7 @@ pub fn object_remove_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct ObjectUpdateKeywords {
     pub actor: Entity,
     pub id: ObjectId,
@@ -490,7 +490,7 @@ pub fn object_update_keywords_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ObjectUpdateFlags {
     pub actor: Entity,
     pub id: ObjectId,

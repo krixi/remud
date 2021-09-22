@@ -25,7 +25,7 @@ pub fn parse_me(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> 
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Emote {
     pub actor: Entity,
     pub emote: String,
@@ -66,7 +66,7 @@ pub fn emote_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Message {
     pub actor: Entity,
     pub message: String,
@@ -113,7 +113,7 @@ pub fn parse_say(player: Entity, tokenizer: Tokenizer) -> Result<Action, String>
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Say {
     pub actor: Entity,
     pub message: String,
@@ -129,8 +129,6 @@ pub fn say_system(
 ) {
     for action in action_reader.iter() {
         if let Action::Say(Say { actor, message }) = action {
-            tracing::info!("saying {}", message);
-
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
                 (named.name.as_str(), location.room)
             } else {
@@ -173,7 +171,7 @@ pub fn parse_send(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SendMessage {
     pub actor: Entity,
     pub recipient: String,

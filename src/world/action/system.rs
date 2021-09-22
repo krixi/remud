@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Login {
     pub actor: Entity,
 }
@@ -54,7 +54,7 @@ pub fn login_system(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Shutdown {
     pub actor: Entity,
 }
