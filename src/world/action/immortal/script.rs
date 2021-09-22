@@ -10,7 +10,9 @@ use crate::{
     text::Tokenizer,
     world::{
         action::Action,
-        scripting::{Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, Scripts},
+        scripting::{
+            Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, Scripts, TriggerKind,
+        },
         types::{
             object::{Object, ObjectId, Objects, Prototype, PrototypeId, Prototypes},
             player::{Messages, Player, Players},
@@ -29,13 +31,21 @@ pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
 
         if let Some(command) = tokenizer.next() {
             match command {
-                "attach" => parse_params(player, script, tokenizer, ScriptCommand::Attach),
-                "attach-pre" => parse_params(player, script, tokenizer, ScriptCommand::AttachPre),
+                "attach-init" => parse_params(player, script, tokenizer, ScriptCommand::AttachInit),
+                "attach-post" => {
+                    parse_params(player, script, tokenizer, ScriptCommand::AttachPostAction)
+                }
+                "attach-pre" => {
+                    parse_params(player, script, tokenizer, ScriptCommand::AttachPreAction)
+                }
                 "detach" => parse_params(player, script, tokenizer, ScriptCommand::Detach),
-                _ => Err("Enter a valid subcommand: attach, attach-pre, detach.".to_string()),
+                _ => Err(
+                    "Enter a valid subcommand: attach-init, attach-post, attach-pre, or detach."
+                        .to_string(),
+                ),
             }
         } else {
-            Err("Enter a subcommand: attach, attach-pre, detach.".to_string())
+            Err("Enter a subcommand: attach-init, attach-post, attach-pre, or detach.".to_string())
         }
     } else {
         Err("Enter a script name.".to_string())
@@ -56,12 +66,12 @@ fn parse_params(
                     script,
                     Either::Left(id.parse::<ObjectId>().map_err(|e| e.to_string())?.into()),
                 )),
+                "player" => Ok(command.into_action(player, script, Either::Right(id.to_string()))),
                 "prototype" => Ok(command.into_action(
                     player,
                     script,
                     Either::Left(id.parse::<PrototypeId>().map_err(|e| e.to_string())?.into()),
                 )),
-                "player" => Ok(command.into_action(player, script, Either::Right(id.to_string()))),
                 "room" => Ok(command.into_action(
                     player,
                     script,
@@ -72,7 +82,7 @@ fn parse_params(
                 ),
             }
         } else {
-            Err("Enter a room ID, object ID, prototype ID, or player name.".to_string())
+            Err("Enter a object ID, player name, prototype ID, or room ID.".to_string())
         }
     } else {
         Err("Enter a target type: object, player, prototype, or room.".to_string())
@@ -80,25 +90,33 @@ fn parse_params(
 }
 
 enum ScriptCommand {
-    Attach,
-    AttachPre,
+    AttachInit,
+    AttachPostAction,
+    AttachPreAction,
     Detach,
 }
 
 impl ScriptCommand {
     fn into_action(self, actor: Entity, script: ScriptName, id: Either<Id, String>) -> Action {
         match self {
-            ScriptCommand::Attach => ScriptAttach {
+            ScriptCommand::AttachInit => ScriptAttach {
                 actor,
                 script,
-                pre: false,
+                trigger: TriggerKind::Init,
                 target: id,
             }
             .into(),
-            ScriptCommand::AttachPre => ScriptAttach {
+            ScriptCommand::AttachPostAction => ScriptAttach {
                 actor,
                 script,
-                pre: true,
+                trigger: TriggerKind::PostEvent,
+                target: id,
+            }
+            .into(),
+            ScriptCommand::AttachPreAction => ScriptAttach {
+                actor,
+                script,
+                trigger: TriggerKind::PreEvent,
                 target: id,
             }
             .into(),
@@ -116,14 +134,13 @@ impl ScriptCommand {
 pub struct ScriptAttach {
     pub actor: Entity,
     pub script: ScriptName,
-    pub pre: bool,
+    pub trigger: TriggerKind,
     pub target: Either<Id, String>,
 }
 
 into_action!(ScriptAttach);
 
 pub fn script_attach_system(
-    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     scripts: Res<Scripts>,
     objects: Res<Objects>,
@@ -142,7 +159,7 @@ pub fn script_attach_system(
         if let Action::ScriptAttach(ScriptAttach {
             actor,
             script,
-            pre,
+            trigger,
             target,
         }) = action
         {
@@ -201,32 +218,32 @@ pub fn script_attach_system(
                 }
             };
 
-            let trigger = {
-                let trigger = script_query.get(script_entity).unwrap().trigger;
-                match pre {
-                    true => ScriptTrigger::PreEvent(trigger),
-                    false => ScriptTrigger::PostEvent(trigger),
+            let script_trigger = {
+                if *trigger == TriggerKind::Init {
+                    ScriptTrigger::Init
+                } else {
+                    let trigger_event = script_query.get(script_entity).unwrap().trigger;
+                    match trigger {
+                        TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event),
+                        TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event),
+                        TriggerKind::Init => unreachable!(),
+                    }
                 }
             };
 
             let hook = ScriptHook {
-                trigger,
+                trigger: script_trigger,
                 script: script.clone(),
             };
 
-            if let Ok(mut hooks) = hook_query.get_mut(target_entity) {
-                if hooks.list.contains(&hook) {
-                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                        messages.queue(format!("Script {} already attached to entity.", script));
-                    }
-                    continue;
+            let mut hooks = hook_query.get_mut(target_entity).unwrap();
+            if hooks.list.contains(&hook) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                    messages.queue(format!("Script {} already attached to entity.", script));
                 }
-                hooks.list.push(hook);
-            } else {
-                commands
-                    .entity(target_entity)
-                    .insert(ScriptHooks { list: vec![hook] });
+                continue;
             }
+            hooks.list.push(hook);
 
             let id = match target {
                 Either::Left(id) => *id,
@@ -249,9 +266,13 @@ pub fn script_attach_system(
             updates.persist(persist::script::Attach::new(
                 id,
                 script.clone(),
-                trigger,
+                script_trigger,
                 copy,
             ));
+
+            if let Id::Prototype(id) = id {
+                updates.reload(id);
+            }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
@@ -339,7 +360,7 @@ pub fn script_detach_system(
                             continue;
                         }
                     }
-                    Id::Player(_) => unreachable!("Players are referenced by name."),
+                    Id::Player(_) => unreachable!(),
                 },
                 Either::Right(name) => {
                     if let Some(player) = players.by_name(name) {
@@ -355,26 +376,14 @@ pub fn script_detach_system(
 
             let trigger_event = script_query.get(script_entity).unwrap().trigger;
 
+            let hook = ScriptHook {
+                trigger: ScriptTrigger::PreEvent(trigger_event),
+                script: script.clone(),
+            };
+
             let mut remove_trigger = None;
-
-            if let Ok(mut hooks) = hook_query.get_mut(target_entity) {
-                let hook = ScriptHook {
-                    trigger: ScriptTrigger::PreEvent(trigger_event),
-                    script: script.clone(),
-                };
-
-                if hooks.remove(&hook) {
-                    remove_trigger = Some(hook.trigger);
-                } else {
-                    let hook = ScriptHook {
-                        trigger: ScriptTrigger::PostEvent(trigger_event),
-                        script: script.clone(),
-                    };
-
-                    if hooks.remove(&hook) {
-                        remove_trigger = Some(hook.trigger);
-                    }
-                }
+            if hook_query.get_mut(target_entity).unwrap().remove(&hook) {
+                remove_trigger = Some(hook.trigger)
             }
 
             if remove_trigger.is_none() {

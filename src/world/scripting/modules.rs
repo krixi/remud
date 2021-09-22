@@ -13,11 +13,20 @@ pub struct Me {
 pub mod event_api {
     use rhai::Dynamic;
 
-    use crate::world::action::Action;
+    use crate::world::action::{communicate::Emote, Action};
 
     #[rhai_fn(get = "actor", pure)]
     pub fn get_actor(action_event: &mut Action) -> Dynamic {
-        Dynamic::from(action_event.enactor())
+        Dynamic::from(action_event.actor())
+    }
+
+    #[rhai_fn(get = "emote", pure)]
+    pub fn get_emote(action_event: &mut Action) -> Dynamic {
+        if let Action::Emote(Emote { emote, .. }) = action_event {
+            Dynamic::from(rhai::ImmutableString::from(emote.as_str()))
+        } else {
+            Dynamic::UNIT
+        }
     }
 }
 
@@ -146,7 +155,7 @@ pub mod self_api {
             communicate::{Emote, Message, Say, SendMessage},
             Action,
         },
-        fsm::{StateMachine, StateMachineBuilder},
+        fsm::{StateMachineBuilder, StateMachines},
         scripting::{modules::Me, timed_actions::TimedActions, QueuedAction},
     };
 
@@ -189,17 +198,38 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn pop_fsm(me: &mut Me) {
-        me.world
+        if let Some(mut fsms) = me
+            .world
             .write()
             .unwrap()
-            .entity_mut(me.entity)
-            .remove::<StateMachine>();
+            .get_mut::<StateMachines>(me.entity)
+        {
+            fsms.pop();
+        }
     }
 
     #[rhai_fn(pure)]
     pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
-        if let Ok(fsm) = builder.build() {
-            me.world.write().unwrap().entity_mut(me.entity).insert(fsm);
+        match builder.build() {
+            Ok(fsm) => {
+                if let Some(mut fsms) = me
+                    .world
+                    .write()
+                    .unwrap()
+                    .get_mut::<StateMachines>(me.entity)
+                {
+                    fsms.push(fsm);
+                } else {
+                    me.world
+                        .write()
+                        .unwrap()
+                        .entity_mut(me.entity)
+                        .insert(StateMachines::new(fsm));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to build state machine: {}", e);
+            }
         }
     }
 
@@ -317,5 +347,18 @@ pub mod states_api {
     #[rhai_fn(pure, name = "==")]
     pub fn state_eq(a: &mut StateId, b: StateId) -> bool {
         *a == b
+    }
+}
+
+#[export_module]
+pub mod rand_api {
+    use rand::{thread_rng, Rng};
+
+    pub fn chance(probability: f64) -> bool {
+        thread_rng().gen_bool(probability)
+    }
+
+    pub fn range(start: i64, end: i64) -> i64 {
+        thread_rng().gen_range(start..=end)
     }
 }

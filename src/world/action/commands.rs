@@ -421,10 +421,12 @@ fn default_commands() -> Vec<Command> {
         .with_shortcut('\''),
     );
     commands.push(Command::new("scripts", parse_script, Help::new("script <script name> <subcommand>", "Attaches or detaches a script to or from an object, player, or room.")
+        .with_subhelp("attach-init", Help::new("script <script name> attach-init (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as an init script. These run once on target load and can initialize the target. Objects, prototypes, and rooms are indicated by their ID and players by their name."))
+        .with_example("script robo_dog_init init object 5")
         .with_subhelp("attach-pre", Help::new("script <script name> attach-pre (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as a pre-action script. These are processed before the triggering action is executed and can prevent the action from occurring. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
-        .with_example("script check_for_keycard attach-pre room 4"))
-        .with_subhelp("attach", Help::new("script <script name> attach (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as a post-action script. These are processed after the triggering action has been executed. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
-        .with_example("script greet_player attach object 2"))
+        .with_example("script check_for_keycard pre-action room 4"))
+        .with_subhelp("attach-post", Help::new("script <script name> attach-post (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as a post-action script. These are processed after the triggering action has been executed. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
+        .with_example("script greet_player attach-post object 2"))
         .with_subhelp("detach", Help::new("script <script name> detach (object||prototype||player||room) <id/name>", "Detaches the script from the given object, prototype, player, or room. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
         .with_example("script greet_player detach object 2")))
         .restricted());

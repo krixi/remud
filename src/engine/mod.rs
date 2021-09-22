@@ -72,7 +72,11 @@ impl Engine {
         let db = Db::new("world.db").await?;
         let world = db.load_world().await?;
 
-        let game_world = GameWorld::new(world);
+        let mut game_world = GameWorld::new(world);
+
+        // Run a tick to perform initialization of loaded objects.
+        game_world.run();
+
         let commands = Commands::default();
 
         Ok(Engine {

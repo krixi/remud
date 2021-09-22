@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, str::FromStr};
 
-use bevy_app::EventReader;
+use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -14,7 +14,7 @@ use crate::{
             Action,
         },
         fsm::StateMachine,
-        scripting::{ScriptHook, ScriptHooks},
+        scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
             self,
             object::{
@@ -149,10 +149,11 @@ into_action!(ObjectCreate);
 pub fn object_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
+    mut init_writer: EventWriter<ScriptInit>,
     prototypes: Res<Prototypes>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
-    prototypes_query: Query<(&Named, &Description, &Flags, &Keywords)>,
+    prototypes_query: Query<(&Named, &Description, &Flags, &Keywords, &ScriptHooks)>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
@@ -173,7 +174,8 @@ pub fn object_create_system(
                 }
             };
 
-            let (named, description, flags, keywords) = prototypes_query.get(prototype).unwrap();
+            let (named, description, flags, keywords, hooks) =
+                prototypes_query.get(prototype).unwrap();
 
             let room_entity = player_query
                 .get(*actor)
@@ -194,10 +196,19 @@ pub fn object_create_system(
                     name: named.clone(),
                     description: description.clone(),
                     keywords: keywords.clone(),
-                    hooks: ScriptHooks::default(),
+                    hooks: hooks.clone(),
                 })
                 .insert(Location { room: room_entity })
                 .id();
+
+            hooks
+                .list
+                .iter()
+                .filter(|hook| hook.trigger.kind() == TriggerKind::Init)
+                .map(|hook| hook.script.clone())
+                .for_each(|script| {
+                    init_writer.send(ScriptInit::new(object_entity, script));
+                });
 
             let room_id = {
                 let (room, mut contents) = room_query.get_mut(room_entity).unwrap();

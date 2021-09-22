@@ -15,7 +15,9 @@ use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
-    scripting::{Script, ScriptHook, ScriptHooks, ScriptName, TriggerEvent, TriggerKind},
+    scripting::{
+        Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
+    },
     types::{
         self,
         object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes},
@@ -297,10 +299,14 @@ impl TryFrom<HookRow> for ScriptHook {
 
     fn try_from(value: HookRow) -> Result<Self, Self::Error> {
         let script = ScriptName::try_from(value.script)?;
-        let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
         let kind = TriggerKind::from_str(value.kind.as_str())?;
-
-        let trigger = kind.with_trigger(trigger);
+        let trigger = match kind {
+            TriggerKind::PreEvent | TriggerKind::PostEvent => {
+                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+                kind.with_trigger(trigger)
+            }
+            TriggerKind::Init => ScriptTrigger::Init,
+        };
 
         Ok(ScriptHook { script, trigger })
     }

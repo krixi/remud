@@ -35,6 +35,12 @@ impl Attach {
 #[async_trait]
 impl Persist for Attach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+        let trigger = self
+            .trigger
+            .trigger()
+            .map(|t| t.to_string())
+            .unwrap_or_else(String::new);
+
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
@@ -43,7 +49,7 @@ impl Persist for Attach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -54,7 +60,7 @@ impl Persist for Attach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -79,7 +85,7 @@ impl Persist for Attach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -90,7 +96,7 @@ impl Persist for Attach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -156,6 +162,12 @@ impl Detach {
 #[async_trait]
 impl Persist for Detach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+        let trigger = self
+            .trigger
+            .trigger()
+            .map(|t| t.to_string())
+            .unwrap_or_else(String::new);
+
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
@@ -164,7 +176,7 @@ impl Persist for Detach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -175,7 +187,7 @@ impl Persist for Detach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -200,7 +212,7 @@ impl Persist for Detach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }
@@ -211,7 +223,7 @@ impl Persist for Detach {
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
                 .bind(self.script.to_string())
-                .bind(self.trigger.trigger().to_string())
+                .bind(trigger)
                 .execute(pool)
                 .await?;
             }

@@ -9,6 +9,7 @@ use priority_queue::PriorityQueue;
 
 use crate::world::{action::Action, scripting::QueuedAction};
 
+// Used to prevent deduplication of items in the priority queue.
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub struct TimedAction {
     id: u64,

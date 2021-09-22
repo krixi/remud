@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::bail;
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use sqlx::SqlitePool;
@@ -12,7 +13,7 @@ use crate::{
     engine::db::HookRow,
     world::{
         action,
-        scripting::{ScriptHook, ScriptHooks},
+        scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
             object::{ObjectId, Objects, PrototypeId, Prototypes},
             player::{Messages, Player, PlayerBundle, PlayerId, Players},
@@ -171,11 +172,17 @@ async fn load_player_inventory(
         };
 
         while let Some(hook_row) = results.try_next().await? {
+            let mut world = world.write().unwrap();
             let hook = ScriptHook::try_from(hook_row)?;
 
+            if hook.trigger.kind() == TriggerKind::Init {
+                world
+                    .get_resource_mut::<Events<ScriptInit>>()
+                    .unwrap()
+                    .send(ScriptInit::new(object, hook.script.clone()));
+            }
+
             world
-                .write()
-                .unwrap()
                 .get_mut::<ScriptHooks>(object)
                 .unwrap()
                 .list

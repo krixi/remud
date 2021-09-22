@@ -6,6 +6,25 @@ use anyhow::{self, bail};
 use bevy_ecs::prelude::*;
 use std::{collections::HashMap, fmt::Debug};
 
+#[derive(Default, Debug)]
+pub struct StateMachines {
+    stack: Vec<StateMachine>,
+}
+
+impl StateMachines {
+    pub fn new(fsm: StateMachine) -> Self {
+        StateMachines { stack: vec![fsm] }
+    }
+
+    pub fn push(&mut self, fsm: StateMachine) {
+        self.stack.push(fsm)
+    }
+
+    pub fn pop(&mut self) -> Option<StateMachine> {
+        self.stack.pop()
+    }
+}
+
 pub trait State: Debug + Send + Sync {
     fn on_enter(&mut self, _entity: Entity, _world: &mut World) {}
     fn decide(&mut self, _entity: Entity, _world: &mut World) -> Option<Transition> {
@@ -20,12 +39,6 @@ pub trait State: Debug + Send + Sync {
 pub enum StateId {
     Chase,
     Wander,
-}
-pub fn to_state(id: StateId, params: rhai::Map) -> Box<dyn State> {
-    match id {
-        StateId::Wander => Box::new(WanderState::from(params)),
-        StateId::Chase => Box::new(ChaseState::from(params)),
-    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
@@ -69,7 +82,7 @@ impl StateMachine {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct StateMachineBuilder {
     states: Vec<(StateId, rhai::Map)>,
 }
@@ -88,11 +101,18 @@ impl StateMachineBuilder {
         if let Some(current) = first {
             Ok(StateMachine { states, current })
         } else {
-            bail!("You must configure states for all state machines");
+            bail!("You must configure states for all state machines. No states were found.");
         }
     }
 
     pub fn add_state(&mut self, id: &StateId, params: rhai::Map) {
         self.states.push((*id, params));
+    }
+}
+
+pub fn to_state(id: StateId, params: rhai::Map) -> Box<dyn State> {
+    match id {
+        StateId::Wander => Box::new(WanderState::from(params)),
+        StateId::Chase => Box::new(ChaseState::from(params)),
     }
 }

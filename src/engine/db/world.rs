@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom, str::FromStr};
 
 use anyhow::bail;
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use itertools::Itertools;
@@ -9,7 +10,7 @@ use sqlx::{Row, SqlitePool};
 use crate::{
     engine::db::{HookRow, ObjectRow, ScriptRow},
     world::{
-        scripting::{Script, ScriptHook, ScriptHooks, Scripts},
+        scripting::{Script, ScriptHook, ScriptHooks, ScriptInit, Scripts, TriggerKind},
         types::{
             self,
             object::{
@@ -23,6 +24,8 @@ use crate::{
 
 pub async fn load_world(pool: &SqlitePool) -> anyhow::Result<World> {
     let mut world = World::new();
+
+    world.insert_resource(Events::<ScriptInit>::default());
 
     load_configuration(pool, &mut world).await?;
     load_rooms(pool, &mut world).await?;
@@ -342,6 +345,13 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
 
         while let Some(hook_row) = results.try_next().await? {
             let hook = ScriptHook::try_from(hook_row)?;
+
+            if hook.trigger.kind() == TriggerKind::Init {
+                world
+                    .get_resource_mut::<Events<ScriptInit>>()
+                    .unwrap()
+                    .send(ScriptInit::new(object, hook.script.clone()));
+            }
 
             world
                 .get_mut::<ScriptHooks>(object)

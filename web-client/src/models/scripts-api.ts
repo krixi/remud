@@ -3,6 +3,7 @@ export enum Trigger {
   Emote = "Emote",
   Exits = "Exits",
   Get = "Get",
+  Init = "Init",
   Inventory = "Inventory",
   Look = "Look",
   LookAt = "LookAt",

@@ -96,7 +96,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn enactor(&self) -> Entity {
+    pub fn actor(&self) -> Entity {
         match self {
             Action::Drop(action) => action.actor,
             Action::Emote(action) => action.actor,

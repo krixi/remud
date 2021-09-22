@@ -21,8 +21,8 @@ use crate::world::{
     action::Action,
     fsm::{StateId, StateMachineBuilder},
     scripting::{
-        actions::{run_post_event_script, run_pre_event_script},
-        modules::{event_api, self_api, states_api, time_api, world_api},
+        actions::{run_init_script, run_post_event_script, run_pre_event_script},
+        modules::{event_api, rand_api, self_api, states_api, time_api, world_api},
     },
     types::{room::Room, Container, Contents, Location},
 };
@@ -63,6 +63,7 @@ impl Scripts {
 #[derive(Default, Debug)]
 pub struct ScriptRuns {
     pub runs: Vec<(Action, Vec<ScriptRun>)>,
+    pub init_runs: Vec<ScriptRun>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -159,6 +160,7 @@ pub struct ScriptHook {
 pub enum ScriptTrigger {
     PreEvent(TriggerEvent),
     PostEvent(TriggerEvent),
+    Init,
 }
 
 impl ScriptTrigger {
@@ -166,21 +168,24 @@ impl ScriptTrigger {
         match self {
             ScriptTrigger::PreEvent(_) => TriggerKind::PreEvent,
             ScriptTrigger::PostEvent(_) => TriggerKind::PostEvent,
+            ScriptTrigger::Init => TriggerKind::Init,
         }
     }
 
-    pub fn trigger(&self) -> TriggerEvent {
+    pub fn trigger(&self) -> Option<TriggerEvent> {
         match self {
-            ScriptTrigger::PreEvent(trigger) => *trigger,
-            ScriptTrigger::PostEvent(trigger) => *trigger,
+            ScriptTrigger::PreEvent(trigger) => Some(*trigger),
+            ScriptTrigger::PostEvent(trigger) => Some(*trigger),
+            ScriptTrigger::Init => None,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString)]
 pub enum TriggerKind {
     PreEvent,
     PostEvent,
+    Init,
 }
 
 impl TriggerKind {
@@ -188,6 +193,7 @@ impl TriggerKind {
         match self {
             TriggerKind::PreEvent => ScriptTrigger::PreEvent(event),
             TriggerKind::PostEvent => ScriptTrigger::PostEvent(event),
+            TriggerKind::Init => ScriptTrigger::Init,
         }
     }
 }
@@ -197,6 +203,7 @@ impl fmt::Display for TriggerKind {
         match self {
             TriggerKind::PreEvent => write!(f, "PreEvent"),
             TriggerKind::PostEvent => write!(f, "PostEvent"),
+            TriggerKind::Init => write!(f, "Init"),
         }
     }
 }
@@ -207,6 +214,7 @@ pub enum TriggerEvent {
     Emote,
     Exits,
     Get,
+    Init,
     Inventory,
     Look,
     LookAt,
@@ -267,6 +275,7 @@ impl fmt::Display for TriggerEvent {
             TriggerEvent::Emote => write!(f, "Emote"),
             TriggerEvent::Exits => write!(f, "Exits"),
             TriggerEvent::Get => write!(f, "Get"),
+            TriggerEvent::Init => write!(f, "Init"),
             TriggerEvent::Inventory => write!(f, "Inventory"),
             TriggerEvent::Look => write!(f, "Look"),
             TriggerEvent::LookAt => write!(f, "LookAt"),
@@ -287,6 +296,17 @@ impl From<Action> for QueuedAction {
     }
 }
 
+pub struct ScriptInit {
+    pub entity: Entity,
+    pub script: ScriptName,
+}
+
+impl ScriptInit {
+    pub fn new(entity: Entity, script: ScriptName) -> Self {
+        ScriptInit { entity, script }
+    }
+}
+
 pub fn script_compiler_system(
     mut commands: Commands,
     engine: Res<ScriptEngine>,
@@ -301,6 +321,18 @@ pub fn script_compiler_system(
                 commands.entity(entity).insert(CompilationError { error });
             }
         }
+    }
+}
+
+pub fn init_script_system(
+    mut init_reader: EventReader<ScriptInit>,
+    mut script_runs: ResMut<ScriptRuns>,
+) {
+    for ScriptInit { entity, script } in init_reader.iter() {
+        script_runs.init_runs.push(ScriptRun {
+            entity: *entity,
+            script: script.clone(),
+        })
     }
 }
 
@@ -323,7 +355,7 @@ pub fn queued_action_script_system(
             }
         };
 
-        let enactor = action.enactor();
+        let enactor = action.actor();
 
         // Determine the location the action took place. If we can't, we give the action a pass.
         let room = if let Some(room) =
@@ -368,7 +400,7 @@ pub fn post_action_script_system(
             None => continue,
         };
 
-        let enactor = action.enactor();
+        let enactor = action.actor();
 
         let room = if let Some(room) =
             action_room(enactor, &room_query, &location_query, &container_query)
@@ -409,10 +441,27 @@ pub fn create_script_engine() -> ScriptEngine {
     engine.register_global_module(exported_module!(event_api).into());
     engine.register_global_module(exported_module!(self_api).into());
     engine.register_global_module(exported_module!(time_api).into());
+    engine.register_global_module(exported_module!(rand_api).into());
 
     ScriptEngine {
         engine: Arc::new(RwLock::new(engine)),
     }
+}
+
+pub fn run_init_scripts(world: Arc<RwLock<World>>) {
+    let mut runs = Vec::new();
+    std::mem::swap(
+        &mut runs,
+        &mut world
+            .write()
+            .unwrap()
+            .get_resource_mut::<ScriptRuns>()
+            .unwrap()
+            .init_runs,
+    );
+
+    runs.into_par_iter()
+        .for_each(|ScriptRun { entity, script }| run_init_script(world.clone(), entity, script));
 }
 
 pub fn run_pre_action_scripts(world: Arc<RwLock<World>>) {

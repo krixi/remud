@@ -27,10 +27,11 @@ use crate::{
         action::{register_action_systems, Action},
         fsm::system::state_machine_system,
         scripting::{
-            create_script_engine, post_action_script_system, queued_action_script_system,
-            run_post_action_scripts, run_pre_action_scripts, script_compiler_system,
+            create_script_engine, init_script_system, post_action_script_system,
+            queued_action_script_system, run_init_scripts, run_post_action_scripts,
+            run_pre_action_scripts, script_compiler_system,
             timed_actions::{timed_actions_system, TimedActions},
-            QueuedAction, Script, ScriptHooks, ScriptName, ScriptRuns, TriggerEvent,
+            QueuedAction, Script, ScriptHooks, ScriptInit, ScriptName, ScriptRuns, TriggerEvent,
         },
         types::{
             object::PrototypeId,
@@ -69,6 +70,9 @@ impl GameWorld {
         world.insert_resource(create_script_engine());
 
         // Add events
+        // The ScriptInit resource is added by the DB.
+        pre_event_schedule
+            .add_system_to_stage(STAGE_FIRST, Events::<ScriptInit>::update_system.system());
         add_events::<QueuedAction>(&mut world, &mut pre_event_schedule);
         add_events::<Action>(&mut world, &mut pre_event_schedule);
 
@@ -84,11 +88,12 @@ impl GameWorld {
         pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
         pre_event_schedule
             .add_system_to_stage(STAGE_UPDATE, timed_actions_system.system().before("queued"));
+        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, init_script_system.system());
         pre_event_schedule.add_system_to_stage(
             STAGE_UPDATE,
             queued_action_script_system.system().label("queued"),
         );
-        update_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
+        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
         update_schedule.add_system_to_stage(
             STAGE_UPDATE,
             state_machine_system.exclusive_system().at_end(),
@@ -110,6 +115,8 @@ impl GameWorld {
 
         self.pre_event_schedule
             .run(world.write().unwrap().deref_mut());
+
+        run_init_scripts(world.clone());
 
         run_pre_action_scripts(world.clone());
 
@@ -182,7 +189,7 @@ impl GameWorld {
         let mut world = self.world.write().unwrap();
 
         world
-            .get_mut::<Messages>(action.enactor())
+            .get_mut::<Messages>(action.actor())
             .unwrap()
             .received_input = true;
 

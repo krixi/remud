@@ -12,10 +12,16 @@
 
 - add object quantity and associated manipulation commands
 
-- add object init scripts
-
-- try to re-use swapped vecs to avoid allocating more
-
 - add combat
 
 - add reputation
+
+- deduplicate object/prototype systems
+
+- deduplicate DB code where possible
+
+- add hp to prompt
+
+- add customizable prompts
+
+- use resolved events in post-event scripts - i.e. what ended up being looked at? allows scripts to know precisely what was interacted with
