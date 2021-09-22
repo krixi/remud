@@ -42,3 +42,11 @@
 - add ability to queue actions from scripts to occur after a certain amount of time has passed
 
 - make object/room new persist objects take all parameters from caller
+
+let fsm = build_fsm();
+
+let wander = new_wander_state(#{ region: "street", min_wait: 10000, max_wait: 60000});
+
+fsm.add_state();
+
+SELF.attach(fsm.build());
