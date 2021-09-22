@@ -1,6 +1,7 @@
 pub mod states;
 pub mod system;
 
+use crate::world::fsm::states::{ChaseState, WanderState};
 use anyhow::{self, bail};
 use bevy_ecs::prelude::*;
 use std::{collections::HashMap, fmt::Debug};
@@ -15,10 +16,16 @@ pub trait State: Debug + Send + Sync {
     fn output_state(&self, next: Transition) -> Option<StateId>;
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
 pub enum StateId {
-    Wander,
     Chase,
+    Wander,
+}
+pub fn to_state(id: StateId, params: rhai::Map) -> Box<dyn State> {
+    match id {
+        StateId::Wander => Box::new(WanderState::from(params)),
+        StateId::Chase => Box::new(ChaseState::from(params)),
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
@@ -29,14 +36,10 @@ pub enum Transition {
 
 #[derive(Debug)]
 pub struct StateMachine {
-    states: HashMap<StateId, Box<dyn State>>,
-    current: StateId,
+    pub states: HashMap<StateId, Box<dyn State>>,
+    pub current: StateId,
 }
 impl StateMachine {
-    pub fn builder() -> StateMachineBuilder {
-        StateMachineBuilder::default()
-    }
-
     fn on_update(&mut self, entity: Entity, world: &mut World) {
         // delegate to current state -
         // Step 1: see if it requested a transition by calling decide.
@@ -66,20 +69,20 @@ impl StateMachine {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StateMachineBuilder {
-    states: Vec<(StateId, Box<dyn State>)>,
+    states: Vec<(StateId, rhai::Map)>,
 }
 
 impl StateMachineBuilder {
     pub fn build(self) -> anyhow::Result<StateMachine> {
         let mut states = HashMap::new();
         let mut first = None;
-        for (id, state) in self.states {
+        for (id, params) in self.states {
             if first == None {
                 first = Some(id)
             }
-            states.insert(id, state);
+            states.insert(id, to_state(id, params));
         }
 
         if let Some(current) = first {
@@ -89,8 +92,7 @@ impl StateMachineBuilder {
         }
     }
 
-    pub fn with_state<T: 'static + State>(mut self, id: StateId, state: T) -> Self {
-        self.states.push((id, Box::new(state)));
-        self
+    pub fn add_state(&mut self, id: &StateId, params: rhai::Map) {
+        self.states.push((*id, params));
     }
 }

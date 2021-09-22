@@ -1,25 +1,25 @@
 ---
 title: "FSM"
 date: 2021-09-21T17:38:12-07:00
-draft: true
-weight: 999
+weight: 4
 summary: "Information about FSMs and scripting."
 author: "Shane"
 tags: ["scripting", "fsm"]
 ---
 
-Preliminary sketch of how binding an FSM to an object will work.
-
-https://rhai.rs/book/language/object-maps.html
+You can instantiate or remove an FSM in script using the following APIs. 
 
 ```
-let fsm = build_fsm();
+let builder = fsm_builder();
 
-let wander = new_wander_state(#{ region: "street", min_wait: 10000, max_wait: 60000 });
+builder.add_state(StateId::WANDER, #{ region: "street"});
 
-fsm.add_state(wander);
+builder.add_state(StateId::CHASE, #{ timeout: 10000});
 
-SELF.push_fsm(fsm.build());
+SELF.push_fsm(builder);
 
 SELF.pop_fsm();
 ```
+
+Parameters are state ID, and an [object map](https://rhai.rs/book/language/object-maps.html) to configure the behavior of the state. 
+The first state added becomes the initial state in the FSM. 

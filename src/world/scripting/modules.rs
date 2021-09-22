@@ -131,6 +131,7 @@ pub mod self_api {
             communicate::{Emote, Message, Say, SendMessage},
             Action,
         },
+        fsm::{StateMachine, StateMachineBuilder},
         scripting::{modules::Me, QueuedAction},
     };
 
@@ -153,6 +154,22 @@ pub mod self_api {
                 })
                 .into(),
             );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn pop_fsm(me: &mut Me) {
+        me.world
+            .write()
+            .unwrap()
+            .entity_mut(me.entity)
+            .remove::<StateMachine>();
+    }
+
+    #[rhai_fn(pure)]
+    pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
+        if let Ok(fsm) = builder.build() {
+            me.world.write().unwrap().entity_mut(me.entity).insert(fsm);
+        }
     }
 
     #[rhai_fn(pure)]
@@ -202,5 +219,23 @@ pub mod self_api {
                 })
                 .into(),
             );
+    }
+}
+
+#[export_module]
+pub mod states_api {
+    use crate::world::fsm::StateId;
+
+    pub const WANDER: &StateId = &StateId::Wander;
+    pub const CHASE: &StateId = &StateId::Chase;
+
+    #[rhai_fn(pure, name = "!=")]
+    pub fn state_ne(a: &mut StateId, b: StateId) -> bool {
+        *a != b
+    }
+
+    #[rhai_fn(pure, name = "==")]
+    pub fn state_eq(a: &mut StateId, b: StateId) -> bool {
+        *a == b
     }
 }

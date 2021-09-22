@@ -1,7 +1,7 @@
 ---
 title: "Colors"
 date: 2021-09-20T10:53:55-07:00
-weight: 999
+weight: 3
 summary: "List of colors used in ReMUD by name"
 author: "Shaen"
 tags: ["colors", "scripting"]
