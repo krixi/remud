@@ -257,7 +257,8 @@ fn default_commands() -> Vec<Command> {
                 description: tokenizer.rest().to_string(),
             }))
         },
-        Help::new("", ""),
+        Help::new("description <text>", "Sets your character's description.")
+            .with_example("description A fine looking being."),
     ));
     commands.push(Command::new(
         "drop",
