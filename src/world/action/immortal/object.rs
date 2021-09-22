@@ -4,16 +4,13 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::world::fsm::StateMachine;
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
     into_action,
     text::{word_list, Tokenizer},
     world::{
         action::Action,
-        fsm::{
-            states::{ChaseState, WanderState},
-            StateId, StateMachine,
-        },
         scripting::{ScriptHook, ScriptHooks},
         types::{
             self,
@@ -161,14 +158,6 @@ pub fn object_create_system(
                     },
                 })
                 .insert(Location { room: room_entity })
-                // TODO: this is how to add a state machine for now, until
-                .insert(
-                    StateMachine::builder()
-                        .with_state(StateId::Wander, WanderState::default())
-                        .with_state(StateId::Chase, ChaseState::default())
-                        .build()
-                        .unwrap(),
-                )
                 .id();
 
             let room_id = {
@@ -211,6 +200,7 @@ pub fn object_info_system(
         Option<&Container>,
         Option<&Location>,
         Option<&ScriptHooks>,
+        Option<&StateMachine>,
     )>,
     room_query: Query<&Room>,
     player_query: Query<&Named, With<Player>>,
@@ -227,7 +217,7 @@ pub fn object_info_system(
                 continue;
             };
 
-            let (object, flags, keywords, named, description, container, location, hooks) =
+            let (object, flags, keywords, named, description, container, location, hooks, fsm) =
                 object_query.get(object_entity).unwrap();
 
             let mut message = format!("|white|Object {}|-|", object.id);
@@ -260,6 +250,18 @@ pub fn object_info_system(
                 }
                 for ScriptHook { trigger, script } in list.iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+                }
+            } else {
+                message.push_str(" none");
+            }
+            message.push_str("\r\n  |white|fsm|-|:");
+            if let Some(StateMachine { states, current }) = fsm {
+                for state in states.keys().sorted() {
+                    let mut current_indicator = "";
+                    if current == state {
+                        current_indicator = "<-";
+                    }
+                    message.push_str(format!("\r\n    {:?} {}", state, current_indicator).as_str());
                 }
             } else {
                 message.push_str(" none");

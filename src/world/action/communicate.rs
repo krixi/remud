@@ -81,7 +81,7 @@ pub fn message_system(
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
-        if let Action::Say(Say { entity, message }) = action {
+        if let Action::Message(Message { entity, message }) = action {
             let room_entity = if let Ok(location) = messaging_query.get(*entity) {
                 location.room
             } else {

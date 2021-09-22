@@ -1,7 +1,7 @@
 ---
 title: "Test plan"
 date: 2021-09-16T15:21:38-07:00
-weight: 3
+weight: 99
 summary: "For when you need to manually verify things work"
 author: "krixi"
 tags: ["testing"]

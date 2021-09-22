@@ -17,10 +17,16 @@ use std::fmt::Debug;
 pub struct WanderState {
     tick_timer: u32,
 }
+impl From<rhai::Map> for WanderState {
+    fn from(_params: rhai::Map) -> Self {
+        tracing::info!("make chase state: {:?}", _params);
+        WanderState::default()
+    }
+}
+
 impl State for WanderState {
     fn on_enter(&mut self, _: Entity, _: &mut World) {
         self.tick_timer = 0;
-        tracing::info!("entered wander state");
     }
 
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
@@ -33,7 +39,6 @@ impl State for WanderState {
         let players = &world.get::<Room>(room).unwrap().players;
 
         if !players.is_empty() {
-            tracing::info!("saw a player");
             Some(Transition::SawPlayer)
         } else {
             None
@@ -50,7 +55,6 @@ impl State for WanderState {
         if !exits.is_empty() && self.tick_timer > 120 {
             self.tick_timer = 0;
 
-            tracing::info!("picking a random room to move to");
             // pick a random direction to go
             let mut rng = thread_rng();
             let exit = exits.keys().choose(&mut rng);
@@ -83,10 +87,16 @@ pub struct ChaseState {
     move_direction: Option<Direction>,
     tick_timer: u32,
 }
+impl From<rhai::Map> for ChaseState {
+    fn from(_params: rhai::Map) -> Self {
+        tracing::info!("make chase state: {:?}", _params);
+        ChaseState::default()
+    }
+}
+
 impl State for ChaseState {
     fn on_enter(&mut self, entity: Entity, world: &mut World) {
         self.tick_timer = 0;
-        tracing::info!("entered chasing state");
 
         // get the players in the room, pick one to chase
         let room = world.get::<Location>(entity).unwrap().room;
@@ -139,7 +149,6 @@ impl State for ChaseState {
         }
 
         if player_room.is_none() {
-            tracing::info!("lost the player");
             Some(Transition::LostPlayer)
         } else {
             None
@@ -151,7 +160,6 @@ impl State for ChaseState {
 
         // player is still around, follow them if necessary.
         if self.tick_timer > 120 && self.move_direction.is_some() {
-            tracing::info!("chasing the player: {:?}", self.move_direction);
             let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
             events.send(QueuedAction {
                 action: Action::Move(Move {
