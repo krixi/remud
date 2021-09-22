@@ -15,10 +15,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
     scripting::{Script, ScriptHook, ScriptName, TriggerEvent, TriggerKind},
-    types::{
-        object::ObjectId,
-        room::{Room, RoomId},
-    },
+    types::room::RoomId,
 };
 
 lazy_static! {
@@ -117,22 +114,6 @@ impl Db {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct RoomObjectRow {
-    room_id: i64,
-    object_id: i64,
-}
-
-impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
-    type Error = anyhow::Error;
-
-    fn try_from(value: RoomObjectRow) -> Result<Self, Self::Error> {
-        let room_id = RoomId::try_from(value.room_id)?;
-        let object_id = ObjectId::try_from(value.object_id)?;
-        Ok((room_id, object_id))
-    }
-}
-
-#[derive(Debug, sqlx::FromRow)]
 struct ObjectRow {
     id: i64,
     flags: i64,
@@ -149,27 +130,6 @@ impl ObjectRow {
             .map(ToString::to_string)
             .collect_vec()
     }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct RoomRow {
-    id: i64,
-    description: String,
-}
-
-impl TryFrom<RoomRow> for Room {
-    type Error = anyhow::Error;
-
-    fn try_from(value: RoomRow) -> Result<Self, Self::Error> {
-        Ok(Room::new(RoomId::try_from(value.id)?))
-    }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct ExitRow {
-    room_from: i64,
-    room_to: i64,
-    direction: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

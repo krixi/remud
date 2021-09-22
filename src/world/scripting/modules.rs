@@ -127,7 +127,10 @@ pub mod self_api {
     use bevy_app::Events;
 
     use crate::world::{
-        action::communicate::{Emote, Message, Say, SendMessage},
+        action::{
+            communicate::{Emote, Message, Say, SendMessage},
+            Action,
+        },
         scripting::{modules::Me, QueuedAction},
     };
 
@@ -143,13 +146,13 @@ pub mod self_api {
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(QueuedAction::new(
-                Emote {
-                    entity: me.entity,
+            .send(
+                Action::from(Emote {
+                    actor: me.entity,
                     emote,
-                }
+                })
                 .into(),
-            ));
+            );
     }
 
     #[rhai_fn(pure)]
@@ -159,13 +162,13 @@ pub mod self_api {
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(QueuedAction::new(
-                Message {
-                    entity: me.entity,
+            .send(
+                Action::from(Message {
+                    actor: me.entity,
                     message,
-                }
+                })
                 .into(),
-            ));
+            );
     }
 
     #[rhai_fn(pure)]
@@ -175,13 +178,13 @@ pub mod self_api {
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(QueuedAction::new(
-                Say {
-                    entity: me.entity,
+            .send(
+                Action::from(Say {
+                    actor: me.entity,
                     message,
-                }
+                })
                 .into(),
-            ));
+            );
     }
 
     #[rhai_fn(pure)]
@@ -191,13 +194,13 @@ pub mod self_api {
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
-            .send(QueuedAction::new(
-                SendMessage {
-                    entity: me.entity,
+            .send(
+                Action::from(SendMessage {
+                    actor: me.entity,
                     recipient,
                     message,
-                }
+                })
                 .into(),
-            ));
+            );
     }
 }

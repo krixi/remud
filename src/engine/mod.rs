@@ -388,11 +388,11 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(Action::from(Login { entity: player }))
+                        .player_action(Action::from(Login { actor: player }))
                         .await;
                     self.game_world
                         .player_action(Action::from(Look {
-                            entity: player,
+                            actor: player,
                             direction: None,
                         }))
                         .await;
@@ -439,11 +439,11 @@ impl Engine {
                     client.set_state(State::InGame { player });
 
                     self.game_world
-                        .player_action(Action::from(Login { entity: player }))
+                        .player_action(Action::from(Login { actor: player }))
                         .await;
                     self.game_world
                         .player_action(Action::from(Look {
-                            entity: player,
+                            actor: player,
                             direction: None,
                         }))
                         .await;

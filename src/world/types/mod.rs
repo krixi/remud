@@ -29,6 +29,13 @@ impl fmt::Display for Id {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ActionTarget {
+    PlayerSelf,
+    Object(ObjectId),
+    CurrentRoom,
+}
+
 // Components
 #[derive(Debug, Default)]
 pub struct Contents {

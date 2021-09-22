@@ -60,7 +60,7 @@ impl State for WanderState {
                 let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
                 events.send(QueuedAction {
                     action: Action::Move(Move {
-                        entity,
+                        actor: entity,
                         direction: exit,
                     }),
                 })
@@ -100,7 +100,7 @@ impl State for ChaseState {
         let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
         events.send(QueuedAction {
             action: Action::Say(Say {
-                entity,
+                actor: entity,
                 message: format!("I'm gonna get you, {}!", player_name),
             }),
         })
@@ -155,7 +155,7 @@ impl State for ChaseState {
             let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
             events.send(QueuedAction {
                 action: Action::Move(Move {
-                    entity,
+                    actor: entity,
                     direction: self.move_direction.unwrap(),
                 }),
             });

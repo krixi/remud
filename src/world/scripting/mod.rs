@@ -229,17 +229,14 @@ impl TriggerEvent {
             Action::ObjectCreate(_) => None,
             Action::ObjectInfo(_) => None,
             Action::ObjectRemove(_) => None,
-            Action::ObjectUpdateDescription(_) => None,
             Action::ObjectUpdateFlags(_) => None,
             Action::ObjectUpdateKeywords(_) => None,
-            Action::ObjectUpdateName(_) => None,
             Action::PlayerInfo(_) => None,
             Action::RoomCreate(_) => None,
             Action::RoomInfo(_) => None,
             Action::RoomLink(_) => None,
             Action::RoomRemove(_) => None,
             Action::RoomUnlink(_) => None,
-            Action::RoomUpdateDescription(_) => None,
             Action::RoomUpdateRegions(_) => None,
             Action::Say(_) => Some(TriggerEvent::Say),
             Action::ScriptAttach(_) => None,
@@ -248,6 +245,8 @@ impl TriggerEvent {
             Action::Shutdown(_) => None,
             Action::Stats(_) => None,
             Action::Teleport(_) => None,
+            Action::UpdateDescription(_) => None,
+            Action::UpdateName(_) => None,
             Action::Who(_) => None,
         }
     }
@@ -274,8 +273,8 @@ pub struct QueuedAction {
     pub action: Action,
 }
 
-impl QueuedAction {
-    fn new(action: Action) -> Self {
+impl From<Action> for QueuedAction {
+    fn from(action: Action) -> Self {
         QueuedAction { action }
     }
 }

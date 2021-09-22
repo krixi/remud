@@ -18,19 +18,17 @@ use crate::world::action::{
     immortal::{
         object::{
             object_create_system, object_info_system, object_remove_system,
-            object_update_description_system, object_update_flags_system,
-            object_update_keywords_system, object_update_name_system, ObjectCreate, ObjectInfo,
-            ObjectRemove, ObjectUpdateDescription, ObjectUpdateFlags, ObjectUpdateKeywords,
-            ObjectUpdateName,
+            object_update_flags_system, object_update_keywords_system, ObjectCreate, ObjectInfo,
+            ObjectRemove, ObjectUpdateFlags, ObjectUpdateKeywords,
         },
         player::{player_info_system, PlayerInfo},
         room::{
             room_create_system, room_info_system, room_link_system, room_remove_system,
-            room_unlink_system, room_update_description_system, room_update_regions_system,
-            RoomCreate, RoomInfo, RoomLink, RoomRemove, RoomUnlink, RoomUpdateDescription,
-            RoomUpdateRegions,
+            room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
+            RoomRemove, RoomUnlink, RoomUpdateRegions,
         },
         script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
+        update_description_system, update_name_system, UpdateDescription, UpdateName,
     },
     movement::{move_system, teleport_system, Move, Teleport},
     object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
@@ -64,17 +62,14 @@ pub enum Action {
     ObjectCreate(ObjectCreate),
     ObjectInfo(ObjectInfo),
     ObjectRemove(ObjectRemove),
-    ObjectUpdateDescription(ObjectUpdateDescription),
     ObjectUpdateFlags(ObjectUpdateFlags),
     ObjectUpdateKeywords(ObjectUpdateKeywords),
-    ObjectUpdateName(ObjectUpdateName),
     PlayerInfo(PlayerInfo),
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
     RoomLink(RoomLink),
     RoomRemove(RoomRemove),
     RoomUnlink(RoomUnlink),
-    RoomUpdateDescription(RoomUpdateDescription),
     RoomUpdateRegions(RoomUpdateRegions),
     Say(Say),
     ScriptAttach(ScriptAttach),
@@ -83,45 +78,46 @@ pub enum Action {
     Shutdown(Shutdown),
     Stats(Stats),
     Teleport(Teleport),
+    UpdateDescription(UpdateDescription),
+    UpdateName(UpdateName),
     Who(Who),
 }
 
 impl Action {
     pub fn enactor(&self) -> Entity {
         match self {
-            Action::Drop(action) => action.entity,
-            Action::Emote(action) => action.entity,
-            Action::Exits(action) => action.entity,
-            Action::Get(action) => action.entity,
-            Action::Inventory(action) => action.entity,
-            Action::Login(action) => action.entity,
-            Action::Look(action) => action.entity,
-            Action::LookAt(action) => action.entity,
-            Action::Message(action) => action.entity,
-            Action::Move(action) => action.entity,
-            Action::ObjectCreate(action) => action.entity,
-            Action::ObjectInfo(action) => action.entity,
-            Action::ObjectRemove(action) => action.entity,
-            Action::ObjectUpdateDescription(action) => action.entity,
-            Action::ObjectUpdateFlags(action) => action.entity,
-            Action::ObjectUpdateKeywords(action) => action.entity,
-            Action::ObjectUpdateName(action) => action.entity,
-            Action::PlayerInfo(action) => action.entity,
-            Action::RoomCreate(action) => action.entity,
-            Action::RoomInfo(action) => action.entity,
-            Action::RoomLink(action) => action.entity,
-            Action::RoomRemove(action) => action.entity,
-            Action::RoomUnlink(action) => action.entity,
-            Action::RoomUpdateDescription(action) => action.entity,
-            Action::RoomUpdateRegions(action) => action.entity,
-            Action::Say(action) => action.entity,
-            Action::ScriptAttach(action) => action.entity,
-            Action::ScriptDetach(action) => action.entity,
-            Action::Send(action) => action.entity,
-            Action::Shutdown(action) => action.entity,
-            Action::Stats(action) => action.entity,
-            Action::Teleport(action) => action.entity,
-            Action::Who(action) => action.entity,
+            Action::Drop(action) => action.actor,
+            Action::Emote(action) => action.actor,
+            Action::Exits(action) => action.actor,
+            Action::Get(action) => action.actor,
+            Action::Inventory(action) => action.actor,
+            Action::Login(action) => action.actor,
+            Action::Look(action) => action.actor,
+            Action::LookAt(action) => action.actor,
+            Action::Message(action) => action.actor,
+            Action::Move(action) => action.actor,
+            Action::ObjectCreate(action) => action.actor,
+            Action::ObjectInfo(action) => action.actor,
+            Action::ObjectRemove(action) => action.actor,
+            Action::ObjectUpdateFlags(action) => action.actor,
+            Action::ObjectUpdateKeywords(action) => action.actor,
+            Action::PlayerInfo(action) => action.actor,
+            Action::RoomCreate(action) => action.actor,
+            Action::RoomInfo(action) => action.actor,
+            Action::RoomLink(action) => action.actor,
+            Action::RoomRemove(action) => action.actor,
+            Action::RoomUnlink(action) => action.actor,
+            Action::RoomUpdateRegions(action) => action.actor,
+            Action::Say(action) => action.actor,
+            Action::ScriptAttach(action) => action.actor,
+            Action::ScriptDetach(action) => action.actor,
+            Action::Send(action) => action.actor,
+            Action::Shutdown(action) => action.actor,
+            Action::Stats(action) => action.actor,
+            Action::Teleport(action) => action.actor,
+            Action::UpdateDescription(action) => action.actor,
+            Action::UpdateName(action) => action.actor,
+            Action::Who(action) => action.actor,
         }
     }
 }
@@ -140,17 +136,14 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(object_create_system.system());
     stage.add_system(object_info_system.system());
     stage.add_system(object_remove_system.system());
-    stage.add_system(object_update_description_system.system());
     stage.add_system(object_update_flags_system.system());
     stage.add_system(object_update_keywords_system.system());
-    stage.add_system(object_update_name_system.system());
     stage.add_system(player_info_system.system());
     stage.add_system(room_create_system.system());
     stage.add_system(room_info_system.system());
     stage.add_system(room_link_system.system());
     stage.add_system(room_remove_system.system());
     stage.add_system(room_unlink_system.system());
-    stage.add_system(room_update_description_system.system());
     stage.add_system(room_update_regions_system.system());
     stage.add_system(say_system.system().after("look"));
     stage.add_system(script_attach_system.system());
@@ -159,6 +152,8 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(shutdown_system.system());
     stage.add_system(stats_system.system());
     stage.add_system(teleport_system.system());
+    stage.add_system(update_description_system.system());
+    stage.add_system(update_name_system.system());
     stage.add_system(who_system.system());
 }
 

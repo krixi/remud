@@ -317,10 +317,12 @@ fn add_void_room(world: &mut World) {
         .by_id(*VOID_ROOM_ID)
         .is_none()
     {
+        let name = "The Void".to_string();
         let description = "A dark void extends infinitely in all directions.".to_string();
         let bundle = RoomBundle {
             id: Id::Room(*VOID_ROOM_ID),
             room: Room::new(*VOID_ROOM_ID),
+            name: Named { name: name.clone() },
             description: Description {
                 text: description.clone(),
             },
@@ -336,7 +338,7 @@ fn add_void_room(world: &mut World) {
         world
             .get_resource_mut::<Updates>()
             .unwrap()
-            .queue(persist::room::Create::new(*VOID_ROOM_ID, description));
+            .queue(persist::room::Create::new(*VOID_ROOM_ID, name, description));
 
         tracing::warn!("Void room was deleted and has been recreated.");
     }
