@@ -17,11 +17,11 @@ use crate::world::action::{
     },
     immortal::{
         object::{
-            object_clear_flags_system, object_create_system, object_info_system,
-            object_remove_system, object_set_flags_system, object_update_description_system,
+            object_create_system, object_info_system, object_remove_system,
+            object_update_description_system, object_update_flags_system,
             object_update_keywords_system, object_update_name_system, ObjectCreate, ObjectInfo,
-            ObjectRemove, ObjectSetFlags, ObjectUnsetFlags, ObjectUpdateDescription,
-            ObjectUpdateKeywords, ObjectUpdateName,
+            ObjectRemove, ObjectUpdateDescription, ObjectUpdateFlags, ObjectUpdateKeywords,
+            ObjectUpdateName,
         },
         player::{player_info_system, PlayerInfo},
         room::{
@@ -49,11 +49,6 @@ macro_rules! into_action {
     };
 }
 
-pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
-pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
-pub const DEFAULT_OBJECT_NAME: &str = "an object";
-pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
-
 #[derive(Debug, Clone)]
 pub enum Action {
     Drop(Drop),
@@ -66,12 +61,11 @@ pub enum Action {
     LookAt(LookAt),
     Message(Message),
     Move(Move),
-    ObjectUnsetFlags(ObjectUnsetFlags),
     ObjectCreate(ObjectCreate),
     ObjectInfo(ObjectInfo),
     ObjectRemove(ObjectRemove),
-    ObjectSetFlags(ObjectSetFlags),
     ObjectUpdateDescription(ObjectUpdateDescription),
+    ObjectUpdateFlags(ObjectUpdateFlags),
     ObjectUpdateKeywords(ObjectUpdateKeywords),
     ObjectUpdateName(ObjectUpdateName),
     PlayerInfo(PlayerInfo),
@@ -108,9 +102,8 @@ impl Action {
             Action::ObjectCreate(action) => action.entity,
             Action::ObjectInfo(action) => action.entity,
             Action::ObjectRemove(action) => action.entity,
-            Action::ObjectSetFlags(action) => action.entity,
-            Action::ObjectUnsetFlags(action) => action.entity,
             Action::ObjectUpdateDescription(action) => action.entity,
+            Action::ObjectUpdateFlags(action) => action.entity,
             Action::ObjectUpdateKeywords(action) => action.entity,
             Action::ObjectUpdateName(action) => action.entity,
             Action::PlayerInfo(action) => action.entity,
@@ -119,8 +112,8 @@ impl Action {
             Action::RoomLink(action) => action.entity,
             Action::RoomRemove(action) => action.entity,
             Action::RoomUnlink(action) => action.entity,
-            Action::RoomUpdateRegions(action) => action.entity,
             Action::RoomUpdateDescription(action) => action.entity,
+            Action::RoomUpdateRegions(action) => action.entity,
             Action::Say(action) => action.entity,
             Action::ScriptAttach(action) => action.entity,
             Action::ScriptDetach(action) => action.entity,
@@ -144,12 +137,11 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(look_system.system().label("look"));
     stage.add_system(message_system.system());
     stage.add_system(move_system.system());
-    stage.add_system(object_clear_flags_system.system());
     stage.add_system(object_create_system.system());
     stage.add_system(object_info_system.system());
     stage.add_system(object_remove_system.system());
-    stage.add_system(object_set_flags_system.system());
     stage.add_system(object_update_description_system.system());
+    stage.add_system(object_update_flags_system.system());
     stage.add_system(object_update_keywords_system.system());
     stage.add_system(object_update_name_system.system());
     stage.add_system(player_info_system.system());

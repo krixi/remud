@@ -9,7 +9,7 @@ use crate::{
     into_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{Action, DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME},
+        action::Action,
         fsm::{
             states::{ChaseState, WanderState},
             StateId, StateMachine,
@@ -24,6 +24,10 @@ use crate::{
         },
     },
 };
+
+pub const DEFAULT_OBJECT_KEYWORD: &str = "object";
+pub const DEFAULT_OBJECT_NAME: &str = "an object";
+pub const DEFAULT_OBJECT_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
 // Valid shapes:
 // object new - creates a new object and puts it on the ground
@@ -80,7 +84,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(ObjectSetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(Action::from(ObjectUpdateFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: false}))
                             }
                         }
                         "name" => {
@@ -98,7 +102,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(ObjectUnsetFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec()}))
+                                Ok(Action::from(ObjectUpdateFlags {entity: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: true}))
                             }
                         }
                         _ => Err("Enter a valid object subcommand: desc, info, keywords, name, remove, set, or unset."
@@ -263,60 +267,6 @@ pub fn object_info_system(
 
             if let Ok(mut messages) = messages_query.get_mut(*entity) {
                 messages.queue(message);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ObjectUnsetFlags {
-    pub entity: Entity,
-    pub id: ObjectId,
-    pub flags: Vec<String>,
-}
-
-into_action!(ObjectUnsetFlags);
-
-pub fn object_clear_flags_system(
-    mut action_reader: EventReader<Action>,
-    objects: Res<Objects>,
-    mut updates: ResMut<Updates>,
-    mut object_query: Query<(&Object, &mut types::Flags)>,
-    mut messages: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::ObjectUnsetFlags(ObjectUnsetFlags { entity, id, flags }) = action {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*entity) {
-                    messages.queue(format!("Object {} not found.", id));
-                }
-                continue;
-            };
-
-            let remove_flags = match ObjectFlags::try_from(flags.as_slice()) {
-                Ok(flags) => flags,
-                Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*entity) {
-                        messages.queue(e.to_string());
-                    }
-                    continue;
-                }
-            };
-
-            let (id, flags) = {
-                let (object, mut flags) = object_query.get_mut(object_entity).unwrap();
-
-                flags.flags.remove(remove_flags);
-
-                (object.id, flags.flags)
-            };
-
-            updates.queue(persist::object::Flags::new(id, flags));
-
-            if let Ok(mut messages) = messages.get_mut(*entity) {
-                messages.queue(format!("Updated object {} flags.", id));
             }
         }
     }
@@ -522,15 +472,16 @@ pub fn object_remove_system(
 }
 
 #[derive(Debug, Clone)]
-pub struct ObjectSetFlags {
+pub struct ObjectUpdateFlags {
     pub entity: Entity,
     pub id: ObjectId,
     pub flags: Vec<String>,
+    pub clear: bool,
 }
 
-into_action!(ObjectSetFlags);
+into_action!(ObjectUpdateFlags);
 
-pub fn object_set_flags_system(
+pub fn object_update_flags_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
@@ -538,7 +489,13 @@ pub fn object_set_flags_system(
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::ObjectSetFlags(ObjectSetFlags { entity, id, flags }) = action {
+        if let Action::ObjectUpdateFlags(ObjectUpdateFlags {
+            entity,
+            id,
+            flags,
+            clear,
+        }) = action
+        {
             let object_entity = if let Some(object) = objects.by_id(*id) {
                 object
             } else {
@@ -548,7 +505,7 @@ pub fn object_set_flags_system(
                 continue;
             };
 
-            let set_flags = match ObjectFlags::try_from(flags.as_slice()) {
+            let changed_flags = match ObjectFlags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
                     if let Ok(mut messages) = messages.get_mut(*entity) {
@@ -561,7 +518,11 @@ pub fn object_set_flags_system(
             let (id, flags) = {
                 let (object, mut flags) = object_query.get_mut(object_entity).unwrap();
 
-                flags.flags.insert(set_flags);
+                if *clear {
+                    flags.flags.remove(changed_flags);
+                } else {
+                    flags.flags.insert(changed_flags);
+                }
 
                 (object.id, flags.flags)
             };

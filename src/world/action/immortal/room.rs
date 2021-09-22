@@ -9,7 +9,7 @@ use crate::{
     into_action,
     text::{word_list, Tokenizer},
     world::{
-        action::{Action, DEFAULT_ROOM_DESCRIPTION},
+        action::Action,
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
@@ -20,6 +20,8 @@ use crate::{
         VOID_ROOM_ID,
     },
 };
+
+pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 
 // Valid shapes:
 // room info - displays information about the room
@@ -145,13 +147,13 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                 }
             }
             _ => Err(
-                "Enter a valid room subcommand: info, desc, link, new, region, remove, or unlink."
+                "Enter a valid room subcommand: info, desc, link, new, regions, remove, or unlink."
                     .to_string(),
             ),
         }
     } else {
         Err(
-            "Enter a room subcommand: info, desc, link, new, region, remove, or unlink."
+            "Enter a room subcommand: info, desc, link, new, regions, remove, or unlink."
                 .to_string(),
         )
     }
@@ -680,7 +682,11 @@ pub fn room_update_regions_system(
                 (room.id, current_regions.list.clone())
             };
 
-            updates.queue(persist::room::UpdateRegions::new(room_id, updated_regions));
+            if *remove {
+                updates.queue(persist::room::RemoveRegions::new(room_id, updated_regions));
+            } else {
+                updates.queue(persist::room::AddRegions::new(room_id, updated_regions));
+            }
 
             if let Ok(mut messages) = message_query.get_mut(*entity) {
                 messages.queue(format!("Updated room {} regions.", room_id));

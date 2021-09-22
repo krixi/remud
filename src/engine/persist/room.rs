@@ -181,25 +181,20 @@ impl Persist for UpdateDescription {
     }
 }
 
-pub struct UpdateRegions {
+pub struct AddRegions {
     id: RoomId,
     regions: Vec<String>,
 }
 
-impl UpdateRegions {
+impl AddRegions {
     pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
-        Box::new(UpdateRegions { id, regions })
+        Box::new(AddRegions { id, regions })
     }
 }
 
 #[async_trait]
-impl Persist for UpdateRegions {
+impl Persist for AddRegions {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM room_regions WHERE room_id = ?")
-            .bind(self.id)
-            .execute(pool)
-            .await?;
-
         for region in self.regions.iter() {
             let region_id: i64 = if let Ok(region_row) =
                 sqlx::query("SELECT id FROM regions WHERE name = ?")
@@ -217,6 +212,47 @@ impl Persist for UpdateRegions {
             };
 
             sqlx::query("INSERT INTO room_regions(room_id, region_id) VALUES(?, ?)")
+                .bind(self.id)
+                .bind(region_id)
+                .execute(pool)
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct RemoveRegions {
+    id: RoomId,
+    regions: Vec<String>,
+}
+
+impl RemoveRegions {
+    pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
+        Box::new(RemoveRegions { id, regions })
+    }
+}
+
+#[async_trait]
+impl Persist for RemoveRegions {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        for region in self.regions.iter() {
+            let region_id: i64 = if let Ok(region_row) =
+                sqlx::query("SELECT id FROM regions WHERE name = ?")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await
+            {
+                region_row.get("id")
+            } else {
+                sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
+                    .bind(region)
+                    .fetch_one(pool)
+                    .await?
+                    .get("id")
+            };
+
+            sqlx::query("DELETE FROM room_regions WHERE room_id = ? AND region_id = ?")
                 .bind(self.id)
                 .bind(region_id)
                 .execute(pool)

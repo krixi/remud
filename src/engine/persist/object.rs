@@ -4,7 +4,9 @@ use sqlx::SqlitePool;
 use crate::{
     engine::persist::Persist,
     world::{
-        action::{DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME},
+        action::immortal::object::{
+            DEFAULT_OBJECT_DESCRIPTION, DEFAULT_OBJECT_KEYWORD, DEFAULT_OBJECT_NAME,
+        },
         types::object::{ObjectFlags, ObjectId},
     },
 };

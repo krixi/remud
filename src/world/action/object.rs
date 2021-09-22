@@ -283,7 +283,7 @@ pub fn inventory_system(
 ) {
     for action in action_reader.iter() {
         if let Action::Inventory(Inventory { entity }) = action {
-            let mut message = "You have".to_string();
+            let mut message = "|white|You have".to_string();
 
             let contents = if let Ok(contents) = inventory_query.get(*entity) {
                 contents
@@ -296,9 +296,9 @@ pub fn inventory_system(
             };
 
             if contents.objects.is_empty() {
-                message.push_str(" nothing.");
+                message.push_str(" nothing.|-|");
             } else {
-                message.push(':');
+                message.push_str(":|-|");
                 contents
                     .objects
                     .iter()
