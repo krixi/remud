@@ -84,18 +84,18 @@ impl StateMachine {
 
 #[derive(Debug, Default, Clone)]
 pub struct StateMachineBuilder {
-    states: Vec<(StateId, rhai::Map)>,
+    states: Vec<(StateId, rhai::Map, rhai::Array)>,
 }
 
 impl StateMachineBuilder {
     pub fn build(self) -> anyhow::Result<StateMachine> {
         let mut states = HashMap::new();
         let mut first = None;
-        for (id, params) in self.states {
+        for (id, params, tx) in self.states {
             if first == None {
                 first = Some(id)
             }
-            states.insert(id, to_state(id, params));
+            states.insert(id, to_state(id, params, tx));
         }
 
         if let Some(current) = first {
@@ -105,14 +105,14 @@ impl StateMachineBuilder {
         }
     }
 
-    pub fn add_state(&mut self, id: &StateId, params: rhai::Map) {
-        self.states.push((*id, params));
+    pub fn add_state(&mut self, id: &StateId, params: rhai::Map, tx: rhai::Array) {
+        self.states.push((*id, params, tx));
     }
 }
 
-pub fn to_state(id: StateId, params: rhai::Map) -> Box<dyn State> {
+pub fn to_state(id: StateId, params: rhai::Map, tx: rhai::Array) -> Box<dyn State> {
     match id {
-        StateId::Wander => Box::new(WanderState::from(params)),
-        StateId::Chase => Box::new(ChaseState::from(params)),
+        StateId::Wander => Box::new(WanderState::new(params, tx)),
+        StateId::Chase => Box::new(ChaseState::new(params, tx)),
     }
 }
