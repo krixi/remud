@@ -154,7 +154,7 @@ impl Db {
             .unwrap()
             .get_resource::<Prototypes>()
             .unwrap()
-            .by_id(PrototypeId::try_from(prototype_id)?)
+            .by_id(prototype_id)
             .unwrap();
 
         while let Some(object_row) = results.try_next().await? {

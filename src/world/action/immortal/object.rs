@@ -18,7 +18,7 @@ use crate::{
         types::{
             object::{
                 Container, Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags,
-                ObjectId, Objects, Prototype, PrototypeId, Prototypes,
+                ObjectId, ObjectOrPrototype, Objects, Prototype, PrototypeId, Prototypes,
             },
             player::{Messages, Player},
             room::Room,
@@ -71,9 +71,9 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
-                                Ok(Action::from(ObjectUpdateKeywords {
+                                Ok(Action::from(UpdateKeywords {
                                     actor: player,
-                                    id,
+                                    id: ObjectOrPrototype::Object(id),
                                     keywords,
                                 }))
                             }
@@ -94,7 +94,12 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(ObjectUpdateFlags {actor: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: false}))
+                                Ok(Action::from(UpdateObjectFlags {
+                                    actor: player,
+                                    id: ObjectOrPrototype::Object(id),
+                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
+                                    clear: false
+                                }))
                             }
                         }
                         "name" => {
@@ -112,7 +117,12 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(ObjectUpdateFlags {actor: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: true}))
+                                Ok(Action::from(UpdateObjectFlags {
+                                    actor: player,
+                                    id: ObjectOrPrototype::Object(id),
+                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
+                                    clear: true
+                                }))
                             }
                         }
                         _ => Err("Enter a valid object subcommand: desc, info, keywords, name, remove, set, or unset."
@@ -389,37 +399,52 @@ pub fn object_inherit_fields_system(
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct ObjectUpdateFlags {
+pub struct UpdateObjectFlags {
     pub actor: Entity,
-    pub id: ObjectId,
+    pub id: ObjectOrPrototype,
     pub flags: Vec<String>,
     pub clear: bool,
 }
 
-into_action!(ObjectUpdateFlags);
+into_action!(UpdateObjectFlags);
 
-pub fn object_update_flags_system(
+pub fn update_object_flags(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
+    prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<&mut ObjectFlags>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::ObjectUpdateFlags(ObjectUpdateFlags {
+        if let Action::UpdateObjectFlags(UpdateObjectFlags {
             actor,
             id,
             flags,
             clear,
         }) = action
         {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Object {} not found.", id));
+            let entity = match id {
+                ObjectOrPrototype::Object(id) => {
+                    if let Some(object) = objects.by_id(*id) {
+                        object
+                    } else {
+                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                            messages.queue(format!("Object {} not found.", id));
+                        }
+                        continue;
+                    }
                 }
-                continue;
+                ObjectOrPrototype::Prototype(id) => {
+                    if let Some(prototype) = prototypes.by_id(*id) {
+                        prototype
+                    } else {
+                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                            messages.queue(format!("Prototype {} not found.", id));
+                        }
+                        continue;
+                    }
+                }
             };
 
             let changed_flags = match Flags::try_from(flags.as_slice()) {
@@ -432,7 +457,7 @@ pub fn object_update_flags_system(
                 }
             };
 
-            let mut flags = object_query.get_mut(object_entity).unwrap();
+            let mut flags = object_query.get_mut(entity).unwrap();
 
             if *clear {
                 flags.remove(changed_flags);
@@ -440,56 +465,85 @@ pub fn object_update_flags_system(
                 flags.insert(changed_flags);
             }
 
-            updates.persist(persist::object::Flags::new(*id, flags.get_flags()));
+            match id {
+                ObjectOrPrototype::Object(id) => {
+                    updates.persist(persist::object::Flags::new(*id, flags.get_flags()));
+                }
+                ObjectOrPrototype::Prototype(id) => {
+                    updates.persist(persist::prototype::Flags::new(*id, flags.get_flags()));
+                }
+            }
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated object {} flags.", id));
+                messages.queue(format!("Updated {:?} flags.", id));
             }
         }
     }
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct ObjectUpdateKeywords {
+pub struct UpdateKeywords {
     pub actor: Entity,
-    pub id: ObjectId,
+    pub id: ObjectOrPrototype,
     pub keywords: Vec<String>,
 }
 
-into_action!(ObjectUpdateKeywords);
+into_action!(UpdateKeywords);
 
-pub fn object_update_keywords_system(
+pub fn update_keywords_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
+    prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<&mut Keywords>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
-        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
+        if let Action::UpdateKeywords(UpdateKeywords {
             actor,
             id,
             keywords,
         }) = action
         {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Object {} not found.", id));
+            let entity = match id {
+                ObjectOrPrototype::Object(id) => {
+                    if let Some(object) = objects.by_id(*id) {
+                        object
+                    } else {
+                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                            messages.queue(format!("Object {} not found.", id));
+                        }
+                        continue;
+                    }
                 }
-                continue;
+                ObjectOrPrototype::Prototype(id) => {
+                    if let Some(prototype) = prototypes.by_id(*id) {
+                        prototype
+                    } else {
+                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                            messages.queue(format!("Prototype {} not found.", id));
+                        }
+                        continue;
+                    }
+                }
             };
 
             object_query
-                .get_mut(object_entity)
+                .get_mut(entity)
                 .unwrap()
                 .set_list(keywords.clone());
 
-            updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
+            match id {
+                ObjectOrPrototype::Object(id) => {
+                    updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
+                }
+                ObjectOrPrototype::Prototype(id) => {
+                    updates.persist(persist::prototype::Keywords::new(*id, keywords.clone()));
+                }
+            }
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated object {} keywords.", id));
+                messages.queue(format!("Updated {:?} keywords.", id));
             }
         }
     }

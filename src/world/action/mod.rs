@@ -18,15 +18,13 @@ use crate::world::action::{
     immortal::{
         object::{
             object_create_system, object_info_system, object_inherit_fields_system,
-            object_remove_system, object_update_flags_system, object_update_keywords_system,
-            ObjectCreate, ObjectInfo, ObjectInheritFields, ObjectRemove, ObjectUpdateFlags,
-            ObjectUpdateKeywords,
+            object_remove_system, update_keywords_system, update_object_flags, ObjectCreate,
+            ObjectInfo, ObjectInheritFields, ObjectRemove, UpdateKeywords, UpdateObjectFlags,
         },
         player::{player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags},
         prototype::{
             prototype_create_system, prototype_info_system, prototype_remove_system,
-            prototype_update_flags_system, prototype_update_keywords_system, PrototypeCreate,
-            PrototypeInfo, PrototypeRemove, PrototypeUpdateFlags, PrototypeUpdateKeywords,
+            PrototypeCreate, PrototypeInfo, PrototypeRemove,
         },
         room::{
             room_create_system, room_info_system, room_link_system, room_remove_system,
@@ -69,15 +67,11 @@ pub enum Action {
     ObjectInfo(ObjectInfo),
     ObjectInheritFields(ObjectInheritFields),
     ObjectRemove(ObjectRemove),
-    ObjectUpdateFlags(ObjectUpdateFlags),
-    ObjectUpdateKeywords(ObjectUpdateKeywords),
     PlayerInfo(PlayerInfo),
     PlayerUpdateFlags(PlayerUpdateFlags),
     PrototypeCreate(PrototypeCreate),
     PrototypeInfo(PrototypeInfo),
     PrototypeRemove(PrototypeRemove),
-    PrototypeUpdateFlags(PrototypeUpdateFlags),
-    PrototypeUpdateKeywords(PrototypeUpdateKeywords),
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
     RoomLink(RoomLink),
@@ -92,7 +86,9 @@ pub enum Action {
     Stats(Stats),
     Teleport(Teleport),
     UpdateDescription(UpdateDescription),
+    UpdateKeywords(UpdateKeywords),
     UpdateName(UpdateName),
+    UpdateObjectFlags(UpdateObjectFlags),
     Who(Who),
 }
 
@@ -113,15 +109,11 @@ impl Action {
             Action::ObjectInfo(action) => action.actor,
             Action::ObjectInheritFields(action) => action.actor,
             Action::ObjectRemove(action) => action.actor,
-            Action::ObjectUpdateFlags(action) => action.actor,
-            Action::ObjectUpdateKeywords(action) => action.actor,
             Action::PlayerInfo(action) => action.actor,
             Action::PlayerUpdateFlags(action) => action.actor,
             Action::PrototypeCreate(action) => action.actor,
             Action::PrototypeInfo(action) => action.actor,
             Action::PrototypeRemove(action) => action.actor,
-            Action::PrototypeUpdateFlags(action) => action.actor,
-            Action::PrototypeUpdateKeywords(action) => action.actor,
             Action::RoomCreate(action) => action.actor,
             Action::RoomInfo(action) => action.actor,
             Action::RoomLink(action) => action.actor,
@@ -136,7 +128,9 @@ impl Action {
             Action::Stats(action) => action.actor,
             Action::Teleport(action) => action.actor,
             Action::UpdateDescription(action) => action.actor,
+            Action::UpdateKeywords(action) => action.actor,
             Action::UpdateName(action) => action.actor,
+            Action::UpdateObjectFlags(action) => action.actor,
             Action::Who(action) => action.actor,
         }
     }
@@ -157,15 +151,11 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(object_info_system.system());
     stage.add_system(object_inherit_fields_system.system());
     stage.add_system(object_remove_system.system());
-    stage.add_system(object_update_flags_system.system());
-    stage.add_system(object_update_keywords_system.system());
     stage.add_system(player_info_system.system());
     stage.add_system(player_update_flags_system.system());
     stage.add_system(prototype_create_system.system());
     stage.add_system(prototype_info_system.system());
     stage.add_system(prototype_remove_system.system());
-    stage.add_system(prototype_update_flags_system.system());
-    stage.add_system(prototype_update_keywords_system.system());
     stage.add_system(room_create_system.system());
     stage.add_system(room_info_system.system());
     stage.add_system(room_link_system.system());
@@ -180,7 +170,9 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(stats_system.system());
     stage.add_system(teleport_system.system());
     stage.add_system(update_description_system.system());
+    stage.add_system(update_keywords_system.system());
     stage.add_system(update_name_system.system());
+    stage.add_system(update_object_flags.system());
     stage.add_system(who_system.system());
 }
 

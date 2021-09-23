@@ -34,6 +34,12 @@ pub struct ObjectBundle {
     pub hooks: ScriptHooks,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum ObjectOrPrototype {
+    Object(ObjectId),
+    Prototype(PrototypeId),
+}
+
 #[derive(Debug)]
 pub struct Prototype {
     id: PrototypeId,

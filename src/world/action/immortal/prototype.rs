@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, str::FromStr};
+use std::str::FromStr;
 
 use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
@@ -10,14 +10,17 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{
-            immortal::{UpdateDescription, UpdateName},
+            immortal::{
+                object::{UpdateKeywords, UpdateObjectFlags},
+                UpdateDescription, UpdateName,
+            },
             Action,
         },
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::{
-                Container, Flags, Keywords, Object, ObjectFlags, Prototype, PrototypeBundle,
-                PrototypeId, Prototypes,
+                Container, Keywords, Object, ObjectFlags, ObjectOrPrototype, Prototype,
+                PrototypeBundle, PrototypeId, Prototypes,
             },
             player::Messages,
             ActionTarget, Contents, Description, Location, Named,
@@ -52,9 +55,9 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                                     .map(|keyword| keyword.trim().to_string())
                                     .collect_vec();
 
-                                Ok(Action::from(PrototypeUpdateKeywords {
+                                Ok(Action::from(UpdateKeywords {
                                     actor: player,
-                                    id,
+                                    id: ObjectOrPrototype::Prototype(id),
                                     keywords,
                                 }))
                             }
@@ -75,7 +78,12 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(PrototypeUpdateFlags {actor: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: false}))
+                                Ok(Action::from(UpdateObjectFlags{
+                                    actor: player,
+                                    id: ObjectOrPrototype::Prototype(id),
+                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
+                                    clear: false
+                                } ))
                             }
                         }
                         "name" => {
@@ -93,7 +101,12 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
                             } else {
-                                Ok(Action::from(PrototypeUpdateFlags {actor: player, id, flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(), clear: true}))
+                                Ok(Action::from(UpdateObjectFlags {
+                                    actor: player,
+                                    id: ObjectOrPrototype::Prototype(id),
+                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
+                                    clear: true
+                                }))
                             }
                         }
                         _ => Err("Enter a valid prototype subcommand: desc, info, keywords, name, remove, set, or unset."
@@ -217,53 +230,6 @@ pub fn prototype_info_system(
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct PrototypeUpdateKeywords {
-    pub actor: Entity,
-    pub id: PrototypeId,
-    pub keywords: Vec<String>,
-}
-
-into_action!(PrototypeUpdateKeywords);
-
-pub fn prototype_update_keywords_system(
-    mut action_reader: EventReader<Action>,
-    prototypes: Res<Prototypes>,
-    mut updates: ResMut<Updates>,
-    mut prototype_query: Query<&mut Keywords>,
-    mut messages: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::PrototypeUpdateKeywords(PrototypeUpdateKeywords {
-            actor,
-            id,
-            keywords,
-        }) = action
-        {
-            let prototype_entity = if let Some(prototype) = prototypes.by_id(*id) {
-                prototype
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Prototype {} not found.", id));
-                }
-                continue;
-            };
-
-            prototype_query
-                .get_mut(prototype_entity)
-                .unwrap()
-                .set_list(keywords.clone());
-
-            updates.persist(persist::prototype::Keywords::new(*id, keywords.clone()));
-            updates.reload(*id);
-
-            if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated prototype {} keywords.", id));
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PrototypeRemove {
     pub actor: Entity,
@@ -327,68 +293,6 @@ pub fn prototype_remove_system(
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Prototype {} removed.", id));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct PrototypeUpdateFlags {
-    pub actor: Entity,
-    pub id: PrototypeId,
-    pub flags: Vec<String>,
-    pub clear: bool,
-}
-
-into_action!(PrototypeUpdateFlags);
-
-pub fn prototype_update_flags_system(
-    mut action_reader: EventReader<Action>,
-    prototypes: Res<Prototypes>,
-    mut updates: ResMut<Updates>,
-    mut prototype_query: Query<&mut ObjectFlags>,
-    mut messages: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::PrototypeUpdateFlags(PrototypeUpdateFlags {
-            actor,
-            id,
-            flags,
-            clear,
-        }) = action
-        {
-            let prototype_entity = if let Some(prototype) = prototypes.by_id(*id) {
-                prototype
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Prototype {} not found.", id));
-                }
-                continue;
-            };
-
-            let changed_flags = match Flags::try_from(flags.as_slice()) {
-                Ok(flags) => flags,
-                Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*actor) {
-                        messages.queue(e.to_string());
-                    }
-                    continue;
-                }
-            };
-
-            let mut flags = prototype_query.get_mut(prototype_entity).unwrap();
-
-            if *clear {
-                flags.remove(changed_flags);
-            } else {
-                flags.insert(changed_flags);
-            }
-
-            updates.persist(persist::prototype::Flags::new(*id, flags.get_flags()));
-            updates.reload(*id);
-
-            if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated prototype {} flags.", id));
             }
         }
     }
