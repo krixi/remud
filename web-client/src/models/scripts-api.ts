@@ -10,6 +10,7 @@ export enum Trigger {
   Move = "Move",
   Say = "Say",
   Send = "Send",
+  Timer = "Timer",
 }
 
 export interface Script {

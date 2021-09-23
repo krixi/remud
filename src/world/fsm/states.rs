@@ -44,7 +44,12 @@ fn build_tx_map(txs: rhai::Array) -> HashMap<Transition, StateId> {
             if let (Some(when), Some(then)) = (when, then) {
                 result.insert(*when, *then);
             } else {
-                tracing::warn!("unable to convert when and then to valid transition -> stateId pair. Got {:?} -> {:?}", when, then);
+                tracing::warn!(
+                    "unable to convert when and then to valid transition -> stateId pair. Got \
+                     {:?} -> {:?}",
+                    when,
+                    then
+                );
             }
         }
     }

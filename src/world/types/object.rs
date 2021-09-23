@@ -7,10 +7,7 @@ use thiserror::Error;
 
 use crate::{
     text::word_list,
-    world::{
-        scripting::ScriptHooks,
-        types::{Description, Id, Named},
-    },
+    world::types::{Description, Id, Named},
 };
 
 #[derive(Debug, Bundle)]
@@ -20,7 +17,6 @@ pub struct PrototypeBundle {
     pub description: Description,
     pub flags: ObjectFlags,
     pub keywords: Keywords,
-    pub hooks: ScriptHooks,
 }
 
 #[derive(Debug, Bundle)]
@@ -31,7 +27,6 @@ pub struct ObjectBundle {
     pub description: Description,
     pub flags: ObjectFlags,
     pub keywords: Keywords,
-    pub hooks: ScriptHooks,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

@@ -70,7 +70,6 @@ pub async fn load_player(
                 contents: Contents::default(),
                 health: Health::new(&attributes),
                 attributes,
-                hooks: ScriptHooks::default(),
             })
             .id();
 
@@ -170,11 +169,11 @@ async fn load_player_inventory(
                     .send(ScriptInit::new(object, hook.script.clone()));
             }
 
-            world
-                .get_mut::<ScriptHooks>(object)
-                .unwrap()
-                .list
-                .push(hook);
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
+                hooks.insert(hook)
+            } else {
+                world.entity_mut(object).insert(ScriptHooks::new(hook));
+            }
         }
     }
 
@@ -199,11 +198,9 @@ async fn load_player_scripts(
         let hook = ScriptHook::try_from(hook_row)?;
 
         if let Some(mut hooks) = world.get_mut::<ScriptHooks>(player) {
-            hooks.list.push(hook)
+            hooks.insert(hook)
         } else {
-            world
-                .entity_mut(player)
-                .insert(ScriptHooks { list: vec![hook] });
+            world.entity_mut(player).insert(ScriptHooks::new(hook));
         }
     }
 

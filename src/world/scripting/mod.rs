@@ -1,7 +1,8 @@
 pub mod actions;
 pub mod execution;
 mod modules;
-pub mod timed_actions;
+mod systems;
+pub mod time;
 
 use std::{
     collections::HashMap,
@@ -10,7 +11,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bevy_app::{EventReader, EventWriter, Events};
+use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -22,12 +23,19 @@ use crate::world::{
     action::Action,
     fsm::{StateId, StateMachineBuilder, Transition},
     scripting::{
-        execution::{run_init_script, run_post_event_script, run_pre_event_script},
+        execution::{
+            run_init_script, run_post_event_script, run_pre_event_script, run_timed_script,
+        },
         modules::{
             event_api, rand_api, self_api, states_api, time_api, transitions_api, world_api,
         },
+        systems::{
+            init_script_system, post_action_script_system, queued_action_script_system,
+            script_compiler_system, timer_script_system,
+        },
+        time::{timed_actions_system, timer_system, TimedActions},
     },
-    types::{object::Container, room::Room, Contents, Location},
+    STAGE_FIRST, STAGE_UPDATE,
 };
 
 #[derive(Bundle)]
@@ -44,19 +52,41 @@ pub struct FailedScript {
 
 #[derive(Debug, Clone)]
 pub struct Script {
-    pub name: ScriptName,
-    pub trigger: TriggerEvent,
-    pub code: String,
+    name: ScriptName,
+    trigger: TriggerEvent,
+    code: String,
+}
+
+impl Script {
+    pub fn new(name: ScriptName, trigger: TriggerEvent, code: String) -> Self {
+        Script {
+            name,
+            trigger,
+            code,
+        }
+    }
+
+    pub fn name(&self) -> &ScriptName {
+        &self.name
+    }
+
+    pub fn trigger(&self) -> TriggerEvent {
+        self.trigger
+    }
+
+    pub fn into_parts(self) -> (ScriptName, TriggerEvent, String) {
+        (self.name, self.trigger, self.code)
+    }
 }
 
 #[derive(Clone)]
 pub struct ScriptAst {
-    pub ast: AST,
+    ast: AST,
 }
 
 #[derive(Debug)]
 pub struct CompilationError {
-    pub error: ParseError,
+    error: ParseError,
 }
 
 pub struct ScriptEngine {
@@ -103,6 +133,12 @@ impl Default for ScriptEngine {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScriptName(String);
 
+impl ScriptName {
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
 impl TryFrom<String> for ScriptName {
     type Error = ScriptNameParseError;
 
@@ -146,8 +182,15 @@ impl Scripts {
 
 #[derive(Default, Debug)]
 pub struct ScriptRuns {
-    pub runs: Vec<(Action, Vec<ScriptRun>)>,
-    pub init_runs: Vec<ScriptRun>,
+    init_runs: Vec<ScriptRun>,
+    runs: Vec<(Action, Vec<ScriptRun>)>,
+    timed_runs: Vec<ScriptRun>,
+}
+
+impl ScriptRuns {
+    pub fn queue_init(&mut self, run: ScriptRun) {
+        self.init_runs.push(run);
+    }
 }
 
 #[derive(Debug)]
@@ -156,22 +199,47 @@ pub struct ScriptRun {
     pub script: ScriptName,
 }
 
+impl ScriptRun {
+    pub fn new(entity: Entity, script: ScriptName) -> Self {
+        ScriptRun { entity, script }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ScriptHooks {
-    pub list: Vec<ScriptHook>,
+    list: Vec<ScriptHook>,
 }
 
 impl ScriptHooks {
-    pub fn remove(&mut self, hook: &ScriptHook) -> bool {
-        if let Some(pos) = self.list.iter().position(|h| hook == h) {
-            self.list.remove(pos);
-            true
+    pub fn new(hook: ScriptHook) -> Self {
+        ScriptHooks { list: vec![hook] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    pub fn hooks(&self) -> &[ScriptHook] {
+        self.list.as_slice()
+    }
+
+    pub fn contains(&self, hook: &ScriptHook) -> bool {
+        self.list.contains(hook)
+    }
+
+    pub fn insert(&mut self, hook: ScriptHook) {
+        self.list.push(hook)
+    }
+
+    pub fn remove(&mut self, script: &ScriptName) -> Option<ScriptHook> {
+        if let Some(pos) = self.list.iter().position(|h| &h.script == script) {
+            Some(self.list.remove(pos))
         } else {
-            false
+            None
         }
     }
 
-    fn by_trigger(&self, trigger: ScriptTrigger) -> Vec<ScriptName> {
+    pub fn by_trigger(&self, trigger: ScriptTrigger) -> Vec<ScriptName> {
         self.list
             .iter()
             .filter(|hook| hook.trigger == trigger)
@@ -186,27 +254,65 @@ pub struct ScriptHook {
     pub script: ScriptName,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone)]
+pub struct ScriptData {
+    map: HashMap<ImmutableString, Dynamic>,
+}
+
+impl ScriptData {
+    pub fn new_with_entry(key: ImmutableString, value: Dynamic) -> Self {
+        let mut map = HashMap::new();
+        map.insert(key, value);
+        ScriptData { map }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub fn get(&self, key: ImmutableString) -> Dynamic {
+        self.map.get(&key).cloned().unwrap_or(Dynamic::UNIT)
+    }
+
+    pub fn map(&self) -> &HashMap<ImmutableString, Dynamic> {
+        &self.map
+    }
+
+    pub fn insert(&mut self, key: ImmutableString, value: Dynamic) {
+        self.map.insert(key, value);
+    }
+
+    pub fn remove(&mut self, key: ImmutableString) -> Dynamic {
+        self.map.remove(&key).unwrap_or(Dynamic::UNIT)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptTrigger {
-    PreEvent(TriggerEvent),
-    PostEvent(TriggerEvent),
     Init,
+    PostEvent(TriggerEvent),
+    PreEvent(TriggerEvent),
+    Timer(String),
 }
 
 impl ScriptTrigger {
     pub fn kind(&self) -> TriggerKind {
         match self {
-            ScriptTrigger::PreEvent(_) => TriggerKind::PreEvent,
-            ScriptTrigger::PostEvent(_) => TriggerKind::PostEvent,
             ScriptTrigger::Init => TriggerKind::Init,
+            ScriptTrigger::PostEvent(_) => TriggerKind::PostEvent,
+            ScriptTrigger::PreEvent(_) => TriggerKind::PreEvent,
+            ScriptTrigger::Timer(_) => TriggerKind::Timer,
         }
     }
+}
 
-    pub fn trigger(&self) -> Option<TriggerEvent> {
+impl ToString for ScriptTrigger {
+    fn to_string(&self) -> String {
         match self {
-            ScriptTrigger::PreEvent(trigger) => Some(*trigger),
-            ScriptTrigger::PostEvent(trigger) => Some(*trigger),
-            ScriptTrigger::Init => None,
+            ScriptTrigger::Init => String::new(),
+            ScriptTrigger::PostEvent(event) => event.to_string(),
+            ScriptTrigger::PreEvent(event) => event.to_string(),
+            ScriptTrigger::Timer(name) => name.clone(),
         }
     }
 }
@@ -216,24 +322,16 @@ pub enum TriggerKind {
     PreEvent,
     PostEvent,
     Init,
-}
-
-impl TriggerKind {
-    pub fn with_trigger(self, event: TriggerEvent) -> ScriptTrigger {
-        match self {
-            TriggerKind::PreEvent => ScriptTrigger::PreEvent(event),
-            TriggerKind::PostEvent => ScriptTrigger::PostEvent(event),
-            TriggerKind::Init => ScriptTrigger::Init,
-        }
-    }
+    Timer,
 }
 
 impl fmt::Display for TriggerKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TriggerKind::PreEvent => write!(f, "PreEvent"),
-            TriggerKind::PostEvent => write!(f, "PostEvent"),
             TriggerKind::Init => write!(f, "Init"),
+            TriggerKind::PostEvent => write!(f, "PostEvent"),
+            TriggerKind::PreEvent => write!(f, "PreEvent"),
+            TriggerKind::Timer => write!(f, "Timer"),
         }
     }
 }
@@ -251,6 +349,7 @@ pub enum TriggerEvent {
     Move,
     Say,
     Send,
+    Timer,
 }
 
 impl TriggerEvent {
@@ -260,6 +359,7 @@ impl TriggerEvent {
             Action::Emote(_) => Some(TriggerEvent::Emote),
             Action::Exits(_) => Some(TriggerEvent::Exits),
             Action::Get(_) => Some(TriggerEvent::Get),
+            Action::Initialize(_) => None,
             Action::Inventory(_) => Some(TriggerEvent::Inventory),
             Action::Login(_) => None,
             Action::Look(_) => Some(TriggerEvent::Look),
@@ -311,6 +411,7 @@ impl fmt::Display for TriggerEvent {
             TriggerEvent::Move => write!(f, "Move"),
             TriggerEvent::Say => write!(f, "Say"),
             TriggerEvent::Send => write!(f, "Send"),
+            TriggerEvent::Timer => write!(f, "Timer"),
         }
     }
 }
@@ -336,122 +437,32 @@ impl ScriptInit {
     }
 }
 
-pub fn script_compiler_system(
-    mut commands: Commands,
-    engine: Res<ScriptEngine>,
-    uncompiled_scripts: Query<(Entity, &Script), (Without<ScriptAst>, Without<CompilationError>)>,
+pub fn register_scripting(
+    world: &mut World,
+    pre_event_schedule: &mut Schedule,
+    post_event_schedule: &mut Schedule,
 ) {
-    for (entity, script) in uncompiled_scripts.iter() {
-        match engine.compile(script.code.as_str()) {
-            Ok(ast) => {
-                commands.entity(entity).insert(ScriptAst { ast });
-            }
-            Err(error) => {
-                commands.entity(entity).insert(CompilationError { error });
-            }
-        }
-    }
-}
+    // The ScriptInit resource is added by the DB.
+    pre_event_schedule
+        .add_system_to_stage(STAGE_FIRST, Events::<ScriptInit>::update_system.system());
 
-pub fn init_script_system(
-    mut init_reader: EventReader<ScriptInit>,
-    mut script_runs: ResMut<ScriptRuns>,
-) {
-    for ScriptInit { entity, script } in init_reader.iter() {
-        script_runs.init_runs.push(ScriptRun {
-            entity: *entity,
-            script: script.clone(),
-        })
-    }
-}
+    world.insert_resource(ScriptRuns::default());
+    world.insert_resource(TimedActions::default());
+    world.insert_resource(ScriptEngine::default());
 
-pub fn queued_action_script_system(
-    mut queued_action_reader: EventReader<QueuedAction>,
-    mut action_writer: EventWriter<Action>,
-    mut script_runs: ResMut<ScriptRuns>,
-    room_query: Query<&Room>,
-    location_query: Query<&Location>,
-    container_query: Query<&Container>,
-    contents_query: Query<&Contents>,
-    hooks_query: Query<&ScriptHooks>,
-) {
-    for QueuedAction { action } in queued_action_reader.iter() {
-        let trigger_event = match TriggerEvent::from_action(action) {
-            Some(trigger) => trigger,
-            None => {
-                action_writer.send(action.clone());
-                continue;
-            }
-        };
+    pre_event_schedule.add_system_to_stage(STAGE_FIRST, timer_system.system());
+    pre_event_schedule
+        .add_system_to_stage(STAGE_UPDATE, timed_actions_system.system().before("queued"));
+    pre_event_schedule
+        .add_system_to_stage(STAGE_UPDATE, timer_script_system.system().before("queued"));
+    pre_event_schedule.add_system_to_stage(STAGE_UPDATE, init_script_system.system());
+    pre_event_schedule.add_system_to_stage(
+        STAGE_UPDATE,
+        queued_action_script_system.system().label("queued"),
+    );
+    pre_event_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
 
-        let enactor = action.actor();
-
-        // Determine the location the action took place. If we can't, we give the action a pass.
-        let room = if let Some(room) =
-            action_room(enactor, &room_query, &location_query, &container_query)
-        {
-            room
-        } else {
-            tracing::warn!("Unable to determine location of action {:?}", action);
-            action_writer.send(action.clone());
-            continue;
-        };
-
-        // Check if any scripts need to run for this action
-        let runs = get_script_runs(
-            ScriptTrigger::PreEvent(trigger_event),
-            room,
-            &hooks_query,
-            &contents_query,
-            &room_query,
-        );
-
-        if runs.is_empty() {
-            action_writer.send(action.clone());
-        } else {
-            script_runs.runs.push((action.clone(), runs));
-        }
-    }
-}
-
-pub fn post_action_script_system(
-    mut queued_action_reader: EventReader<QueuedAction>,
-    mut script_runs: ResMut<ScriptRuns>,
-    room_query: Query<&Room>,
-    location_query: Query<&Location>,
-    container_query: Query<&Container>,
-    contents_query: Query<&Contents>,
-    hooks_query: Query<&ScriptHooks>,
-) {
-    for QueuedAction { action } in queued_action_reader.iter() {
-        let trigger_event = match TriggerEvent::from_action(action) {
-            Some(trigger) => trigger,
-            None => continue,
-        };
-
-        let enactor = action.actor();
-
-        let room = if let Some(room) =
-            action_room(enactor, &room_query, &location_query, &container_query)
-        {
-            room
-        } else {
-            tracing::warn!("Unable to determine location of action {:?}", action);
-            continue;
-        };
-
-        let runs = get_script_runs(
-            ScriptTrigger::PostEvent(trigger_event),
-            room,
-            &hooks_query,
-            &contents_query,
-            &room_query,
-        );
-
-        if !runs.is_empty() {
-            script_runs.runs.push((action.clone(), runs));
-        }
-    }
+    post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
 }
 
 pub fn run_init_scripts(world: Arc<RwLock<World>>) {
@@ -521,83 +532,18 @@ pub fn run_post_action_scripts(world: Arc<RwLock<World>>) {
     });
 }
 
-fn action_room(
-    enactor: Entity,
-    room_query: &Query<&Room>,
-    location_query: &Query<&Location>,
-    container_query: &Query<&Container>,
-) -> Option<Entity> {
-    if let Ok(location) = location_query.get(enactor) {
-        Some(location.room())
-    } else if room_query.get(enactor).is_ok() {
-        Some(enactor)
-    } else {
-        let mut containing_entity = enactor;
-
-        while let Ok(container) = container_query.get(containing_entity) {
-            containing_entity = container.entity();
-        }
-
-        location_query
-            .get(containing_entity)
-            .map(|location| location.room())
-            .ok()
-    }
-}
-
-fn get_script_runs(
-    trigger: ScriptTrigger,
-    room: Entity,
-    hooks_query: &Query<&ScriptHooks>,
-    contents_query: &Query<&Contents>,
-    room_query: &Query<&Room>,
-) -> Vec<ScriptRun> {
+pub fn run_timed_scripts(world: Arc<RwLock<World>>) {
     let mut runs = Vec::new();
+    std::mem::swap(
+        &mut runs,
+        &mut world
+            .write()
+            .unwrap()
+            .get_resource_mut::<ScriptRuns>()
+            .unwrap()
+            .timed_runs,
+    );
 
-    if let Ok(hooks) = hooks_query.get(room) {
-        for script in hooks.by_trigger(trigger) {
-            runs.push(ScriptRun {
-                entity: room,
-                script,
-            });
-        }
-    }
-
-    let contents = contents_query.get(room).unwrap();
-    for object in contents.objects() {
-        if let Ok(hooks) = hooks_query.get(*object) {
-            for script in hooks.by_trigger(trigger) {
-                runs.push(ScriptRun {
-                    entity: *object,
-                    script,
-                });
-            }
-        }
-    }
-
-    let room = room_query.get(room).unwrap();
-    for player in room.players() {
-        if let Ok(hooks) = hooks_query.get(*player) {
-            for script in hooks.by_trigger(trigger) {
-                runs.push(ScriptRun {
-                    entity: *player,
-                    script,
-                });
-            }
-        }
-
-        let contents = contents_query.get(*player).unwrap();
-        for object in contents.objects() {
-            if let Ok(hooks) = hooks_query.get(*object) {
-                for script in hooks.by_trigger(trigger) {
-                    runs.push(ScriptRun {
-                        entity: *object,
-                        script,
-                    })
-                }
-            }
-        }
-    }
-
-    runs
+    runs.into_par_iter()
+        .for_each(|ScriptRun { entity, script }| run_timed_script(world.clone(), entity, script));
 }

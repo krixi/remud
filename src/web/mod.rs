@@ -91,14 +91,10 @@ pub struct JsonScriptResponse {
 
 impl JsonScriptResponse {
     pub fn new(script: scripting::Script, error: Option<rhai::ParseError>) -> Self {
-        let scripting::Script {
-            name,
-            trigger,
-            code,
-        } = script;
+        let (name, trigger, code) = script.into_parts();
 
         JsonScriptResponse {
-            name: name.to_string(),
+            name: name.into_string(),
             trigger: trigger.to_string(),
             code,
             error: error.map(|e| e.into()),
@@ -117,14 +113,10 @@ pub struct JsonScriptInfo {
 
 impl JsonScriptInfo {
     pub fn new(script: scripting::Script, error: Option<rhai::ParseError>) -> Self {
-        let scripting::Script {
-            name,
-            trigger,
-            code,
-        } = script;
+        let (name, trigger, code) = script.into_parts();
 
         JsonScriptInfo {
-            name: name.to_string(),
+            name: name.into_string(),
             trigger: trigger.to_string(),
             lines: code.lines().count(),
             error: error.map(|e| e.into()),

@@ -27,12 +27,8 @@ use crate::{
         action::{register_action_systems, Action},
         fsm::system::state_machine_system,
         scripting::{
-            init_script_system, post_action_script_system, queued_action_script_system,
-            run_init_scripts, run_post_action_scripts, run_pre_action_scripts,
-            script_compiler_system,
-            timed_actions::{timed_actions_system, TimedActions},
-            QueuedAction, Script, ScriptEngine, ScriptHooks, ScriptInit, ScriptName, ScriptRuns,
-            TriggerEvent,
+            register_scripting, run_init_scripts, run_post_action_scripts, run_pre_action_scripts,
+            run_timed_scripts, QueuedAction, Script, ScriptName, TriggerEvent,
         },
         types::{
             object::PrototypeId,
@@ -66,14 +62,8 @@ impl GameWorld {
         world.insert_resource(Time::default());
         world.insert_resource(Updates::default());
         world.insert_resource(Players::default());
-        world.insert_resource(ScriptRuns::default());
-        world.insert_resource(TimedActions::default());
-        world.insert_resource(ScriptEngine::default());
 
         // Add events
-        // The ScriptInit resource is added by the DB.
-        pre_event_schedule
-            .add_system_to_stage(STAGE_FIRST, Events::<ScriptInit>::update_system.system());
         add_event::<QueuedAction>(&mut world, &mut pre_event_schedule);
         add_event::<Action>(&mut world, &mut pre_event_schedule);
 
@@ -86,20 +76,17 @@ impl GameWorld {
             .unwrap();
         register_action_systems(update);
 
-        pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
-        pre_event_schedule
-            .add_system_to_stage(STAGE_UPDATE, timed_actions_system.system().before("queued"));
-        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, init_script_system.system());
-        pre_event_schedule.add_system_to_stage(
-            STAGE_UPDATE,
-            queued_action_script_system.system().label("queued"),
+        register_scripting(
+            &mut world,
+            &mut pre_event_schedule,
+            &mut post_event_schedule,
         );
-        pre_event_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
+
+        pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
         update_schedule.add_system_to_stage(
             STAGE_UPDATE,
             state_machine_system.exclusive_system().at_end(),
         );
-        post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
 
         let world = Arc::new(RwLock::new(world));
 
@@ -126,6 +113,8 @@ impl GameWorld {
 
         self.post_event_schedule
             .run(world.write().unwrap().deref_mut());
+
+        run_timed_scripts(world.clone());
 
         run_post_action_scripts(world);
     }
@@ -274,11 +263,7 @@ impl GameWorld {
         let trigger =
             TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
 
-        let script = Script {
-            name,
-            trigger,
-            code,
-        };
+        let script = Script::new(name, trigger, code);
 
         scripting::actions::create_script(self.world.write().unwrap().deref_mut(), script)
     }
@@ -306,11 +291,7 @@ impl GameWorld {
         let trigger =
             TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
 
-        let script = Script {
-            name,
-            trigger,
-            code,
-        };
+        let script = Script::new(name, trigger, code);
 
         scripting::actions::update_script(self.world.write().unwrap().deref_mut(), script)
     }
@@ -342,7 +323,6 @@ fn add_void_room(world: &mut World) {
             description: Description::from(description.clone()),
             regions: Regions::default(),
             contents: Contents::default(),
-            hooks: ScriptHooks::default(),
         };
         let void_room = world.spawn().insert_bundle(bundle).id();
         world

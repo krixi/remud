@@ -10,11 +10,11 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{
-            immortal::{UpdateDescription, UpdateName},
+            immortal::{Initialize, UpdateDescription, UpdateName},
             observe::Look,
             Action,
         },
-        scripting::{QueuedAction, ScriptHook, ScriptHooks},
+        scripting::{time::Timers, QueuedAction, ScriptData, ScriptHook, ScriptHooks},
         types::{
             object::{Container, Object},
             player::{Messages, Player},
@@ -40,38 +40,6 @@ pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
-            "info" => Ok(Action::from(RoomInfo { actor: player })),
-            "name" => {
-                if tokenizer.rest().is_empty() {
-                    Err("Enter a name.".to_string())
-                } else {
-                    Ok(Action::from(UpdateName {
-                        actor: player,
-                        target: ActionTarget::CurrentRoom,
-                        name: tokenizer.rest().to_string(),
-                    }))
-                }
-            }
-            "new" => {
-                let direction = if let Some(direction) = tokenizer.next() {
-                    match Direction::from_str(direction) {
-                        Ok(direction) => Some(direction),
-                        Err(_) => {
-                            return Err(
-                                "Enter a valid direction: up, down, north, east, south, west."
-                                    .to_string(),
-                            )
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                Ok(Action::from(RoomCreate {
-                    actor: player,
-                    direction,
-                }))
-            }
             "desc" => {
                 if tokenizer.rest().is_empty() {
                     Err("Enter a description.".to_string())
@@ -83,15 +51,19 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                     }))
                 }
             }
+            "info" => Ok(Action::from(RoomInfo { actor: player })),
+            "init" => Ok(Action::from(Initialize {
+                actor: player,
+                target: ActionTarget::CurrentRoom,
+            })),
             "link" => {
                 if let Some(direction) = tokenizer.next() {
                     let direction = match Direction::from_str(direction) {
                         Ok(direction) => direction,
                         Err(_) => {
-                            return Err(
-                                "Enter a valid direction: up, down, north, east, south, west."
-                                    .to_string(),
-                            )
+                            return Err("Enter a valid direction: up, down, north, east, south, \
+                                        west."
+                                .to_string())
                         }
                     };
 
@@ -112,6 +84,36 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                 } else {
                     Err("Enter a direction.".to_string())
                 }
+            }
+            "name" => {
+                if tokenizer.rest().is_empty() {
+                    Err("Enter a name.".to_string())
+                } else {
+                    Ok(Action::from(UpdateName {
+                        actor: player,
+                        target: ActionTarget::CurrentRoom,
+                        name: tokenizer.rest().to_string(),
+                    }))
+                }
+            }
+            "new" => {
+                let direction = if let Some(direction) = tokenizer.next() {
+                    match Direction::from_str(direction) {
+                        Ok(direction) => Some(direction),
+                        Err(_) => {
+                            return Err("Enter a valid direction: up, down, north, east, south, \
+                                        west."
+                                .to_string())
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                Ok(Action::from(RoomCreate {
+                    actor: player,
+                    direction,
+                }))
             }
             "regions" => {
                 if let Some(operation) = tokenizer.next() {
@@ -148,10 +150,9 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                     let direction = match Direction::from_str(direction) {
                         Ok(direction) => direction,
                         Err(_) => {
-                            return Err(
-                                "Enter a valid direction: up, down, north, east, south, west."
-                                    .to_string(),
-                            )
+                            return Err("Enter a valid direction: up, down, north, east, south, \
+                                        west."
+                                .to_string())
                         }
                     };
 
@@ -191,7 +192,7 @@ pub fn room_create_system(
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomCreate(RoomCreate { actor, direction }) = action {
@@ -209,7 +210,7 @@ pub fn room_create_system(
                     .exit(direction)
                     .is_some()
                 {
-                    if let Ok(mut messages) = message_query.get_mut(*actor) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(format!("A room already exists {}.", direction.as_to_str()));
                     }
                     continue;
@@ -230,7 +231,6 @@ pub fn room_create_system(
                     name: Named::from(DEFAULT_ROOM_NAME.to_string()),
                     description: Description::from(DEFAULT_ROOM_DESCRIPTION.to_string()),
                     contents: Contents::default(),
-                    hooks: ScriptHooks::default(),
                 })
                 .id();
 
@@ -269,7 +269,7 @@ pub fn room_create_system(
                 message.push_str(direction.as_to_str());
             }
             message.push('.');
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -293,10 +293,12 @@ pub fn room_info_system(
         &Regions,
         &Contents,
         Option<&ScriptHooks>,
+        Option<&Timers>,
+        Option<&ScriptData>,
     )>,
     named_query: Query<&Named>,
     object_query: Query<(&Object, &Named)>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomInfo(RoomInfo { actor }) = action {
@@ -307,7 +309,7 @@ pub fn room_info_system(
                 continue;
             };
 
-            let (room, named, description, regions, contents, hooks) =
+            let (room, named, description, regions, contents, hooks, timers, data) =
                 room_query.get(room_entity).unwrap();
 
             let mut message = format!("|white|Room {}|-|", room.id());
@@ -324,7 +326,9 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, named, _, _, _, _)| (direction, named.as_str(), room.id()))
+                        .map(|(room, named, _, _, _, _, _, _)| {
+                            (direction, named.as_str(), room.id())
+                        })
                         .ok()
                 })
                 .for_each(|(direction, name, room_id)| {
@@ -363,19 +367,53 @@ pub fn room_info_system(
                         .as_str(),
                     )
                 });
+
             message.push_str("\r\n  |white|script hooks|-|:");
-            if let Some(ScriptHooks { list }) = hooks {
-                if list.is_empty() {
+            if let Some(hooks) = hooks {
+                if hooks.is_empty() {
                     message.push_str(" none");
                 }
-                for ScriptHook { trigger, script } in list.iter() {
+                for ScriptHook { trigger, script } in hooks.hooks().iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
             } else {
                 message.push_str(" none");
             }
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            message.push_str("\r\n  |white|script data|-|:");
+            if let Some(data) = data {
+                if data.is_empty() {
+                    message.push_str(" none");
+                } else {
+                    for (k, v) in data.map() {
+                        message.push_str(format!("\r\n    {} -> {:?}", k, v).as_str());
+                    }
+                }
+            } else {
+                message.push_str(" none");
+            }
+
+            message.push_str("\r\n  |white|timers|-|:");
+            if let Some(timers) = timers {
+                if timers.timers().is_empty() {
+                    message.push_str(" none");
+                }
+                for (name, timer) in timers.timers().iter() {
+                    message.push_str(
+                        format!(
+                            "\r\n    {}: {}/{}ms",
+                            name,
+                            timer.elapsed().as_millis(),
+                            timer.duration().as_millis()
+                        )
+                        .as_str(),
+                    )
+                }
+            } else {
+                message.push_str(" none");
+            }
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -397,7 +435,7 @@ pub fn room_link_system(
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomLink(RoomLink {
@@ -409,7 +447,7 @@ pub fn room_link_system(
             let to_room_entity = if let Some(room) = rooms.by_id(*destination) {
                 room
             } else {
-                if let Ok(mut messages) = message_query.get_mut(*actor) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Room {} does not exist.", destination));
                 }
                 continue;
@@ -432,7 +470,7 @@ pub fn room_link_system(
                 *direction,
             ));
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!(
                     "Linked {} exit to room {}.",
                     direction, destination
@@ -458,7 +496,7 @@ pub fn room_remove_system(
     mut player_query: Query<(&Player, &mut Location)>,
     mut room_query: Query<(&mut Room, &mut Contents)>,
     mut object_query: Query<(&Object, &mut Container)>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomRemove(RoomRemove { actor }) = action {
@@ -471,7 +509,7 @@ pub fn room_remove_system(
             let (room, contents) = room_query.get_mut(room_entity).unwrap();
 
             if room.id() == *VOID_ROOM_ID {
-                if let Ok(mut messages) = message_query.get_mut(*actor) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue("You cannot remove the void room.".to_string())
                 }
                 continue;
@@ -494,7 +532,7 @@ pub fn room_remove_system(
             }
 
             for player in players.iter() {
-                if let Ok(mut messages) = message_query.get_mut(*player) {
+                if let Ok(mut messages) = messages_query.get_mut(*player) {
                     messages.queue("The world begins to disintigrate around you.".to_string());
                 }
 
@@ -570,7 +608,7 @@ pub fn room_remove_system(
                 updates.persist(persist::room::AddObject::new(*VOID_ROOM_ID, id));
             }
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Room {} removed.", room_id));
             }
         }
@@ -590,7 +628,7 @@ pub fn room_unlink_system(
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<&mut Room>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomUnlink(RoomUnlink { actor, direction }) = action {
@@ -611,7 +649,7 @@ pub fn room_unlink_system(
                 format!("There is no exit {}.", direction.as_to_str())
             };
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -632,7 +670,7 @@ pub fn room_update_regions_system(
     mut updates: ResMut<Updates>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Regions)>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomUpdateRegions(RoomUpdateRegions {
@@ -667,7 +705,7 @@ pub fn room_update_regions_system(
                 ));
             }
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated room {} regions.", room.id()));
             }
         }

@@ -12,14 +12,97 @@ use crate::{
     into_action,
     world::{
         action::Action,
+        scripting::{ScriptHooks, ScriptRun, ScriptRuns, ScriptTrigger},
         types::{
             object::{Objects, Prototypes},
-            player::{Messages, Player},
+            player::{Messages, Player, Players},
             room::Room,
             ActionTarget, Description, Id, Location, Named,
         },
     },
 };
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Initialize {
+    pub actor: Entity,
+    pub target: ActionTarget,
+}
+
+into_action!(Initialize);
+
+pub fn initialize_system(
+    mut action_reader: EventReader<Action>,
+    objects: Res<Objects>,
+    players: Res<Players>,
+    mut runs: ResMut<ScriptRuns>,
+    hooks_query: Query<&ScriptHooks>,
+    location_query: Query<&Location>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::Initialize(Initialize { actor, target }) = action {
+            let entity = match target {
+                ActionTarget::PlayerSelf => *actor,
+                ActionTarget::Player(name) => {
+                    if let Some(entity) = players.by_name(name.as_str()) {
+                        entity
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Player {} not found", name));
+                        }
+                        continue;
+                    }
+                }
+                ActionTarget::Prototype(_) => {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                        messages
+                            .queue("Prototypes cannot have their init scripts run.".to_string());
+                    }
+                    continue;
+                }
+                ActionTarget::Object(id) => {
+                    if let Some(entity) = objects.by_id(*id) {
+                        entity
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Object {} not found.", id));
+                        }
+                        continue;
+                    }
+                }
+                ActionTarget::CurrentRoom => {
+                    if let Ok(location) = location_query.get(*actor) {
+                        location.room()
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue("Current room not found.".to_string());
+                        }
+                        continue;
+                    }
+                }
+            };
+
+            let mut queued = 0;
+            if let Ok(hooks) = hooks_query.get(entity) {
+                for script in hooks.by_trigger(ScriptTrigger::Init) {
+                    runs.queue_init(ScriptRun::new(entity, script));
+                    queued += 1;
+                }
+            }
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                if queued > 0 {
+                    messages.queue(format!(
+                        "Queued {} init scripts for execution on {:?}.",
+                        queued, target
+                    ));
+                } else {
+                    messages.queue(format!("Found no init scripts for {:?}.", target));
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UpdateDescription {
@@ -33,13 +116,14 @@ into_action!(UpdateDescription);
 pub fn update_description_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
+    players: Res<Players>,
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Player>,
     location_query: Query<&Location>,
     room_query: Query<&Room>,
     mut description_query: Query<&mut Description>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::UpdateDescription(UpdateDescription {
@@ -49,11 +133,16 @@ pub fn update_description_system(
         }) = action
         {
             let (id, entity) = match target {
+                ActionTarget::CurrentRoom => {
+                    let room = location_query.get(*actor).unwrap().room();
+                    let id = room_query.get(room).unwrap().id();
+                    (Id::Room(id), room)
+                }
                 ActionTarget::Object(id) => {
                     if let Some(entity) = objects.by_id(*id) {
                         (Id::Object(*id), entity)
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Object {} not found.", id));
                         }
                         continue;
@@ -63,7 +152,7 @@ pub fn update_description_system(
                     if let Some(entity) = prototypes.by_id(*id) {
                         (Id::Prototype(*id), entity)
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Prototype {} not found.", id));
                         }
                         continue;
@@ -73,10 +162,16 @@ pub fn update_description_system(
                     let id = player_query.get(*actor).unwrap().id();
                     (Id::Player(id), *actor)
                 }
-                ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room();
-                    let id = room_query.get(room).unwrap().id();
-                    (Id::Room(id), room)
+                ActionTarget::Player(name) => {
+                    if let Some(entity) = players.by_name(name.as_str()) {
+                        let id = player_query.get(*actor).unwrap().id();
+                        (Id::Player(id), entity)
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Player {} not found", name));
+                        }
+                        continue;
+                    }
                 }
             };
 
@@ -104,7 +199,7 @@ pub fn update_description_system(
                 }
             }
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated description for {:?}.", target));
             }
         }
@@ -128,7 +223,7 @@ pub fn update_name_system(
     location_query: Query<&Location>,
     room_query: Query<&Room>,
     mut name_query: Query<&mut Named>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::UpdateName(UpdateName {
@@ -138,31 +233,32 @@ pub fn update_name_system(
         }) = action
         {
             let (id, entity) = match target {
-                ActionTarget::PlayerSelf => todo!(),
-                ActionTarget::Prototype(id) => {
-                    if let Some(entity) = prototypes.by_id(*id) {
-                        (Id::Prototype(*id), entity)
-                    } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
-                            messages.queue(format!("Prototype {} not found.", id));
-                        }
-                        continue;
-                    }
+                ActionTarget::CurrentRoom => {
+                    let room = location_query.get(*actor).unwrap().room();
+                    let id = room_query.get(room).unwrap().id();
+                    (Id::Room(id), room)
                 }
                 ActionTarget::Object(id) => {
                     if let Some(entity) = objects.by_id(*id) {
                         (Id::Object(*id), entity)
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Object {} not found.", id));
                         }
                         continue;
                     }
                 }
-                ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room();
-                    let id = room_query.get(room).unwrap().id();
-                    (Id::Room(id), room)
+                ActionTarget::PlayerSelf => todo!(),
+                ActionTarget::Player(_) => todo!(),
+                ActionTarget::Prototype(id) => {
+                    if let Some(entity) = prototypes.by_id(*id) {
+                        (Id::Prototype(*id), entity)
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Prototype {} not found.", id));
+                        }
+                        continue;
+                    }
                 }
             };
 
@@ -182,7 +278,7 @@ pub fn update_name_system(
                 }
             }
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated {:?} name.", target));
             }
         }

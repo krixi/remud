@@ -181,7 +181,8 @@ impl Engine {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);
 
                 let message = String::from(
-                    "\r\n|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
+                    "\r\n|SteelBlue3|Connected to|-| \
+                     |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
                 );
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
@@ -283,7 +284,8 @@ impl Engine {
                                 tracing::error!("Player presence check error: {}", e);
                                 client
                                     .send(
-                                        "|Red1|Error retrieving user.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
+                                        "|Red1|Error retrieving \
+                                         user.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
                                             .into(),
                                     )
                                     .await;
@@ -295,7 +297,8 @@ impl Engine {
                             if self.game_world.player_online(name) {
                                 client
                                     .send(
-                                        "|Red1|User currently online.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
+                                        "|Red1|User currently \
+                                         online.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
                                             .into(),
                                     )
                                     .await;
@@ -312,7 +315,8 @@ impl Engine {
                         } else {
                             client
                                 .send(
-                                    "|SteelBlue3|New user detected.|-|\r\n|SteelBlue3|Password?\r\n|-|>"
+                                    "|SteelBlue3|New user \
+                                     detected.|-|\r\n|SteelBlue3|Password?\r\n|-|>"
                                         .into(),
                                 )
                                 .await;
@@ -335,7 +339,8 @@ impl Engine {
                     if input.len() < 5 {
                         client
                             .send(
-                                "|Red1|Weak password detected.|-|\r\n|SteelBlue3|Password?\r\n|-||white|> "
+                                "|Red1|Weak password \
+                                 detected.|-|\r\n|SteelBlue3|Password?\r\n|-||white|> "
                                     .into(),
                             )
                             .await;

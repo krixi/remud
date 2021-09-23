@@ -151,6 +151,7 @@ pub mod self_api {
     use std::time::Duration;
 
     use bevy_app::Events;
+    use rhai::ImmutableString;
 
     use crate::world::{
         action::{
@@ -158,7 +159,11 @@ pub mod self_api {
             Action,
         },
         fsm::{StateMachineBuilder, StateMachines},
-        scripting::{modules::Me, timed_actions::TimedActions, QueuedAction},
+        scripting::{
+            modules::Me,
+            time::{TimedActions, Timers},
+            QueuedAction, ScriptData,
+        },
     };
 
     #[rhai_fn(pure, get = "entity")]
@@ -199,31 +204,11 @@ pub mod self_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn pop_fsm(me: &mut Me) {
-        if let Some(mut fsms) = me
-            .world
-            .write()
-            .unwrap()
-            .get_mut::<StateMachines>(me.entity)
-        {
-            fsms.pop();
-        }
-    }
-
-    #[rhai_fn(pure)]
-    pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
-        let mut world = me.world.write().unwrap();
-        match builder.build() {
-            Ok(fsm) => {
-                if let Some(mut fsms) = world.get_mut::<StateMachines>(me.entity) {
-                    fsms.push(fsm);
-                } else {
-                    world.entity_mut(me.entity).insert(StateMachines::new(fsm));
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to build state machine: {}", e);
-            }
+    pub fn get(me: &mut Me, key: ImmutableString) -> Dynamic {
+        if let Some(data) = me.world.read().unwrap().get::<ScriptData>(me.entity) {
+            data.get(key)
+        } else {
+            Dynamic::UNIT
         }
     }
 
@@ -257,6 +242,45 @@ pub mod self_api {
                 }),
                 duration,
             );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn pop_fsm(me: &mut Me) {
+        if let Some(mut fsms) = me
+            .world
+            .write()
+            .unwrap()
+            .get_mut::<StateMachines>(me.entity)
+        {
+            fsms.pop();
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
+        let mut world = me.world.write().unwrap();
+        match builder.build() {
+            Ok(fsm) => {
+                if let Some(mut fsms) = world.get_mut::<StateMachines>(me.entity) {
+                    fsms.push(fsm);
+                } else {
+                    world.entity_mut(me.entity).insert(StateMachines::new(fsm));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to build state machine: {}", e);
+            }
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn remove(me: &mut Me, key: ImmutableString) -> Dynamic {
+        if let Some(mut data) = me.world.write().unwrap().get_mut::<ScriptData>(me.entity) {
+            data.remove(key)
+        } else {
+            tracing::info!("script data not found, returning unit");
+            Dynamic::UNIT
+        }
     }
 
     #[rhai_fn(pure)]
@@ -324,14 +348,58 @@ pub mod self_api {
                 duration,
             );
     }
+
+    #[rhai_fn(pure)]
+    pub fn set(me: &mut Me, key: ImmutableString, value: Dynamic) {
+        let mut world = me.world.write().unwrap();
+        if let Some(mut data) = world.get_mut::<ScriptData>(me.entity) {
+            data.insert(key, value)
+        } else {
+            world
+                .entity_mut(me.entity)
+                .insert(ScriptData::new_with_entry(key, value));
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn timer(me: &mut Me, name: ImmutableString, duration: Duration) {
+        let mut world = me.world.write().unwrap();
+        if let Some(mut timers) = world.get_mut::<Timers>(me.entity) {
+            timers.add(name.to_string(), duration);
+        } else {
+            let mut timers = Timers::default();
+            timers.add(name.to_string(), duration);
+            world.entity_mut(me.entity).insert(timers);
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn timer_repeating(me: &mut Me, name: ImmutableString, duration: Duration) {
+        let mut world = me.world.write().unwrap();
+        if let Some(mut timers) = world.get_mut::<Timers>(me.entity) {
+            timers.add_repeating(name.to_string(), duration);
+        } else {
+            let mut timers = Timers::default();
+            timers.add_repeating(name.to_string(), duration);
+            world.entity_mut(me.entity).insert(timers);
+        }
+    }
 }
 
 #[export_module]
 pub mod rand_api {
-    use rand::{thread_rng, Rng};
+    use rand::{prelude::SliceRandom, thread_rng, Rng};
 
     pub fn chance(probability: f64) -> bool {
         thread_rng().gen_bool(probability)
+    }
+
+    pub fn choose(choices: rhai::Array) -> Dynamic {
+        if let Some(choice) = choices.choose(&mut thread_rng()) {
+            choice.clone()
+        } else {
+            Dynamic::UNIT
+        }
     }
 
     pub fn range(start: i64, end: i64) -> i64 {

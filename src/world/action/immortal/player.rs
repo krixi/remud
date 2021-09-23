@@ -9,13 +9,13 @@ use crate::{
     into_action,
     text::Tokenizer,
     world::{
-        action::Action,
-        scripting::{ScriptHook, ScriptHooks},
+        action::{immortal::Initialize, Action},
+        scripting::{time::Timers, ScriptData, ScriptHook, ScriptHooks},
         types::{
             object::Object,
             player::{self, Messages, Player, PlayerFlags, Players},
             room::Room,
-            Contents, Description, Location, Named,
+            ActionTarget, Contents, Description, Location, Named,
         },
     },
 };
@@ -29,6 +29,10 @@ pub fn parse_player(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                 "info" => Ok(Action::from(PlayerInfo {
                     actor: player,
                     name: name.to_string(),
+                })),
+                "init" => Ok(Action::from(Initialize {
+                    actor: player,
+                    target: ActionTarget::Player(name.to_string()),
                 })),
                 "set" => {
                     if tokenizer.rest().is_empty() {
@@ -98,23 +102,25 @@ pub fn player_info_system(
         &Contents,
         &Location,
         Option<&ScriptHooks>,
+        Option<&Timers>,
+        Option<&ScriptData>,
     )>,
     room_query: Query<(&Room, &Named)>,
     object_query: Query<(&Object, &Named)>,
-    mut message_query: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::PlayerInfo(PlayerInfo { actor, name }) = action {
             let player = if let Some(entity) = players.by_name(name) {
                 entity
             } else {
-                if let Ok(mut messages) = message_query.get_mut(*actor) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Player '{}' not found.", name))
                 }
                 continue;
             };
 
-            let (player, flags, description, contents, location, hooks) =
+            let (player, flags, description, contents, location, hooks, timers, data) =
                 player_query.get(player).unwrap();
             let (room, room_name) = room_query.get(location.room()).unwrap();
 
@@ -147,18 +153,51 @@ pub fn player_info_system(
                 });
 
             message.push_str("\r\n  |white|script hooks|-|:");
-            if let Some(ScriptHooks { list }) = hooks {
-                if list.is_empty() {
+            if let Some(hooks) = hooks {
+                if hooks.is_empty() {
                     message.push_str(" none");
                 }
-                for ScriptHook { trigger, script } in list.iter() {
+                for ScriptHook { trigger, script } in hooks.hooks().iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
             } else {
                 message.push_str(" none");
             }
 
-            if let Ok(mut messages) = message_query.get_mut(*actor) {
+            message.push_str("\r\n  |white|script data|-|:");
+            if let Some(data) = data {
+                if data.is_empty() {
+                    message.push_str(" none");
+                } else {
+                    for (k, v) in data.map() {
+                        message.push_str(format!("\r\n    {} -> {:?}", k, v).as_str());
+                    }
+                }
+            } else {
+                message.push_str(" none");
+            }
+
+            message.push_str("\r\n  |white|timers|-|:");
+            if let Some(timers) = timers {
+                if timers.timers().is_empty() {
+                    message.push_str(" none");
+                }
+                for (name, timer) in timers.timers().iter() {
+                    message.push_str(
+                        format!(
+                            "\r\n    {}: {}/{}ms",
+                            name,
+                            timer.elapsed().as_millis(),
+                            timer.duration().as_millis()
+                        )
+                        .as_str(),
+                    )
+                }
+            } else {
+                message.push_str(" none");
+            }
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }
@@ -180,7 +219,7 @@ pub fn player_update_flags_system(
     players: Res<Players>,
     mut updates: ResMut<Updates>,
     mut player_query: Query<(&Player, &mut PlayerFlags)>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::PlayerUpdateFlags(PlayerUpdateFlags {
@@ -193,7 +232,7 @@ pub fn player_update_flags_system(
             let player_entity = if let Some(player) = players.by_name(name.as_str()) {
                 player
             } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Player {} not found.", name));
                 }
                 continue;
@@ -202,7 +241,7 @@ pub fn player_update_flags_system(
             let changed_flags = match player::Flags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*actor) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(e.to_string());
                     }
                     continue;
@@ -219,7 +258,7 @@ pub fn player_update_flags_system(
 
             updates.persist(persist::player::Flags::new(player.id(), flags.get_flags()));
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated player {} flags.", name));
             }
         }

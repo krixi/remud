@@ -35,16 +35,13 @@ impl Attach {
 #[async_trait]
 impl Persist for Attach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        let trigger = self
-            .trigger
-            .trigger()
-            .map(|t| t.to_string())
-            .unwrap_or_else(String::new);
+        let trigger = self.trigger.to_string();
 
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
-                "INSERT INTO player_scripts (player_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO player_scripts (player_id, kind, script, trigger) VALUES (?, ?, \
+                     ?, ?)",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -55,7 +52,8 @@ impl Persist for Attach {
             }
             Id::Prototype(id) => {
                 sqlx::query(
-                "INSERT INTO prototype_scripts (prototype_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO prototype_scripts (prototype_id, kind, script, trigger) VALUES \
+                     (?, ?, ?, ?)",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -67,7 +65,8 @@ impl Persist for Attach {
             Id::Object(id) => {
                 if let Some(prototype) = self.copy {
                     sqlx::query(
-                    "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE prototype_scripts.prototype_id = ?",
+                        "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE \
+                         prototype_scripts.prototype_id = ?",
                     )
                     .bind(prototype)
                     .execute(pool)
@@ -80,7 +79,8 @@ impl Persist for Attach {
                 }
 
                 sqlx::query(
-                "INSERT INTO object_scripts (object_id, kind, script, trigger) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO object_scripts (object_id, kind, script, trigger) VALUES (?, ?, \
+                     ?, ?)",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -162,16 +162,13 @@ impl Detach {
 #[async_trait]
 impl Persist for Detach {
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        let trigger = self
-            .trigger
-            .trigger()
-            .map(|t| t.to_string())
-            .unwrap_or_else(String::new);
+        let trigger = self.trigger.to_string();
 
         match self.target {
             Id::Player(id) => {
                 sqlx::query(
-                "DELETE FROM player_scripts WHERE player_id = ? AND kind = ? AND script = ? AND trigger = ?",
+                    "DELETE FROM player_scripts WHERE player_id = ? AND kind = ? AND script = ? \
+                     AND trigger = ?",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -182,7 +179,8 @@ impl Persist for Detach {
             }
             Id::Prototype(id) => {
                 sqlx::query(
-                "DELETE FROM prototype_scripts WHERE prototype_id = ? AND kind = ? AND script = ? AND trigger = ?",
+                    "DELETE FROM prototype_scripts WHERE prototype_id = ? AND kind = ? AND script \
+                     = ? AND trigger = ?",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -194,7 +192,8 @@ impl Persist for Detach {
             Id::Object(id) => {
                 if let Some(prototype) = self.copy {
                     sqlx::query(
-                    "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE prototype_scripts.prototype_id = ?",
+                        "INSERT INTO object_scripts SELECT * FROM prototype_scripts WHERE \
+                         prototype_scripts.prototype_id = ?",
                     )
                     .bind(prototype)
                     .execute(pool)
@@ -207,7 +206,8 @@ impl Persist for Detach {
                 }
 
                 sqlx::query(
-                "DELETE FROM object_scripts WHERE object_id = ? AND kind = ? AND script = ? AND trigger = ?",
+                    "DELETE FROM object_scripts WHERE object_id = ? AND kind = ? AND script = ? \
+                     AND trigger = ?",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())
@@ -218,7 +218,8 @@ impl Persist for Detach {
             }
             Id::Room(id) => {
                 sqlx::query(
-                "DELETE FROM room_scripts WHERE room_id = ? AND kind = ? AND script = ? AND trigger = ?",
+                    "DELETE FROM room_scripts WHERE room_id = ? AND kind = ? AND script = ? AND \
+                     trigger = ?",
                 )
                 .bind(id.to_string())
                 .bind(self.trigger.kind().to_string())

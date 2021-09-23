@@ -187,13 +187,15 @@ impl Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    world
-                        .write()
-                        .unwrap()
-                        .get_mut::<ScriptHooks>(object)
-                        .unwrap()
-                        .list
-                        .push(hook);
+                    if let Some(mut hooks) = world.write().unwrap().get_mut::<ScriptHooks>(object) {
+                        hooks.insert(hook);
+                    } else {
+                        world
+                            .write()
+                            .unwrap()
+                            .entity_mut(object)
+                            .insert(ScriptHooks::new(hook));
+                    }
                 }
             }
         }
@@ -250,13 +252,15 @@ impl Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    world
-                        .write()
-                        .unwrap()
-                        .get_mut::<ScriptHooks>(object)
-                        .unwrap()
-                        .list
-                        .push(hook);
+                    if let Some(mut hooks) = world.write().unwrap().get_mut::<ScriptHooks>(object) {
+                        hooks.insert(hook)
+                    } else {
+                        world
+                            .write()
+                            .unwrap()
+                            .entity_mut(object)
+                            .insert(ScriptHooks::new(hook));
+                    }
                 }
             }
         }
@@ -279,11 +283,16 @@ impl TryFrom<HookRow> for ScriptHook {
         let script = ScriptName::try_from(value.script)?;
         let kind = TriggerKind::from_str(value.kind.as_str())?;
         let trigger = match kind {
-            TriggerKind::PreEvent | TriggerKind::PostEvent => {
-                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
-                kind.with_trigger(trigger)
-            }
             TriggerKind::Init => ScriptTrigger::Init,
+            TriggerKind::PreEvent => {
+                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+                ScriptTrigger::PostEvent(trigger)
+            }
+            TriggerKind::PostEvent => {
+                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+                ScriptTrigger::PostEvent(trigger)
+            }
+            TriggerKind::Timer => ScriptTrigger::Timer(value.trigger),
         };
 
         Ok(ScriptHook { script, trigger })
@@ -313,7 +322,6 @@ impl ObjectRow {
             description: Description::from(self.description.clone()),
             flags: ObjectFlags::from(self.flags),
             keywords: Keywords::from(self.keywords()),
-            hooks: ScriptHooks::default(),
         })
     }
 

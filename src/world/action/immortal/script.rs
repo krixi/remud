@@ -38,6 +38,18 @@ pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                 "attach-pre" => {
                     parse_params(player, script, tokenizer, ScriptCommand::AttachPreAction)
                 }
+                "attach-timer" => {
+                    if let Some(timer_name) = tokenizer.next() {
+                        parse_params(
+                            player,
+                            script,
+                            tokenizer,
+                            ScriptCommand::AttachTimer(timer_name.to_string()),
+                        )
+                    } else {
+                        Err("Enter a timer name.".to_string())
+                    }
+                }
                 "detach" => parse_params(player, script, tokenizer, ScriptCommand::Detach),
                 _ => Err(
                     "Enter a valid subcommand: attach-init, attach-post, attach-pre, or detach."
@@ -93,6 +105,7 @@ enum ScriptCommand {
     AttachInit,
     AttachPostAction,
     AttachPreAction,
+    AttachTimer(String),
     Detach,
 }
 
@@ -104,6 +117,7 @@ impl ScriptCommand {
                 script,
                 trigger: TriggerKind::Init,
                 target: id,
+                timer: None,
             }
             .into(),
             ScriptCommand::AttachPostAction => ScriptAttach {
@@ -111,6 +125,7 @@ impl ScriptCommand {
                 script,
                 trigger: TriggerKind::PostEvent,
                 target: id,
+                timer: None,
             }
             .into(),
             ScriptCommand::AttachPreAction => ScriptAttach {
@@ -118,6 +133,15 @@ impl ScriptCommand {
                 script,
                 trigger: TriggerKind::PreEvent,
                 target: id,
+                timer: None,
+            }
+            .into(),
+            ScriptCommand::AttachTimer(name) => ScriptAttach {
+                actor,
+                script,
+                trigger: TriggerKind::Timer,
+                target: id,
+                timer: Some(name),
             }
             .into(),
             ScriptCommand::Detach => ScriptDetach {
@@ -136,11 +160,13 @@ pub struct ScriptAttach {
     pub script: ScriptName,
     pub trigger: TriggerKind,
     pub target: Either<Id, String>,
+    pub timer: Option<String>,
 }
 
 into_action!(ScriptAttach);
 
 pub fn script_attach_system(
+    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     scripts: Res<Scripts>,
     objects: Res<Objects>,
@@ -161,6 +187,7 @@ pub fn script_attach_system(
             script,
             trigger,
             target,
+            timer,
         }) = action
         {
             let script_entity = if let Some(script) = scripts.by_name(script) {
@@ -221,27 +248,33 @@ pub fn script_attach_system(
             let script_trigger = if *trigger == TriggerKind::Init {
                 ScriptTrigger::Init
             } else {
-                let trigger_event = script_query.get(script_entity).unwrap().trigger;
+                let trigger_event = &script_query.get(script_entity).unwrap().trigger();
                 match trigger {
-                    TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event),
-                    TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event),
+                    TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event.clone()),
+                    TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event.clone()),
                     TriggerKind::Init => unreachable!(),
+                    TriggerKind::Timer => ScriptTrigger::Timer(timer.clone().unwrap()),
                 }
             };
 
             let hook = ScriptHook {
-                trigger: script_trigger,
+                trigger: script_trigger.clone(),
                 script: script.clone(),
             };
 
-            let mut hooks = hook_query.get_mut(target_entity).unwrap();
-            if hooks.list.contains(&hook) {
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(format!("Script {} already attached to entity.", script));
+            if let Ok(mut hooks) = hook_query.get_mut(target_entity) {
+                if hooks.contains(&hook) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                        messages.queue(format!("Script {} already attached to entity.", script));
+                    }
+                    continue;
                 }
-                continue;
+                hooks.insert(hook);
+            } else {
+                commands
+                    .entity(target_entity)
+                    .insert(ScriptHooks::new(hook));
             }
-            hooks.list.push(hook);
 
             let id = match target {
                 Either::Left(id) => *id,
@@ -297,13 +330,11 @@ into_action!(ScriptDetach);
 
 pub fn script_detach_system(
     mut action_reader: EventReader<Action>,
-    scripts: Res<Scripts>,
     prototypes: Res<Prototypes>,
     objects: Res<Objects>,
     rooms: Res<Rooms>,
     players: Res<Players>,
     mut updates: ResMut<Updates>,
-    script_query: Query<&Script>,
     player_query: Query<&Player>,
     prototype_query: Query<&Prototype>,
     mut object_query: Query<&mut Object>,
@@ -317,15 +348,6 @@ pub fn script_detach_system(
             target,
         }) = action
         {
-            let script_entity = if let Some(script) = scripts.by_name(script) {
-                script
-            } else {
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(format!("Script {} not found.", script));
-                }
-                continue;
-            };
-
             let target_entity = match target {
                 Either::Left(id) => match id {
                     Id::Prototype(id) => {
@@ -372,16 +394,11 @@ pub fn script_detach_system(
                 }
             };
 
-            let trigger_event = script_query.get(script_entity).unwrap().trigger;
-
-            let hook = ScriptHook {
-                trigger: ScriptTrigger::PreEvent(trigger_event),
-                script: script.clone(),
-            };
-
             let mut remove_trigger = None;
-            if hook_query.get_mut(target_entity).unwrap().remove(&hook) {
-                remove_trigger = Some(hook.trigger)
+            if let Ok(mut hooks) = hook_query.get_mut(target_entity) {
+                if let Some(hook) = hooks.remove(script) {
+                    remove_trigger = Some(hook.trigger)
+                }
             }
 
             if remove_trigger.is_none() {

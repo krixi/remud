@@ -90,7 +90,6 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
                 description: Description::from(room.description.clone()),
                 regions: Regions::new(regions),
                 contents: Contents::default(),
-                hooks: ScriptHooks::default(),
             })
             .id();
         rooms_by_id.insert(id, entity);
@@ -146,7 +145,6 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result
             name: Named::from(prototype_row.name.clone()),
             description: Description::from(prototype_row.description.clone()),
             keywords: Keywords::from(prototype_row.keywords()),
-            hooks: ScriptHooks::default(),
         };
 
         let object_entity = world.spawn().insert_bundle(bundle).id();
@@ -227,7 +225,7 @@ pub async fn load_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resul
 
     while let Some(script_row) = results.try_next().await? {
         let script = Script::try_from(script_row)?;
-        let name = script.name.clone();
+        let name = script.name().clone();
         let entity = world.spawn().insert(script).id();
         world
             .get_resource_mut::<Scripts>()
@@ -261,11 +259,11 @@ async fn load_prototype_scripts(pool: &SqlitePool, world: &mut World) -> anyhow:
         while let Some(hook_row) = results.try_next().await? {
             let hook = ScriptHook::try_from(hook_row)?;
 
-            world
-                .get_mut::<ScriptHooks>(prototype)
-                .unwrap()
-                .list
-                .push(hook);
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(prototype) {
+                hooks.insert(hook)
+            } else {
+                world.entity_mut(prototype).insert(ScriptHooks::new(hook));
+            }
         }
     }
 
@@ -295,7 +293,11 @@ async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
         while let Some(hook_row) = results.try_next().await? {
             let hook = ScriptHook::try_from(hook_row)?;
 
-            world.get_mut::<ScriptHooks>(room).unwrap().list.push(hook)
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(room) {
+                hooks.insert(hook)
+            } else {
+                world.entity_mut(room).insert(ScriptHooks::new(hook));
+            }
         }
     }
 
@@ -341,11 +343,11 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
                     .send(ScriptInit::new(object, hook.script.clone()));
             }
 
-            world
-                .get_mut::<ScriptHooks>(object)
-                .unwrap()
-                .list
-                .push(hook);
+            if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
+                hooks.insert(hook)
+            } else {
+                world.entity_mut(object).insert(ScriptHooks::new(hook));
+            }
         }
     }
 
@@ -414,10 +416,6 @@ impl TryFrom<ScriptRow> for Script {
         let name = ScriptName::try_from(value.name)?;
         let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
 
-        Ok(Script {
-            name,
-            trigger,
-            code: value.code,
-        })
+        Ok(Script::new(name, trigger, value.code))
     }
 }

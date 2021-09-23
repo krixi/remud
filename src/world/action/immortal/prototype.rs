@@ -44,7 +44,7 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
 
                 if let Some(token) = tokenizer.next() {
                     match token {
-                        "info" => Ok(Action::from(PrototypeInfo {actor: player, id })),
+                        "info" => Ok(Action::from(PrototypeInfo { actor: player, id })),
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of keywords.".to_string())
@@ -76,14 +76,23 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                         "remove" => Ok(Action::from(PrototypeRemove { actor: player, id })),
                         "set" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                                Err(
+                                    "Enter a space separated list of flags. Valid flags: fixed, \
+                                     subtle."
+                                        .to_string(),
+                                )
                             } else {
-                                Ok(Action::from(UpdateObjectFlags{
+                                Ok(Action::from(UpdateObjectFlags {
                                     actor: player,
                                     id: ObjectOrPrototype::Prototype(id),
-                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
-                                    clear: false
-                                } ))
+                                    flags: tokenizer
+                                        .rest()
+                                        .to_string()
+                                        .split_whitespace()
+                                        .map(|flag| flag.to_string())
+                                        .collect_vec(),
+                                    clear: false,
+                                }))
                             }
                         }
                         "name" => {
@@ -99,21 +108,35 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                         }
                         "unset" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                                Err(
+                                    "Enter a space separated list of flags. Valid flags: fixed, \
+                                     subtle."
+                                        .to_string(),
+                                )
                             } else {
                                 Ok(Action::from(UpdateObjectFlags {
                                     actor: player,
                                     id: ObjectOrPrototype::Prototype(id),
-                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
-                                    clear: true
+                                    flags: tokenizer
+                                        .rest()
+                                        .to_string()
+                                        .split_whitespace()
+                                        .map(|flag| flag.to_string())
+                                        .collect_vec(),
+                                    clear: true,
                                 }))
                             }
                         }
-                        _ => Err("Enter a valid prototype subcommand: desc, info, keywords, name, remove, set, or unset."
+                        _ => Err("Enter a valid prototype subcommand: desc, info, keywords, \
+                                  name, remove, set, or unset."
                             .to_string()),
                     }
                 } else {
-                    Err("Enter a prototype subcommand: desc, info, keywords, name, remove, set, or unset.".to_string())
+                    Err(
+                        "Enter a prototype subcommand: desc, info, keywords, name, remove, set, \
+                         or unset."
+                            .to_string(),
+                    )
                 }
             }
         }
@@ -146,7 +169,6 @@ pub fn prototype_create_system(
                 description: Description::from(DEFAULT_PROTOTYPE_DESCRIPTION.to_string()),
                 flags: ObjectFlags::default(),
                 keywords: Keywords::from(vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()]),
-                hooks: ScriptHooks::default(),
             };
 
             updates.persist(persist::prototype::Create::new(
@@ -185,7 +207,7 @@ pub fn prototype_info_system(
         &Keywords,
         &Named,
         &Description,
-        &ScriptHooks,
+        Option<&ScriptHooks>,
     )>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -216,15 +238,19 @@ pub fn prototype_info_system(
             message.push_str(word_list(keywords.get_list()).as_str());
 
             message.push_str("\r\n  |white|script hooks|-|:");
-            if hooks.list.is_empty() {
-                message.push_str(" none");
-            }
-            for ScriptHook { trigger, script } in hooks.list.iter() {
-                message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
-            }
+            if let Some(hooks) = hooks {
+                if hooks.is_empty() {
+                    message.push_str(" none");
+                }
+                for ScriptHook { trigger, script } in hooks.hooks().iter() {
+                    message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+                }
 
-            if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(message);
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                    messages.queue(message);
+                }
+            } else {
+                message.push_str(" none");
             }
         }
     }

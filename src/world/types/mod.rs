@@ -33,10 +33,11 @@ impl fmt::Display for Id {
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum ActionTarget {
-    PlayerSelf,
-    Prototype(PrototypeId),
-    Object(ObjectId),
     CurrentRoom,
+    Object(ObjectId),
+    PlayerSelf,
+    Player(String),
+    Prototype(PrototypeId),
 }
 
 #[derive(Debug, Clone)]

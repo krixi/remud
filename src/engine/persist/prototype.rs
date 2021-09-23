@@ -36,7 +36,8 @@ impl Create {
 impl Persist for Create {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO prototypes (id, name, description, flags, keywords) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO prototypes (id, name, description, flags, keywords) VALUES (?, ?, ?, ?, \
+             ?)",
         )
         .bind(self.id)
         .bind(self.name.as_str())

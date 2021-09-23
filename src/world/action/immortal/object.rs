@@ -10,11 +10,11 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            immortal::{UpdateDescription, UpdateName},
+            immortal::{Initialize, UpdateDescription, UpdateName},
             Action,
         },
         fsm::StateMachine,
-        scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
+        scripting::{time::Timers, ScriptData, ScriptHook, ScriptHooks, ScriptInit, ScriptTrigger},
         types::{
             object::{
                 Container, Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags,
@@ -46,21 +46,33 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
 
                 if let Some(token) = tokenizer.next() {
                     match token {
-                        "info" => Ok(Action::from(ObjectInfo {actor: player, id })),
+                        "info" => Ok(Action::from(ObjectInfo { actor: player, id })),
                         "inherit" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of fields to inherit.".to_string())
+                                Err("Enter a space separated list of fields to inherit."
+                                    .to_string())
                             } else {
-                                match tokenizer.rest().split_whitespace().map(|s| InheritableFields::from_str(s)).try_collect() {
+                                match tokenizer
+                                    .rest()
+                                    .split_whitespace()
+                                    .map(|s| InheritableFields::from_str(s))
+                                    .try_collect()
+                                {
                                     Ok(fields) => Ok(Action::from(ObjectInheritFields {
-                                    actor: player,
-                                    id,
-                                    fields
-                                })),
-                                    Err(_) => Err("Enter valid inheritable fields: desc, flags, hooks, keywords, and name".to_string()),
+                                        actor: player,
+                                        id,
+                                        fields,
+                                    })),
+                                    Err(_) => Err("Enter valid inheritable fields: desc, flags, \
+                                                   hooks, keywords, and name"
+                                        .to_string()),
                                 }
                             }
                         }
+                        "init" => Ok(Action::Initialize(Initialize {
+                            actor: player,
+                            target: ActionTarget::Object(id),
+                        })),
                         "keywords" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a space separated list of keywords.".to_string())
@@ -92,13 +104,22 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                         "remove" => Ok(Action::from(ObjectRemove { actor: player, id })),
                         "set" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                                Err(
+                                    "Enter a space separated list of flags. Valid flags: fixed, \
+                                     subtle."
+                                        .to_string(),
+                                )
                             } else {
                                 Ok(Action::from(UpdateObjectFlags {
                                     actor: player,
                                     id: ObjectOrPrototype::Object(id),
-                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
-                                    clear: false
+                                    flags: tokenizer
+                                        .rest()
+                                        .to_string()
+                                        .split_whitespace()
+                                        .map(|flag| flag.to_string())
+                                        .collect_vec(),
+                                    clear: false,
                                 }))
                             }
                         }
@@ -115,21 +136,37 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                         }
                         "unset" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of flags. Valid flags: fixed, subtle.".to_string())
+                                Err(
+                                    "Enter a space separated list of flags. Valid flags: fixed, \
+                                     subtle."
+                                        .to_string(),
+                                )
                             } else {
                                 Ok(Action::from(UpdateObjectFlags {
                                     actor: player,
                                     id: ObjectOrPrototype::Object(id),
-                                    flags: tokenizer.rest().to_string().split_whitespace().map(|flag|flag.to_string()).collect_vec(),
-                                    clear: true
+                                    flags: tokenizer
+                                        .rest()
+                                        .to_string()
+                                        .split_whitespace()
+                                        .map(|flag| flag.to_string())
+                                        .collect_vec(),
+                                    clear: true,
                                 }))
                             }
                         }
-                        _ => Err("Enter a valid object subcommand: desc, info, keywords, name, remove, set, or unset."
-                            .to_string()),
+                        _ => Err(
+                            "Enter a valid object subcommand: desc, info, keywords, name, remove, \
+                             set, or unset."
+                                .to_string(),
+                        ),
                     }
                 } else {
-                    Err("Enter an object subcommand: desc, info, keywords, name, remove, set, or unset.".to_string())
+                    Err(
+                        "Enter an object subcommand: desc, info, keywords, name, remove, set, or \
+                         unset."
+                            .to_string(),
+                    )
                 }
             }
         }
@@ -153,7 +190,13 @@ pub fn object_create_system(
     prototypes: Res<Prototypes>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
-    prototypes_query: Query<(&Named, &Description, &ObjectFlags, &Keywords, &ScriptHooks)>,
+    prototypes_query: Query<(
+        &Named,
+        &Description,
+        &ObjectFlags,
+        &Keywords,
+        Option<&ScriptHooks>,
+    )>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
@@ -184,27 +227,28 @@ pub fn object_create_system(
 
             let id = objects.next_id();
 
-            let object_entity = commands
-                .spawn_bundle(ObjectBundle {
-                    object: Object::new(id, prototype, true),
-                    id: Id::Object(id),
-                    name: named.clone(),
-                    description: description.clone(),
-                    flags: flags.clone(),
-                    keywords: keywords.clone(),
-                    hooks: hooks.clone(),
-                })
-                .insert(Location::from(room_entity))
-                .id();
+            let mut e = commands.spawn_bundle(ObjectBundle {
+                object: Object::new(id, prototype, true),
+                id: Id::Object(id),
+                name: named.clone(),
+                description: description.clone(),
+                flags: flags.clone(),
+                keywords: keywords.clone(),
+            });
 
-            hooks
-                .list
-                .iter()
-                .filter(|hook| hook.trigger.kind() == TriggerKind::Init)
-                .map(|hook| hook.script.clone())
-                .for_each(|script| {
+            e.insert(Location::from(room_entity));
+
+            if let Some(hooks) = hooks {
+                e.insert(hooks.clone());
+            }
+
+            let object_entity = e.id();
+
+            if let Some(hooks) = hooks {
+                for script in hooks.by_trigger(ScriptTrigger::Init) {
                     init_writer.send(ScriptInit::new(object_entity, script));
-                });
+                }
+            }
 
             let room_id = {
                 let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
@@ -243,10 +287,12 @@ pub fn object_info_system(
         &Description,
         &ObjectFlags,
         &Keywords,
-        &ScriptHooks,
+        Option<&ScriptHooks>,
         Option<&Container>,
         Option<&Location>,
+        Option<&Timers>,
         Option<&StateMachine>,
+        Option<&ScriptData>,
     )>,
     prototype_query: Query<&Prototype>,
     room_query: Query<&Room>,
@@ -264,8 +310,19 @@ pub fn object_info_system(
                 continue;
             };
 
-            let (object, named, description, flags, keywords, hooks, container, location, fsm) =
-                object_query.get(object_entity).unwrap();
+            let (
+                object,
+                named,
+                description,
+                flags,
+                keywords,
+                hooks,
+                container,
+                location,
+                timers,
+                fsm,
+                data,
+            ) = object_query.get(object_entity).unwrap();
 
             let prototype_id = prototype_query.get(object.prototype()).unwrap().id();
 
@@ -306,12 +363,49 @@ pub fn object_info_system(
             }
 
             message.push_str("\r\n  |white|script hooks|-|:");
-            if hooks.list.is_empty() {
-                message.push_str(" none");
-            } else {
-                for ScriptHook { trigger, script } in hooks.list.iter() {
-                    message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+            if let Some(hooks) = hooks {
+                if hooks.is_empty() {
+                    message.push_str(" none");
+                } else {
+                    for ScriptHook { trigger, script } in hooks.hooks().iter() {
+                        message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+                    }
                 }
+            } else {
+                message.push_str(" none");
+            }
+
+            message.push_str("\r\n  |white|script data|-|:");
+            if let Some(data) = data {
+                if data.is_empty() {
+                    message.push_str(" none");
+                } else {
+                    for (k, v) in data.map() {
+                        message.push_str(format!("\r\n    {} -> {:?}", k, v).as_str());
+                    }
+                }
+            } else {
+                message.push_str(" none");
+            }
+
+            message.push_str("\r\n  |white|timers|-|:");
+            if let Some(timers) = timers {
+                if timers.timers().is_empty() {
+                    message.push_str(" none");
+                }
+                for (name, timer) in timers.timers().iter() {
+                    message.push_str(
+                        format!(
+                            "\r\n    {}: {}/{}ms",
+                            name,
+                            timer.elapsed().as_millis(),
+                            timer.duration().as_millis()
+                        )
+                        .as_str(),
+                    )
+                }
+            } else {
+                message.push_str(" none");
             }
 
             message.push_str("\r\n  |white|fsm|-|:");
@@ -348,7 +442,13 @@ pub fn object_inherit_fields_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut object_query: Query<&mut Object>,
-    prototype_query: Query<(&Named, &Description, &ObjectFlags, &Keywords, &ScriptHooks)>,
+    prototype_query: Query<(
+        &Named,
+        &Description,
+        &ObjectFlags,
+        &Keywords,
+        Option<&ScriptHooks>,
+    )>,
     mut updates: ResMut<Updates>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -384,7 +484,11 @@ pub fn object_inherit_fields_system(
                     }
                     InheritableFields::Hooks => {
                         object.set_inherit_scripts(true);
-                        commands.entity(object_entity).insert(hooks.clone());
+                        if let Some(hooks) = hooks {
+                            commands.entity(object_entity).insert(hooks.clone());
+                        } else {
+                            commands.entity(object_entity).remove::<ScriptHooks>();
+                        }
                     }
                 }
             }
@@ -414,7 +518,7 @@ pub fn update_object_flags(
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<&mut ObjectFlags>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::UpdateObjectFlags(UpdateObjectFlags {
@@ -429,7 +533,7 @@ pub fn update_object_flags(
                     if let Some(object) = objects.by_id(*id) {
                         object
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Object {} not found.", id));
                         }
                         continue;
@@ -439,7 +543,7 @@ pub fn update_object_flags(
                     if let Some(prototype) = prototypes.by_id(*id) {
                         prototype
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Prototype {} not found.", id));
                         }
                         continue;
@@ -450,7 +554,7 @@ pub fn update_object_flags(
             let changed_flags = match Flags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*actor) {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(e.to_string());
                     }
                     continue;
@@ -474,7 +578,7 @@ pub fn update_object_flags(
                 }
             }
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated {:?} flags.", id));
             }
         }
@@ -496,7 +600,7 @@ pub fn update_keywords_system(
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     mut object_query: Query<&mut Keywords>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::UpdateKeywords(UpdateKeywords {
@@ -510,7 +614,7 @@ pub fn update_keywords_system(
                     if let Some(object) = objects.by_id(*id) {
                         object
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Object {} not found.", id));
                         }
                         continue;
@@ -520,7 +624,7 @@ pub fn update_keywords_system(
                     if let Some(prototype) = prototypes.by_id(*id) {
                         prototype
                     } else {
-                        if let Ok(mut messages) = messages.get_mut(*actor) {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             messages.queue(format!("Prototype {} not found.", id));
                         }
                         continue;
@@ -542,7 +646,7 @@ pub fn update_keywords_system(
                 }
             }
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Updated {:?} keywords.", id));
             }
         }

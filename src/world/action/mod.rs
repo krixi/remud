@@ -16,6 +16,7 @@ use crate::world::action::{
         emote_system, message_system, say_system, send_system, Emote, Message, Say, SendMessage,
     },
     immortal::{
+        initialize_system,
         object::{
             object_create_system, object_info_system, object_inherit_fields_system,
             object_remove_system, update_keywords_system, update_object_flags, ObjectCreate,
@@ -32,7 +33,7 @@ use crate::world::action::{
             RoomRemove, RoomUnlink, RoomUpdateRegions,
         },
         script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
-        update_description_system, update_name_system, UpdateDescription, UpdateName,
+        update_description_system, update_name_system, Initialize, UpdateDescription, UpdateName,
     },
     movement::{move_system, teleport_system, Move, Teleport},
     object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
@@ -57,6 +58,7 @@ pub enum Action {
     Emote(Emote),
     Exits(Exits),
     Get(Get),
+    Initialize(Initialize),
     Inventory(Inventory),
     Login(Login),
     Look(Look),
@@ -99,6 +101,7 @@ impl Action {
             Action::Emote(action) => action.actor,
             Action::Exits(action) => action.actor,
             Action::Get(action) => action.actor,
+            Action::Initialize(action) => action.actor,
             Action::Inventory(action) => action.actor,
             Action::Login(action) => action.actor,
             Action::Look(action) => action.actor,
@@ -141,6 +144,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(emote_system.system().after("look"));
     stage.add_system(exits_system.system());
     stage.add_system(get_system.system());
+    stage.add_system(initialize_system.system());
     stage.add_system(inventory_system.system());
     stage.add_system(login_system.system());
     stage.add_system(look_at_system.system());

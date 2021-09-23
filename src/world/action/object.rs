@@ -256,7 +256,7 @@ pub fn inventory_system(
     mut action_reader: EventReader<Action>,
     inventory_query: Query<&Contents>,
     object_query: Query<&Named>,
-    mut messages: Query<&mut Messages>,
+    mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::Inventory(Inventory { actor }) = action {
@@ -283,7 +283,7 @@ pub fn inventory_system(
                 }
             }
 
-            if let Ok(mut messages) = messages.get_mut(*actor) {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);
             }
         }

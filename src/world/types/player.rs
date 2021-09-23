@@ -8,10 +8,7 @@ use bevy_ecs::prelude::*;
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::world::{
-    scripting::ScriptHooks,
-    types::{Attributes, Contents, Description, Health, Id, Location, Named},
-};
+use crate::world::types::{Attributes, Contents, Description, Health, Id, Location, Named};
 
 #[derive(Bundle)]
 pub struct PlayerBundle {
@@ -25,7 +22,6 @@ pub struct PlayerBundle {
     pub contents: Contents,
     pub attributes: Attributes,
     pub health: Health,
-    pub hooks: ScriptHooks,
 }
 
 pub struct Player {

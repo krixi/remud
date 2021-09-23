@@ -118,7 +118,11 @@ impl Commands {
                     .map(|n| format!("|white|{}|-|", n))
                     .collect_vec(),
             );
-            format!("|SteelBlue3|Welcome to the City Six guidance system.\r\n\r\nGuidance is available on the following topics:|-|\r\n{}", topics)
+            format!(
+                "|SteelBlue3|Welcome to the City Six guidance system.\r\n\r\nGuidance is \
+                 available on the following topics:|-|\r\n{}",
+                topics
+            )
         } else {
             let topic = tokenizer.next().unwrap();
             if let Some(command) = self.commands.get(&topic) {
@@ -323,23 +327,28 @@ fn default_commands() -> Vec<Command> {
         Help::new("inventory", "Displays a list of items in your inventory."),
     ));
     commands.push(Command::new(
-            "look",
-            parse_look,
-            Help::new(
-                "look [<direction>] || look at <keyword> [<keyword>..]",
-                "Look around the room, in an adjacent room, or at something specific in the current room.",
-            ).with_example(
-                "look west || look at fuzzy bear"
-            ),
-        ));
-    commands.push(Command::new(
+        "look",
+        parse_look,
+        Help::new(
+            "look [<direction>] || look at <keyword> [<keyword>..]",
+            "Look around the room, in an adjacent room, or at something specific in the current \
+             room.",
+        )
+        .with_example("look west || look at fuzzy bear"),
+    ));
+    commands.push(
+        Command::new(
             "me",
             parse_me,
             Help::new(
                 "me <text> || ;<text>",
-                "Causes your character to emote the given text. The example would read: \"Ted dances around.\" for someone named Ted",
-            ).with_example("me dances around. || ;dances around."),
-        ).with_shortcut(';'));
+                "Causes your character to emote the given text. The example would read: \"Ted \
+                 dances around.\" for someone named Ted",
+            )
+            .with_example("me dances around. || ;dances around."),
+        )
+        .with_shortcut(';'),
+    );
     commands.push(Command::new(
         "north",
         |actor, _| {
@@ -350,29 +359,112 @@ fn default_commands() -> Vec<Command> {
         },
         Help::new("north", "Moves you to the room to the north, if possible."),
     ));
-    commands.push(Command::new(
+    commands.push(
+        Command::new(
             "object",
             parse_object,
             Help::new(
                 "object new <prototype ID> || object <id> <subcommand>",
-                "Creates, modifies, and removes objects from the game world. Objects inherit their properties from a prototype by default, but they can be overridden."
-            ).with_subhelp("new", Help::new("object new <prototype ID>", "Creates a new object from a prototype. New objects are placed in the current room."))
-            .with_subhelp("info", Help::new("object <id> info", "Displays information about an object.").with_example("object 2 info")
-            .with_subhelp("name", Help::new("object <id> name <text>", "Sets the object's name to <text>. Names should: be nouns, only be capitalized when they are proper nouns, and avoid terminating punctuation.").with_example( "object 2 name fuzzy bear"))
-            .with_subhelp("keywords", Help::new("object <id> keywords <keyword> [<keyword>..]", "Sets an object's keywords. Keywords are the primary way players interact with objects and should be obvious from the object's name. Extra keywords can be added for disambiguation.")
-            .with_example( "object 2 keywords fuzzy bear")))
-            .with_subhelp("desc", Help::new("object <id> desc <text>", "Sets an object's description. Descriptions are prose and should contain one or more complete sentences.")
-            .with_example( "object 2 desc An adorable teddy bear. It looks well loved."))
-            .with_subhelp("remove", Help::new("object <id> remove", "Removes the object from the game world. This will remove all instances of the object from rooms, players, and other containers.")
-            .with_example( "object 2 remove"))
-            .with_subhelp("set", Help::new("object <id> set <flag> [<flag>..]", "Sets one or more flags on the object. Use \"help object flags\" for more information about flags.")
-            .with_example( "object 2 set fixed subtle"))
-            .with_subhelp("unset", Help::new("object <id> unset <flag> [<flag>..]", "Clears one or more flags on the object. Use \"help object flags\" for more information about flags.")
-            .with_example( "object 2 unset fixed subtle"))
-            .with_subhelp("inherit", Help::new("object <id> inherit [name] [desc] [flags] [keywords] [hooks]", "Resumes inheriting the specified fields from the prototype object.")
-            .with_example( "object 2 inherit name hooks"))
-            .with_subhelp("flags", Help::new_simple("Flags are used to set binary properties on objects.\r\n  |white|fixed|-|: prevents the object from being picked up.\r\n  |white|subtle|-|: prevents the object from being listed in the rooms item list when the look command is used. It can still be looked at, however."))
-        ).restricted());
+                "Creates, modifies, and removes objects from the game world. Objects inherit \
+                 their properties from a prototype by default, but they can be overridden.",
+            )
+            .with_subhelp(
+                "desc",
+                Help::new(
+                    "object <id> desc <text>",
+                    "Sets an object's description. Descriptions are prose and should contain one \
+                     or more complete sentences.",
+                )
+                .with_example("object 2 desc An adorable teddy bear. It looks well loved."),
+            )
+            .with_subhelp(
+                "flags",
+                Help::new_simple(
+                    "Flags are used to set binary properties on objects.\r\n  |white|fixed|-|: \
+                     prevents the object from being picked up.\r\n  |white|subtle|-|: prevents \
+                     the object from being listed in the rooms item list when the look command is \
+                     used. It can still be looked at, however.",
+                ),
+            )
+            .with_subhelp(
+                "info",
+                Help::new("object <id> info", "Displays information about an object.")
+                    .with_example("object 2 info"),
+            )
+            .with_subhelp(
+                "inherit",
+                Help::new(
+                    "object <id> inherit [name] [desc] [flags] [keywords] [hooks]",
+                    "Resumes inheriting the specified fields from the prototype object.",
+                )
+                .with_example("object 2 inherit name hooks"),
+            )
+            .with_subhelp(
+                "init",
+                Help::new(
+                    "object <id> init",
+                    "Runs all init scripts attached to this object.",
+                )
+                .with_example("object 4 init"),
+            )
+            .with_subhelp(
+                "keywords",
+                Help::new(
+                    "object <id> keywords <keyword> [<keyword>..]",
+                    "Sets an object's keywords. Keywords are the primary way players interact \
+                     with objects and should be obvious from the object's name. Extra keywords \
+                     can be added for disambiguation.",
+                )
+                .with_example("object 2 keywords fuzzy bear"),
+            )
+            .with_subhelp(
+                "new",
+                Help::new(
+                    "object new <prototype ID>",
+                    "Creates a new object from a prototype. New objects are placed in the current \
+                     room.",
+                )
+                .with_example("object new 4"),
+            )
+            .with_subhelp(
+                "name",
+                Help::new(
+                    "object <id> name <text>",
+                    "Sets the object's name to <text>. Names should: be nouns, only be \
+                     capitalized when they are proper nouns, and avoid terminating punctuation.",
+                )
+                .with_example("object 2 name fuzzy bear"),
+            )
+            .with_subhelp(
+                "remove",
+                Help::new(
+                    "object <id> remove",
+                    "Removes the object from the game world. This will remove all instances of \
+                     the object from rooms, players, and other containers.",
+                )
+                .with_example("object 2 remove"),
+            )
+            .with_subhelp(
+                "set",
+                Help::new(
+                    "object <id> set <flag> [<flag>..]",
+                    "Sets one or more flags on the object. Use \"help object flags\" for more \
+                     information about flags.",
+                )
+                .with_example("object 2 set fixed subtle"),
+            )
+            .with_subhelp(
+                "unset",
+                Help::new(
+                    "object <id> unset <flag> [<flag>..]",
+                    "Clears one or more flags on the object. Use \"help object flags\" for more \
+                     information about flags.",
+                )
+                .with_example("object 2 unset fixed subtle"),
+            ),
+        )
+        .restricted(),
+    );
     commands.push(
         Command::new(
             "player",
@@ -382,55 +474,216 @@ fn default_commands() -> Vec<Command> {
                 "Commands for managing players in the game world.",
             )
             .with_subhelp(
+                "flags",
+                Help::new_simple(
+                    "Flags are used to set binary properties on players.\r\n  |white|immortal|-|: \
+                     grants the player access to all immortal commands.",
+                ),
+            )
+            .with_subhelp(
                 "info",
                 Help::new("player <name> info", "Displays information about a player.")
                     .with_example("player Ted info"),
             )
-            .with_subhelp("set", Help::new("player <name> set <flag> [<flag>..]", "Sets one or more flags on the player. Use \"help player flags\" for more information about flags.")
-            .with_example( "player Ted set immortal"))
-            .with_subhelp("unset", Help::new("player <name> unset <flag> [<flag>..]", "Clears one or more flags on the player. Use \"help player flags\" for more information about flags.")
-            .with_example( "player 2 unset immortal"))
-            .with_subhelp("flags", Help::new_simple("Flags are used to set binary properties on players.\r\n  |white|immortal|-|: grants the player access to all immortal commands."))
-            ,
+            .with_subhelp(
+                "init",
+                Help::new(
+                    "player <name> init",
+                    "Runs all init scripts attached to this player.",
+                )
+                .with_example("player Ted init"),
+            )
+            .with_subhelp(
+                "set",
+                Help::new(
+                    "player <name> set <flag> [<flag>..]",
+                    "Sets one or more flags on the player. Use \"help player flags\" for more \
+                     information about flags.",
+                )
+                .with_example("player Ted set immortal"),
+            )
+            .with_subhelp(
+                "unset",
+                Help::new(
+                    "player <name> unset <flag> [<flag>..]",
+                    "Clears one or more flags on the player. Use \"help player flags\" for more \
+                     information about flags.",
+                )
+                .with_example("player 2 unset immortal"),
+            ),
         )
         .restricted(),
     );
-    commands.push(Command::new(
+    commands.push(
+        Command::new(
             "prototype",
             parse_prototype,
             Help::new(
                 "prototype new || prototype <id> <subcommand>",
-                "Creates, modifies, and removes prototypes from the game world."
-            ).with_subhelp("new", Help::new("prototype new", "Creates a new prototype."))
-            .with_subhelp("info", Help::new("prototype <id> info", "Displays information about an prototype.").with_example("prototype 2 info")
-            .with_subhelp("name", Help::new("prototype <id> name <text>", "Sets the prototype's name to <text>. Names should: be nouns, only be capitalized when they are proper nouns, and avoid terminating punctuation.").with_example( "prototype 2 name fuzzy bear"))
-            .with_subhelp("keywords", Help::new("prototype <id> keywords <keyword> [<keyword>..]", "Sets an prototype's keywords. Keywords are the primary way players interact with prototypes and should be obvious from the prototype's name. Extra keywords can be added for disambiguation.")
-            .with_example( "prototype 2 keywords fuzzy bear")))
-            .with_subhelp("desc", Help::new("prototype <id> desc <text>", "Sets an prototype's description. Descriptions are prose and should contain one or more complete sentences.")
-            .with_example( "prototype 2 desc An adorable teddy bear. It looks well loved."))
-            .with_subhelp("remove", Help::new("prototype <id> remove", "Removes the prototype from the game world. This will remove all instances of the prototype from rooms, players, and other containers.")
-            .with_example( "prototype 2 remove"))
-            .with_subhelp("set", Help::new("prototype <id> set <flag> [<flag>..]", "Sets one or more flags on the prototype. Use \"help object flags\" for more information about flags.")
-            .with_example( "prototype 2 set fixed subtle"))
-            .with_subhelp("unset", Help::new("prototype <id> unset <flag> [<flag>..]", "Clears one or more flags on the prototype. Use \"help object flags\" for more information about flags.")
-            .with_example( "prototype 2 unset fixed subtle"))
-        ).restricted());
-    commands.push(Command::new("room", parse_room, Help::new("room <subcommand>", "Creates, modifies, and removes rooms from the game world. All room commands apply to the room you are in (aside from \"room new\").")
-        .with_subhelp("info", Help::new("help info", "Displays information about the current room."))
-        .with_subhelp("new", Help::new("room new [<direction>]", "Creates a new room. If direction is omitted, the new room will not have any exits and thus not be attached to the world. If a direction is used, the room will be connected in that direction from the current room and a reciprocal exit will be created from the new room to the current room.")
-        .with_example("room new west"))
-        .with_subhelp("name", Help::new("room name <text>", "Sets a room's name. Room names should be in title case and avoid terminating punctuation.")
-        .with_example("room name Tattoo Shop"))
-        .with_subhelp("desc", Help::new("room desc <text>", "Sets a room's description. Descriptions are prose and should contain one or more complete sentences.")
-        .with_example("room desc This tattoo shop has seen better days. Most corners of the room are grungy, and the chair is torn from wear. A tattoo gun rests on the chair-side table."))
-        .with_subhelp("link", Help::new("room link <direction> <destination room ID>", "Adds an exit to the current room in the specified direction which leads to the specified room ID.")
-        .with_example("room link down 4"))
-        .with_subhelp("unlink", Help::new("room unlink <direction>", "Removes the specified exit from the current room.")
-        .with_example("room unlink down"))
-        .with_subhelp("regions", Help::new("room regions <region> [<region..>]", "Sets the regions for the current room. Regions are akin to room tags, and can be used to group or categorize rooms.")
-        .with_example("room regions city street"))
-        .with_subhelp("remove", Help::new("room remove", "Removes the current room and moves its contents to the void room (room 0). This includes all players and objects currently within the room, including the invoking player."))
-        ).restricted());
+                "Creates, modifies, and removes prototypes from the game world.",
+            )
+            .with_subhelp(
+                "desc",
+                Help::new(
+                    "prototype <id> desc <text>",
+                    "Sets an prototype's description. Descriptions are prose and should contain \
+                     one or more complete sentences.",
+                )
+                .with_example("prototype 2 desc An adorable teddy bear. It looks well loved."),
+            )
+            .with_subhelp(
+                "info",
+                Help::new(
+                    "prototype <id> info",
+                    "Displays information about an prototype.",
+                )
+                .with_example("prototype 2 info"),
+            )
+            .with_subhelp(
+                "keywords",
+                Help::new(
+                    "prototype <id> keywords <keyword> [<keyword>..]",
+                    "Sets an prototype's keywords. Keywords are the primary way players interact \
+                     with prototypes and should be obvious from the prototype's name. Extra \
+                     keywords can be added for disambiguation.",
+                )
+                .with_example("prototype 2 keywords fuzzy bear"),
+            )
+            .with_subhelp(
+                "name",
+                Help::new(
+                    "prototype <id> name <text>",
+                    "Sets the prototype's name to <text>. Names should: be nouns, only be \
+                     capitalized when they are proper nouns, and avoid terminating punctuation.",
+                )
+                .with_example("prototype 2 name fuzzy bear"),
+            )
+            .with_subhelp(
+                "new",
+                Help::new("prototype new", "Creates a new prototype."),
+            )
+            .with_subhelp(
+                "remove",
+                Help::new(
+                    "prototype <id> remove",
+                    "Removes the prototype from the game world. This will remove all instances of \
+                     the prototype from rooms, players, and other containers.",
+                )
+                .with_example("prototype 2 remove"),
+            )
+            .with_subhelp(
+                "set",
+                Help::new(
+                    "prototype <id> set <flag> [<flag>..]",
+                    "Sets one or more flags on the prototype. Use \"help object flags\" for more \
+                     information about flags.",
+                )
+                .with_example("prototype 2 set fixed subtle"),
+            )
+            .with_subhelp(
+                "unset",
+                Help::new(
+                    "prototype <id> unset <flag> [<flag>..]",
+                    "Clears one or more flags on the prototype. Use \"help object flags\" for \
+                     more information about flags.",
+                )
+                .with_example("prototype 2 unset fixed subtle"),
+            ),
+        )
+        .restricted(),
+    );
+    commands.push(
+        Command::new(
+            "room",
+            parse_room,
+            Help::new(
+                "room <subcommand>",
+                "Creates, modifies, and removes rooms from the game world. All room commands \
+                 apply to the room you are in (aside from \"room new\").",
+            )
+            .with_subhelp(
+                "desc",
+                Help::new(
+                    "room desc <text>",
+                    "Sets a room's description. Descriptions are prose and should contain one or \
+                     more complete sentences.",
+                )
+                .with_example(
+                    "room desc This tattoo shop has seen better days. Most corners of the room \
+                     are grungy, and the chair is torn from wear. A tattoo gun rests on the \
+                     chair-side table.",
+                ),
+            )
+            .with_subhelp(
+                "info",
+                Help::new("help info", "Displays information about the current room."),
+            )
+            .with_subhelp(
+                "init",
+                Help::new(
+                    "room <id> init",
+                    "Runs all init scripts attached to this room.",
+                )
+                .with_example("room 4 init"),
+            )
+            .with_subhelp(
+                "link",
+                Help::new(
+                    "room link <direction> <destination room ID>",
+                    "Adds an exit to the current room in the specified direction which leads to \
+                     the specified room ID.",
+                )
+                .with_example("room link down 4"),
+            )
+            .with_subhelp(
+                "name",
+                Help::new(
+                    "room name <text>",
+                    "Sets a room's name. Room names should be in title case and avoid terminating \
+                     punctuation.",
+                )
+                .with_example("room name Tattoo Shop"),
+            )
+            .with_subhelp(
+                "new",
+                Help::new(
+                    "room new [<direction>]",
+                    "Creates a new room. If direction is omitted, the new room will not have any \
+                     exits and thus not be attached to the world. If a direction is used, the \
+                     room will be connected in that direction from the current room and a \
+                     reciprocal exit will be created from the new room to the current room.",
+                )
+                .with_example("room new west"),
+            )
+            .with_subhelp(
+                "regions",
+                Help::new(
+                    "room regions <region> [<region..>]",
+                    "Sets the regions for the current room. Regions are akin to room tags, and \
+                     can be used to group or categorize rooms.",
+                )
+                .with_example("room regions city street"),
+            )
+            .with_subhelp(
+                "remove",
+                Help::new(
+                    "room remove",
+                    "Removes the current room and moves its contents to the void room (room 0). \
+                     This includes all players and objects currently within the room, including \
+                     the invoking player.",
+                ),
+            )
+            .with_subhelp(
+                "unlink",
+                Help::new(
+                    "room unlink <direction>",
+                    "Removes the specified exit from the current room.",
+                )
+                .with_example("room unlink down"),
+            ),
+        )
+        .restricted(),
+    );
     commands.push(
         Command::new(
             "say",
@@ -443,16 +696,72 @@ fn default_commands() -> Vec<Command> {
         )
         .with_shortcut('\''),
     );
-    commands.push(Command::new("scripts", parse_script, Help::new("script <script name> <subcommand>", "Attaches or detaches a script to or from an object, player, or room.")
-        .with_subhelp("attach-init", Help::new("script <script name> attach-init (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as an init script. These run once on target load and can initialize the target. Objects, prototypes, and rooms are indicated by their ID and players by their name."))
-        .with_example("script robo_dog_init init object 5")
-        .with_subhelp("attach-pre", Help::new("script <script name> attach-pre (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as a pre-action script. These are processed before the triggering action is executed and can prevent the action from occurring. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
-        .with_example("script check_for_keycard pre-action room 4"))
-        .with_subhelp("attach-post", Help::new("script <script name> attach-post (object||prototype||player||room) <id/name>", "Attaches the script to the given object, prototype, player, or room as a post-action script. These are processed after the triggering action has been executed. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
-        .with_example("script greet_player attach-post object 2"))
-        .with_subhelp("detach", Help::new("script <script name> detach (object||prototype||player||room) <id/name>", "Detaches the script from the given object, prototype, player, or room. Objects, prototypes, and rooms are indicated by their ID and players by their name.")
-        .with_example("script greet_player detach object 2")))
-        .restricted());
+    commands.push(
+        Command::new(
+            "scripts",
+            parse_script,
+            Help::new(
+                "script <script name> <subcommand>",
+                "Attaches or detaches a script to or from an object, player, or room.",
+            )
+            .with_subhelp(
+                "attach-init",
+                Help::new(
+                    "script <script name> attach-init (object||prototype||player||room) <id/name>",
+                    "Attaches the script to the given object, prototype, player, or room as an \
+                     init script. These run once on target load and can initialize the target. \
+                     Objects, prototypes, and rooms are indicated by their ID and players by \
+                     their name.",
+                ),
+            )
+            .with_subhelp(
+                "attach-post",
+                Help::new(
+                    "script <script name> attach-post (object||prototype||player||room) <id/name>",
+                    "Attaches the script to the given object, prototype, player, or room as a \
+                     post-action script. These are processed after the triggering action has been \
+                     executed. Objects, prototypes, and rooms are indicated by their ID and \
+                     players by their name.",
+                )
+                .with_example("script greet_player attach-post object 2"),
+            )
+            .with_example("script robo_dog_init init object 5")
+            .with_subhelp(
+                "attach-pre",
+                Help::new(
+                    "script <script name> attach-pre (object||prototype||player||room) <id/name>",
+                    "Attaches the script to the given object, prototype, player, or room as a \
+                     pre-action script. These are processed before the triggering action is \
+                     executed and can prevent the action from occurring. Objects, prototypes, and \
+                     rooms are indicated by their ID and players by their name.",
+                )
+                .with_example("script check_for_keycard pre-action room 4"),
+            )
+            .with_subhelp(
+                "attach-timer",
+                Help::new(
+                    "script <script name> attach-timer <timer name> \
+                     (object||prototype||player||room) <id/name>",
+                    "Attaches the script to the given object, prototype, player, or room as a \
+                     timer script. These are processed when the named timer elapses. Timers can \
+                     be initialized in init scripts. Objects, prototypes, and rooms are indicated \
+                     by their ID and players by their name.",
+                )
+                .with_example("script greet_player attach-timer flavor_action object 2"),
+            )
+            .with_subhelp(
+                "detach",
+                Help::new(
+                    "script <script name> detach (object||prototype||player||room) <id/name>",
+                    "Detaches the script from the given object, prototype, player, or room. \
+                     Objects, prototypes, and rooms are indicated by their ID and players by \
+                     their name.",
+                )
+                .with_example("script greet_player detach object 2"),
+            ),
+        )
+        .restricted(),
+    );
     commands.push(Command::new(
         "stats",
         parse_stats,

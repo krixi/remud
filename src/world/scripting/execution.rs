@@ -101,6 +101,32 @@ pub fn run_pre_event_script(
     scope.get_value("allow_action").unwrap()
 }
 
+pub fn run_timed_script(world: Arc<RwLock<World>>, entity: Entity, script: ScriptName) {
+    let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
+        Some(results) => results,
+        None => return,
+    };
+
+    let mut scope = Scope::new();
+    scope.push_constant(
+        "SELF",
+        Me {
+            world: world.clone(),
+            entity,
+        },
+    );
+    scope.push_constant("WORLD", world);
+
+    match engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+    {
+        Ok(_) => (),
+        Err(e) => tracing::warn!("Timed script {} execution error: {}", script, e),
+    };
+}
+
 fn prepare_script_execution(
     world: &World,
     script: &ScriptName,

@@ -1,13 +1,63 @@
 use std::{
     cmp::Reverse,
+    collections::HashMap,
     time::{Duration, Instant},
 };
 
 use bevy_app::EventWriter;
+use bevy_core::{Time, Timer};
 use bevy_ecs::prelude::*;
 use priority_queue::PriorityQueue;
 
 use crate::world::{action::Action, scripting::QueuedAction};
+
+#[derive(Default)]
+pub struct Timers {
+    map: HashMap<String, Timer>,
+}
+
+impl Timers {
+    pub fn timers(&self) -> &HashMap<String, Timer> {
+        &self.map
+    }
+
+    pub fn add(&mut self, name: String, duration: Duration) {
+        self.map.insert(name, Timer::new(duration, false));
+    }
+
+    pub fn add_repeating(&mut self, name: String, duration: Duration) {
+        self.map.insert(name, Timer::new(duration, true));
+    }
+
+    pub fn finished(&mut self) -> Vec<String> {
+        let mut elapsed = Vec::new();
+        let mut to_remove = Vec::new();
+
+        for (name, timer) in self.map.iter() {
+            if timer.finished() {
+                elapsed.push(name.clone());
+
+                if !timer.repeating() {
+                    to_remove.push(name.clone())
+                }
+            }
+        }
+
+        for name in to_remove {
+            self.map.remove(&name);
+        }
+
+        elapsed
+    }
+}
+
+pub fn timer_system(time: Res<Time>, mut timers_query: Query<&mut Timers>) {
+    for mut timers in timers_query.iter_mut() {
+        for timer in timers.map.values_mut() {
+            timer.tick(time.delta());
+        }
+    }
+}
 
 // Used to prevent deduplication of items in the priority queue.
 #[derive(Debug, Hash, Eq, PartialEq)]
