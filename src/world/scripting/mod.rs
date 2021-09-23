@@ -20,10 +20,12 @@ use thiserror::Error;
 
 use crate::world::{
     action::Action,
-    fsm::{StateId, StateMachineBuilder},
+    fsm::{StateId, StateMachineBuilder, Transition},
     scripting::{
         execution::{run_init_script, run_post_event_script, run_pre_event_script},
-        modules::{event_api, rand_api, self_api, states_api, time_api, world_api},
+        modules::{
+            event_api, rand_api, self_api, states_api, time_api, transitions_api, world_api,
+        },
     },
     types::{object::Container, room::Room, Contents, Location},
 };
@@ -83,6 +85,8 @@ impl Default for ScriptEngine {
 
         engine.register_type_with_name::<StateId>("StateId");
         engine.register_static_module("StateId", exported_module!(states_api).into());
+        engine.register_type_with_name::<Transition>("Transition");
+        engine.register_static_module("Transition", exported_module!(transitions_api).into());
 
         engine.register_global_module(exported_module!(world_api).into());
         engine.register_global_module(exported_module!(event_api).into());

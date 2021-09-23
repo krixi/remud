@@ -10,18 +10,45 @@ use crate::world::{
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use rand::{prelude::*, thread_rng};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// Wander around and look for the player
 #[derive(Debug, Default)]
 pub struct WanderState {
     tick_timer: u32,
+    tx: HashMap<Transition, StateId>,
 }
-impl From<rhai::Map> for WanderState {
-    fn from(_params: rhai::Map) -> Self {
-        tracing::info!("make chase state: {:?}", _params);
-        WanderState::default()
+impl WanderState {
+    pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
+        let mut state = WanderState::default();
+        state.tx = build_tx_map(tx);
+        state
     }
+}
+
+/// tx is an array of rhai objects, each with two keys:
+// - when: Transition
+// - then: StateId.
+// We need to translate this into the tx hashmap.
+fn build_tx_map(txs: rhai::Array) -> HashMap<Transition, StateId> {
+    let mut result = HashMap::new();
+    for ele in txs.iter() {
+        if let Some(tx) = ele.clone().try_cast::<rhai::Map>() {
+            let when = tx
+                .get("when")
+                .and_then(|w| w.clone().try_cast::<&Transition>());
+            let then = tx
+                .get("then")
+                .and_then(|t| t.clone().try_cast::<&StateId>());
+            if let (Some(when), Some(then)) = (when, then) {
+                result.insert(*when, *then);
+            } else {
+                tracing::warn!("unable to convert when and then to valid transition -> stateId pair. Got {:?} -> {:?}", when, then);
+            }
+        }
+    }
+    result
 }
 
 impl State for WanderState {
@@ -73,10 +100,7 @@ impl State for WanderState {
     }
 
     fn output_state(&self, next: Transition) -> Option<StateId> {
-        match next {
-            Transition::SawPlayer => Some(StateId::Chase),
-            _ => None,
-        }
+        self.tx.get(&next).copied()
     }
 }
 
@@ -86,11 +110,13 @@ pub struct ChaseState {
     chasing: Option<Entity>,
     move_direction: Option<Direction>,
     tick_timer: u32,
+    tx: HashMap<Transition, StateId>,
 }
-impl From<rhai::Map> for ChaseState {
-    fn from(_params: rhai::Map) -> Self {
-        tracing::info!("make chase state: {:?}", _params);
-        ChaseState::default()
+impl ChaseState {
+    pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
+        let mut state = ChaseState::default();
+        state.tx = build_tx_map(tx);
+        state
     }
 }
 
@@ -180,9 +206,6 @@ impl State for ChaseState {
     }
 
     fn output_state(&self, next: Transition) -> Option<StateId> {
-        match next {
-            Transition::LostPlayer => Some(StateId::Wander),
-            _ => None,
-        }
+        self.tx.get(&next).copied()
     }
 }

@@ -212,21 +212,13 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
+        let mut world = me.world.write().unwrap();
         match builder.build() {
             Ok(fsm) => {
-                if let Some(mut fsms) = me
-                    .world
-                    .write()
-                    .unwrap()
-                    .get_mut::<StateMachines>(me.entity)
-                {
+                if let Some(mut fsms) = world.get_mut::<StateMachines>(me.entity) {
                     fsms.push(fsm);
                 } else {
-                    me.world
-                        .write()
-                        .unwrap()
-                        .entity_mut(me.entity)
-                        .insert(StateMachines::new(fsm));
+                    world.entity_mut(me.entity).insert(StateMachines::new(fsm));
                 }
             }
             Err(e) => {
@@ -335,6 +327,19 @@ pub mod self_api {
 }
 
 #[export_module]
+pub mod rand_api {
+    use rand::{thread_rng, Rng};
+
+    pub fn chance(probability: f64) -> bool {
+        thread_rng().gen_bool(probability)
+    }
+
+    pub fn range(start: i64, end: i64) -> i64 {
+        thread_rng().gen_range(start..=end)
+    }
+}
+
+#[export_module]
 pub mod states_api {
     use crate::world::fsm::StateId;
 
@@ -353,14 +358,19 @@ pub mod states_api {
 }
 
 #[export_module]
-pub mod rand_api {
-    use rand::{thread_rng, Rng};
+pub mod transitions_api {
+    use crate::world::fsm::Transition;
 
-    pub fn chance(probability: f64) -> bool {
-        thread_rng().gen_bool(probability)
+    pub const SAW_PLAYER: &Transition = &Transition::SawPlayer;
+    pub const LOST_PLAYER: &Transition = &Transition::LostPlayer;
+
+    #[rhai_fn(pure, name = "!=")]
+    pub fn tx_ne(a: &mut Transition, b: Transition) -> bool {
+        *a != b
     }
 
-    pub fn range(start: i64, end: i64) -> i64 {
-        thread_rng().gen_range(start..=end)
+    #[rhai_fn(pure, name = "==")]
+    pub fn tx_eq(a: &mut Transition, b: Transition) -> bool {
+        *a == b
     }
 }
