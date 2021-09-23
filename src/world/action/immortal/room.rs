@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use bevy_app::EventReader;
+use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
@@ -11,9 +11,10 @@ use crate::{
     world::{
         action::{
             immortal::{UpdateDescription, UpdateName},
+            observe::Look,
             Action,
         },
-        scripting::{ScriptHook, ScriptHooks},
+        scripting::{QueuedAction, ScriptHook, ScriptHooks},
         types::{
             object::{Container, Object},
             player::{Messages, Player},
@@ -451,6 +452,7 @@ into_action!(RoomRemove);
 pub fn room_remove_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
+    mut queued_action_writer: EventWriter<QueuedAction>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
     mut player_query: Query<(&Player, &mut Location)>,
@@ -492,11 +494,23 @@ pub fn room_remove_system(
             }
 
             for player in players.iter() {
+                if let Ok(mut messages) = message_query.get_mut(*player) {
+                    messages.queue("The world begins to disintigrate around you.".to_string());
+                }
+
                 player_query
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
                     .set_room(void_room_entity);
+
+                queued_action_writer.send(
+                    Action::from(Look {
+                        actor: *player,
+                        direction: None,
+                    })
+                    .into(),
+                );
             }
 
             for object in objects.iter() {
@@ -525,6 +539,7 @@ pub fn room_remove_system(
                 }
             }
 
+            // Gather all IDs for persistence
             let present_player_ids = players
                 .iter()
                 .filter_map(|player| {
