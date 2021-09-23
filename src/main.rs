@@ -8,9 +8,11 @@ mod text;
 mod web;
 mod world;
 
+use std::collections::HashMap;
+
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
-use futures::{SinkExt, StreamExt};
+use futures::{future::join_all, SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc,
@@ -59,6 +61,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut next_client_id = 1;
 
+    let mut join_handles = HashMap::new();
+
     loop {
         tokio::select! {
             Ok((socket, addr)) = telnet_listener.accept() => {
@@ -67,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let engine_tx = engine_tx.clone();
 
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     tracing::info!("New client ({:?}): {:?}", client_id, addr);
                     let engine_tx = engine_tx;
                     let (client_tx, client_rx) = mpsc::channel(16);
@@ -81,13 +85,20 @@ async fn main() -> anyhow::Result<()> {
                     let message = ClientMessage::Disconnect(client_id);
                     engine_tx.send(message).await.ok();
                 });
+
+                join_handles.insert(client_id, handle);
             }
             message = control_rx.recv() => {
                 match message {
                     Some(message) => {
-                        if matches!(message, ControlMessage::Shutdown) {
-                            tracing::warn!("Engine shutdown, halting server.");
-                            break
+                        match message {
+                            ControlMessage::Shutdown => {
+                                tracing::warn!("Engine shutdown, halting server.");
+                                break
+                            },
+                            ControlMessage::Disconnect(client_id) => {
+                                join_handles.remove(&client_id);
+                            },
                         }
                     },
                     None => {
@@ -98,6 +109,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+
+    join_all(join_handles.values_mut()).await;
 
     Ok(())
 }

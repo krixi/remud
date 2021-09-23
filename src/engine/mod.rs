@@ -35,6 +35,7 @@ use crate::{
 
 pub enum ControlMessage {
     Shutdown,
+    Disconnect(ClientId),
 }
 
 #[derive(Debug)]
@@ -170,6 +171,10 @@ impl Engine {
                 }
 
                 self.clients.remove(client_id);
+                self.control_tx
+                    .send(ControlMessage::Disconnect(client_id))
+                    .await
+                    .ok();
             }
             ClientMessage::Ready(client_id) => {
                 tracing::info!("{}> {:?} ready", self.tick, client_id);

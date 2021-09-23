@@ -4,8 +4,6 @@
 
 - add some pizzaz for players who are teleported on room deletion so they have some idea about what is happening
 
-- fix race condition on shutdown preventing some players from receiving goodbye
-
 - add immortal flag for players
 
 - restrict immortal commands to players with the immortal flag
