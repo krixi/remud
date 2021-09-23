@@ -62,7 +62,7 @@ impl Commands {
         let mut tokenizer = Tokenizer::new(input);
         if let Some(command) = tokenizer.next() {
             if command == "help" {
-                Err(self.help(tokenizer))
+                Err(self.help(tokenizer, restricted))
             } else {
                 self.run_command(command, actor, tokenizer, restricted)
             }
@@ -95,34 +95,52 @@ impl Commands {
                         .collect_vec()
                 )
             ))
-        } else if let Some(key) = self.commands.keys().find(|n| n.starts_with(name)) {
+        } else if let Some(key) = self
+            .commands
+            .iter()
+            .filter(|(_, command)| !restricted || !command.restricted)
+            .map(|(name, _)| name)
+            .find(|n| n.starts_with(name))
+        {
             (self.commands.get(key).unwrap().parser)(actor, tokenizer)
         } else {
             Err("I don't know what that means.".to_string())
         }
     }
 
-    fn help(&self, mut tokenizer: Tokenizer) -> String {
+    fn help(&self, mut tokenizer: Tokenizer, restricted: bool) -> String {
         if tokenizer.rest().is_empty() {
-            format!("|SteelBlue3|Welcome to the City Six guidance system.\r\n\r\nGuidance is available on the following topics:|-|\r\n{}", word_list(self.commands.keys().map(|n| format!("|white|{}|-|", n)).collect_vec()))
+            let topics = word_list(
+                self.commands
+                    .iter()
+                    .filter(|(_, command)| !restricted || !command.restricted)
+                    .map(|(key, _)| key)
+                    .map(|n| format!("|white|{}|-|", n))
+                    .collect_vec(),
+            );
+            format!("|SteelBlue3|Welcome to the City Six guidance system.\r\n\r\nGuidance is available on the following topics:|-|\r\n{}", topics)
         } else {
             let topic = tokenizer.next().unwrap();
             if let Some(command) = self.commands.get(&topic) {
-                let help = &command.help;
-                if let Some(subtopic) = tokenizer.next() {
-                    if let Some(subhelp) = help.subhelp.get(subtopic) {
-                        subhelp.to_string()
-                    } else {
-                        format!(
-                            "There is no help subtopic of \"{}\" for \"{}.\"",
-                            subtopic, topic
-                        )
-                    }
+                if command.restricted && restricted {
+                    format!("There is no guidance for \"{}.\"", topic)
                 } else {
-                    help.to_string()
+                    let help = &command.help;
+                    if let Some(subtopic) = tokenizer.next() {
+                        if let Some(subhelp) = help.subhelp.get(subtopic) {
+                            subhelp.to_string()
+                        } else {
+                            format!(
+                                "There is no guidance subtopic \"{}\" for \"{}.\"",
+                                subtopic, topic
+                            )
+                        }
+                    } else {
+                        help.to_string()
+                    }
                 }
             } else {
-                format!("There is no help topic for \"{}.\"", topic)
+                format!("There is no guidance for \"{}.\"", topic)
             }
         }
     }

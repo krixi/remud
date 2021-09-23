@@ -29,15 +29,6 @@ pub const DEFAULT_PROTOTYPE_KEYWORD: &str = "object";
 pub const DEFAULT_PROTOTYPE_NAME: &str = "an object";
 pub const DEFAULT_PROTOTYPE_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
-// Valid shapes:
-// prototype new - creates a new prototype
-// prototype <id> info - displays information about the prototype
-// prototype <id> keywords - sets a prototype's keywords
-// prototype <id> name - sets a prototype's short description
-// prototype <id> description - sets a prototype's long description
-// prototype <id> remove - removes a prototype
-// prototype <id> set - sets one or more prototype flags
-// prototype <id> unset - clears one or more prototype flags
 pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(token) = tokenizer.next() {
         match token {
@@ -138,10 +129,10 @@ pub fn prototype_create_system(
 
             let bundle = PrototypeBundle {
                 prototype: Prototype::from(id),
-                flags: ObjectFlags::default(),
-                keywords: Keywords::from(vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()]),
                 name: Named::from(DEFAULT_PROTOTYPE_NAME.to_string()),
                 description: Description::from(DEFAULT_PROTOTYPE_DESCRIPTION.to_string()),
+                flags: ObjectFlags::default(),
+                keywords: Keywords::from(vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()]),
                 hooks: ScriptHooks::default(),
             };
 
@@ -200,13 +191,17 @@ pub fn prototype_info_system(
                 prototype_query.get(prototype_entity).unwrap();
 
             let mut message = format!("|white|Prototype {}|-|", prototype.id());
+
             message.push_str("\r\n  |white|name|-|: ");
             message.push_str(named.escaped().as_str());
+
             message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.escaped().as_str());
             message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.get_flags()).as_str());
+
             message.push_str("\r\n  |white|keywords|-|: ");
             message.push_str(word_list(keywords.get_list()).as_str());
+
             message.push_str("\r\n  |white|script hooks|-|:");
             if hooks.list.is_empty() {
                 message.push_str(" none");
@@ -315,7 +310,7 @@ pub fn prototype_remove_system(
             contents_query
                 .get_mut(container)
                 .unwrap()
-                .remove_object(prototype_entity);
+                .remove(prototype_entity);
 
             let objects = object_query
                 .iter()
@@ -381,19 +376,15 @@ pub fn prototype_update_flags_system(
                 }
             };
 
-            let flags = {
-                let mut flags = prototype_query.get_mut(prototype_entity).unwrap();
+            let mut flags = prototype_query.get_mut(prototype_entity).unwrap();
 
-                if *clear {
-                    flags.remove(changed_flags);
-                } else {
-                    flags.insert(changed_flags);
-                }
+            if *clear {
+                flags.remove(changed_flags);
+            } else {
+                flags.insert(changed_flags);
+            }
 
-                flags.get_flags()
-            };
-
-            updates.persist(persist::prototype::Flags::new(*id, flags));
+            updates.persist(persist::prototype::Flags::new(*id, flags.get_flags()));
             updates.reload(*id);
 
             if let Ok(mut messages) = messages.get_mut(*actor) {

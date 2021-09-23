@@ -19,6 +19,7 @@ use crate::world::{
         Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
     },
     types::{
+        self,
         object::{
             Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes,
         },
@@ -98,7 +99,18 @@ impl Db {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(results.get("id"))
+        let id = results.get("id");
+
+        // Player 1 is always an immortal by default.
+        if id == 1 {
+            sqlx::query("UPDATE players SET flags = ? WHERE name = ?")
+                .bind(types::player::Flags::IMMORTAL.bits())
+                .bind(user)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(id)
     }
 
     pub async fn get_user_hash(&self, user: &str) -> anyhow::Result<String> {
@@ -332,9 +344,9 @@ impl ObjectRow {
         Ok(ObjectBundle {
             id: Id::Object(id),
             object: Object::new(id, prototype, self.inherit_scripts),
-            flags: ObjectFlags::from(self.flags),
             name: Named::from(self.name.clone()),
             description: Description::from(self.description.clone()),
+            flags: ObjectFlags::from(self.flags),
             keywords: Keywords::from(self.keywords()),
             hooks: ScriptHooks::default(),
         })

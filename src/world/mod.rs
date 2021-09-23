@@ -339,8 +339,8 @@ fn add_void_room(world: &mut World) {
             room: Room::from(*VOID_ROOM_ID),
             name: Named::from(name.clone()),
             description: Description::from(description.clone()),
-            contents: Contents::default(),
             regions: Regions::default(),
+            contents: Contents::default(),
             hooks: ScriptHooks::default(),
         };
         let void_room = world.spawn().insert_bundle(bundle).id();

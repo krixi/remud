@@ -215,20 +215,20 @@ pub fn room_create_system(
                 }
             }
 
+            let new_room_id = rooms.next_id();
             let mut exits = HashMap::new();
             if let Some(direction) = direction {
                 exits.insert(direction.opposite(), current_room_entity);
             }
 
-            let new_room_id = rooms.next_id();
             let new_room_entity = commands
                 .spawn_bundle(RoomBundle {
                     id: Id::Room(new_room_id),
                     room: Room::new(new_room_id, exits, Vec::new()),
+                    regions: Regions::default(),
                     name: Named::from(DEFAULT_ROOM_NAME.to_string()),
                     description: Description::from(DEFAULT_ROOM_DESCRIPTION.to_string()),
                     contents: Contents::default(),
-                    regions: Regions::default(),
                     hooks: ScriptHooks::default(),
                 })
                 .id();
@@ -323,11 +323,13 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, _, _, _, _, _)| (direction, room.id()))
+                        .map(|(room, named, _, _, _, _)| (direction, named.as_str(), room.id()))
                         .ok()
                 })
-                .for_each(|(direction, room_id)| {
-                    message.push_str(format!("\r\n    {}: room {}", direction, room_id).as_str())
+                .for_each(|(direction, name, room_id)| {
+                    message.push_str(
+                        format!("\r\n    {}: {} (room {})", direction, name, room_id).as_str(),
+                    )
                 });
 
             message.push_str("\r\n  |white|regions|-|: ");
@@ -451,61 +453,53 @@ pub fn room_remove_system(
     mut action_reader: EventReader<Action>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
-    mut player_queries: QuerySet<(
-        Query<&Location, With<Player>>,
-        Query<(&Player, &mut Location)>,
-    )>,
+    mut player_query: Query<(&Player, &mut Location)>,
     mut room_query: Query<(&mut Room, &mut Contents)>,
     mut object_query: Query<(&Object, &mut Container)>,
     mut message_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomRemove(RoomRemove { actor }) = action {
-            let room_entity = player_queries
-                .q0()
-                .get(*actor)
-                .map(|location| location.room())
+            let room_entity = player_query
+                .get_mut(*actor)
+                .map(|(_, location)| location.room())
                 .unwrap();
 
             // Retrieve information about the current room.
-            let (room_id, present_players, present_objects) = {
-                let (room, contents) = room_query.get_mut(room_entity).unwrap();
+            let (room, contents) = room_query.get_mut(room_entity).unwrap();
 
-                if room.id() == *VOID_ROOM_ID {
-                    if let Ok(mut messages) = message_query.get_mut(*actor) {
-                        messages.queue("You cannot remove the void room.".to_string())
-                    }
-                    continue;
+            if room.id() == *VOID_ROOM_ID {
+                if let Ok(mut messages) = message_query.get_mut(*actor) {
+                    messages.queue("You cannot remove the void room.".to_string())
                 }
+                continue;
+            }
 
-                let players = room.get_players();
-                let objects = contents.get_objects();
-
-                (room.id(), players, objects)
-            };
+            let room_id = room.id();
+            let players = room.get_players();
+            let objects = contents.get_objects();
 
             // Move all objects and players to the void room.
             let void_room_entity = rooms.by_id(*VOID_ROOM_ID).unwrap();
             {
                 let (mut room, mut contents) = room_query.get_mut(void_room_entity).unwrap();
-                for player in present_players.iter() {
+                for player in players.iter() {
                     room.insert_player(*player);
                 }
-                for object in present_objects.iter() {
+                for object in objects.iter() {
                     contents.insert(*object);
                 }
             }
 
-            for player in present_players.iter() {
-                player_queries
-                    .q1_mut()
+            for player in players.iter() {
+                player_query
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
                     .set_room(void_room_entity);
             }
 
-            for object in present_objects.iter() {
+            for object in objects.iter() {
                 object_query
                     .get_mut(*object)
                     .map(|(_, container)| container)
@@ -531,18 +525,17 @@ pub fn room_remove_system(
                 }
             }
 
-            let present_player_ids = present_players
+            let present_player_ids = players
                 .iter()
                 .filter_map(|player| {
-                    player_queries
-                        .q1_mut()
+                    player_query
                         .get_mut(*player)
                         .map(|(player, _)| player.id())
                         .ok()
                 })
                 .collect_vec();
 
-            let present_object_ids = present_objects
+            let present_object_ids = objects
                 .iter()
                 .filter_map(|object| {
                     object_query
@@ -591,13 +584,11 @@ pub fn room_unlink_system(
                 .map(|location| location.room())
                 .unwrap();
 
-            let (room_id, removed) = {
-                let mut room = room_query.get_mut(room_entity).unwrap();
-                let removed = room.remove_exit(direction).is_some();
-                (room.id(), removed)
-            };
+            let mut room = room_query.get_mut(room_entity).unwrap();
 
-            updates.persist(persist::room::RemoveExit::new(room_id, *direction));
+            let removed = room.remove_exit(direction).is_some();
+
+            updates.persist(persist::room::RemoveExit::new(room.id(), *direction));
 
             let message = if removed {
                 format!("Removed exit {}.", direction.as_to_str())
@@ -640,26 +631,29 @@ pub fn room_update_regions_system(
                 .map(|location| location.room())
                 .unwrap();
 
-            let (room_id, updated_regions) = {
-                let (room, mut current_regions) = room_query.get_mut(room_entity).unwrap();
-                if *remove {
-                    for region in regions {
-                        current_regions.remove(region.as_str())
-                    }
-                } else {
-                    current_regions.extend(regions.iter().cloned())
+            let (room, mut room_regions) = room_query.get_mut(room_entity).unwrap();
+            if *remove {
+                for region in regions {
+                    room_regions.remove(region.as_str())
                 }
-                (room.id(), current_regions.get_list())
-            };
+            } else {
+                room_regions.extend(regions.iter().cloned())
+            }
 
             if *remove {
-                updates.persist(persist::room::RemoveRegions::new(room_id, updated_regions));
+                updates.persist(persist::room::RemoveRegions::new(
+                    room.id(),
+                    room_regions.get_list(),
+                ));
             } else {
-                updates.persist(persist::room::AddRegions::new(room_id, updated_regions));
+                updates.persist(persist::room::AddRegions::new(
+                    room.id(),
+                    room_regions.get_list(),
+                ));
             }
 
             if let Ok(mut messages) = message_query.get_mut(*actor) {
-                messages.queue(format!("Updated room {} regions.", room_id));
+                messages.queue(format!("Updated room {} regions.", room.id()));
             }
         }
     }

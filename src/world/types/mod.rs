@@ -137,15 +137,19 @@ impl Contents {
         self.objects.is_empty()
     }
 
-    pub fn remove(&mut self, index: usize) -> Entity {
-        self.objects.remove(index)
+    pub fn find(&self, mut predicate: impl FnMut(Entity) -> bool) -> Option<Entity> {
+        self.objects
+            .iter()
+            .find(|entity| predicate(**entity))
+            .copied()
     }
 
-    pub fn remove_object(&mut self, object: Entity) -> Option<Entity> {
+    pub fn remove(&mut self, object: Entity) -> bool {
         if let Some(index) = self.objects.iter().position(|o| *o == object) {
-            Some(self.objects.remove(index))
+            self.objects.remove(index);
+            true
         } else {
-            None
+            false
         }
     }
 

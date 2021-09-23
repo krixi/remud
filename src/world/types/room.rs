@@ -13,8 +13,8 @@ pub struct RoomBundle {
     pub room: Room,
     pub name: Named,
     pub description: Description,
-    pub contents: Contents,
     pub regions: Regions,
+    pub contents: Contents,
     pub hooks: ScriptHooks,
 }
 

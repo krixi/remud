@@ -99,7 +99,7 @@ pub fn player_info_system(
         &Location,
         Option<&ScriptHooks>,
     )>,
-    room_query: Query<&Room>,
+    room_query: Query<(&Room, &Named)>,
     object_query: Query<(&Object, &Named)>,
     mut message_query: Query<&mut Messages>,
 ) {
@@ -116,21 +116,21 @@ pub fn player_info_system(
 
             let (player, flags, description, contents, location, hooks) =
                 player_query.get(player).unwrap();
-            let room = room_query.get(location.room()).unwrap();
+            let (room, room_name) = room_query.get(location.room()).unwrap();
 
             let mut message = format!("|white|Player {}|-|", name);
 
             message.push_str("\r\n  |white|id|-|: ");
             message.push_str(player.id().to_string().as_str());
 
-            message.push_str("\r\n  |white|flags|-|: ");
-            message.push_str(format!("{:?}", flags.get_flags()).as_str());
-
             message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.as_str());
 
+            message.push_str("\r\n  |white|flags|-|: ");
+            message.push_str(format!("{:?}", flags.get_flags()).as_str());
+
             message.push_str("\r\n  |white|room|-|: ");
-            message.push_str(room.id().to_string().as_str());
+            message.push_str(format!("{} (room {})", room_name.as_str(), room.id()).as_str());
 
             message.push_str("\r\n  |white|inventory|-|:");
             contents
@@ -145,6 +145,7 @@ pub fn player_info_system(
                 .for_each(|(id, name)| {
                     message.push_str(format!("\r\n    object {}: {}", id, name).as_str())
                 });
+
             message.push_str("\r\n  |white|script hooks|-|:");
             if let Some(ScriptHooks { list }) = hooks {
                 if list.is_empty() {
@@ -208,19 +209,15 @@ pub fn player_update_flags_system(
                 }
             };
 
-            let (id, flags) = {
-                let (player, mut flags) = player_query.get_mut(player_entity).unwrap();
+            let (player, mut flags) = player_query.get_mut(player_entity).unwrap();
 
-                if *clear {
-                    flags.remove(changed_flags);
-                } else {
-                    flags.insert(changed_flags);
-                }
+            if *clear {
+                flags.remove(changed_flags);
+            } else {
+                flags.insert(changed_flags);
+            }
 
-                (player.id(), flags.get_flags())
-            };
-
-            updates.persist(persist::player::Flags::new(id, flags));
+            updates.persist(persist::player::Flags::new(player.id(), flags.get_flags()));
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
                 messages.queue(format!("Updated player {} flags.", name));

@@ -54,11 +54,11 @@ pub fn drop_system(
     for action in action_reader.iter() {
         if let Action::Drop(Drop { actor, keywords }) = action {
             // Find entity to drop in contents of dropping entity, if it exists. Grab some other data as well.
-            let (entity_id, room_entity, pos) =
+            let (entity_id, room_entity, target) =
                 if let Ok((id, location, contents)) = dropping_query.get_mut(*actor) {
-                    let pos = contents.objects().iter().position(|object| {
+                    let target = contents.find(|object| {
                         object_query
-                            .get(*object)
+                            .get(object)
                             .map(|(_, _, object_keywords)| {
                                 {
                                     object_keywords.contains_all(keywords.as_slice())
@@ -66,17 +66,17 @@ pub fn drop_system(
                             })
                             .unwrap_or(false)
                     });
-                    (*id, location.room(), pos)
+                    (*id, location.room(), target)
                 } else {
                     tracing::warn!("Entity {:?} cannot drop an item without Contents.", actor);
                     continue;
                 };
 
-            let message = if let Some(pos) = pos {
+            let message = if let Some(entity) = target {
                 // Move the object from the entity to the room
-                let object_entity = dropping_query
+                dropping_query
                     .get_mut(*actor)
-                    .map(|(_, _, mut contents)| contents.remove(pos))
+                    .map(|(_, _, mut contents)| contents.remove(entity))
                     .unwrap();
 
                 let room_id = {
@@ -84,14 +84,14 @@ pub fn drop_system(
                         .get_mut(room_entity)
                         .expect("Location has valid Room");
 
-                    contents.insert(object_entity);
+                    contents.insert(entity);
                     room.id()
                 };
 
                 let (object_id, name) = {
-                    let (object, named, _) = object_query.get(object_entity).unwrap();
+                    let (object, named, _) = object_query.get(entity).unwrap();
                     commands
-                        .entity(object_entity)
+                        .entity(entity)
                         .insert(Location::from(room_entity))
                         .remove::<Container>();
 
@@ -167,12 +167,12 @@ pub fn get_system(
                 };
 
             // Find a matching object in the room.
-            let pos = room_query
+            let target = room_query
                 .get_mut(room_entity)
                 .map(|(_, contents)| {
-                    contents.objects().iter().position(|object| {
+                    contents.find(|object| {
                         object_query
-                            .get(*object)
+                            .get(object)
                             .map(|(_, _, object_keywords, _)| {
                                 {
                                     object_keywords.contains_all(keywords.as_slice())
@@ -183,14 +183,12 @@ pub fn get_system(
                 })
                 .expect("Location has a valid room.");
 
-            let message = if let Some(pos) = pos {
+            let message = if let Some(entity) = target {
                 // Move the object from the room to the entity
                 let (room_id, object_entity) = {
                     let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
 
-                    let object_entity = contents[pos];
-
-                    let (_, named, _, flags) = object_query.get(object_entity).unwrap();
+                    let (_, named, _, flags) = object_query.get(entity).unwrap();
                     if flags.contains(Flags::FIXED) {
                         if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             let name = named.as_str();
@@ -200,9 +198,9 @@ pub fn get_system(
                         continue;
                     }
 
-                    contents.remove(pos);
+                    contents.remove(entity);
 
-                    (room.id(), object_entity)
+                    (room.id(), entity)
                 };
 
                 getting_query

@@ -27,15 +27,6 @@ use crate::{
     },
 };
 
-// Valid shapes:
-// object new - creates a new object and puts it on the ground
-// object <id> info - displays information about the object
-// object <id> keywords - sets an object's keywords
-// object <id> name - sets an object's short description
-// object <id> description - sets an object's long description
-// object <id> remove - removes an object
-// object <id> set - sets one or more object flags
-// object <id> unset - clears one or more object flags
 pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(token) = tokenizer.next() {
         match token {
@@ -187,9 +178,9 @@ pub fn object_create_system(
                 .spawn_bundle(ObjectBundle {
                     object: Object::new(id, prototype, true),
                     id: Id::Object(id),
-                    flags: flags.clone(),
                     name: named.clone(),
                     description: description.clone(),
+                    flags: flags.clone(),
                     keywords: keywords.clone(),
                     hooks: hooks.clone(),
                 })
@@ -441,19 +432,15 @@ pub fn object_update_flags_system(
                 }
             };
 
-            let flags = {
-                let mut flags = object_query.get_mut(object_entity).unwrap();
+            let mut flags = object_query.get_mut(object_entity).unwrap();
 
-                if *clear {
-                    flags.remove(changed_flags);
-                } else {
-                    flags.insert(changed_flags);
-                }
+            if *clear {
+                flags.remove(changed_flags);
+            } else {
+                flags.insert(changed_flags);
+            }
 
-                flags.get_flags()
-            };
-
-            updates.persist(persist::object::Flags::new(*id, flags));
+            updates.persist(persist::object::Flags::new(*id, flags.get_flags()));
 
             if let Ok(mut messages) = messages.get_mut(*actor) {
                 messages.queue(format!("Updated object {} flags.", id));
@@ -553,7 +540,7 @@ pub fn object_remove_system(
             contents_query
                 .get_mut(container)
                 .unwrap()
-                .remove_object(object_entity);
+                .remove(object_entity);
 
             updates.persist(persist::object::Remove::new(*id));
 

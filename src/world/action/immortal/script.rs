@@ -218,16 +218,14 @@ pub fn script_attach_system(
                 }
             };
 
-            let script_trigger = {
-                if *trigger == TriggerKind::Init {
-                    ScriptTrigger::Init
-                } else {
-                    let trigger_event = script_query.get(script_entity).unwrap().trigger;
-                    match trigger {
-                        TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event),
-                        TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event),
-                        TriggerKind::Init => unreachable!(),
-                    }
+            let script_trigger = if *trigger == TriggerKind::Init {
+                ScriptTrigger::Init
+            } else {
+                let trigger_event = script_query.get(script_entity).unwrap().trigger;
+                match trigger {
+                    TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event),
+                    TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event),
+                    TriggerKind::Init => unreachable!(),
                 }
             };
 

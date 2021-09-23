@@ -82,11 +82,11 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
             .spawn()
             .insert_bundle(RoomBundle {
                 id: Id::Room(id),
+                room: Room::from(id),
                 name: Named::from(room.name),
                 description: Description::from(room.description.clone()),
-                room: Room::from(id),
-                contents: Contents::default(),
                 regions: Regions::new(regions),
+                contents: Contents::default(),
                 hooks: ScriptHooks::default(),
             })
             .id();

@@ -48,28 +48,28 @@ pub fn move_system(
                 };
 
             // Retrieve information about the origin/current room.
-            let (destination, origin_players, room_id) = {
-                let room = room_query
-                    .get_mut(location.room())
-                    .expect("Location contains a valid room.");
+            let current_room = room_query
+                .get_mut(location.room())
+                .expect("Location contains a valid room.");
 
-                if let Some(destination) = room.exit(direction) {
+            let (destination, origin_players, room_id) =
+                if let Some(destination) = current_room.exit(direction) {
                     (
                         destination,
-                        room.players()
+                        current_room
+                            .players()
                             .iter()
                             .filter(|present_player| **present_player != *actor)
                             .copied()
                             .collect_vec(),
-                        room.id(),
+                        current_room.id(),
                     )
                 } else {
                     if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(format!("There is no exit {}.", direction.as_to_str()));
                     }
                     continue;
-                }
-            };
+                };
 
             // Notify players in the origin room that something is leaving.
             let leave_message = format!("{} leaves {}.", name, direction.as_to_str());
@@ -81,27 +81,25 @@ pub fn move_system(
             }
 
             // Retrieve information about the destination room.
-            let (destination_id, from_direction, destination_players) = {
-                let room = room_query
-                    .get_mut(destination)
-                    .expect("Destinations are valid rooms.");
+            let destination_room = room_query
+                .get_mut(destination)
+                .expect("Destinations are valid rooms.");
 
-                let direction = room
-                    .exits()
-                    .iter()
-                    .find(|(_, room)| **room == location.room())
-                    .map(|(direction, _)| direction)
-                    .copied();
+            let destination_id = destination_room.id();
 
-                let present_players = room
-                    .players()
-                    .iter()
-                    .filter(|present_player| **present_player != *actor)
-                    .copied()
-                    .collect_vec();
+            let from_direction = destination_room
+                .exits()
+                .iter()
+                .find(|(_, room)| **room == location.room())
+                .map(|(direction, _)| direction)
+                .copied();
 
-                (room.id(), direction, present_players)
-            };
+            let destination_players = destination_room
+                .players()
+                .iter()
+                .filter(|present_player| **present_player != *actor)
+                .copied()
+                .collect_vec();
 
             // Move the entity.
             match id {
@@ -119,7 +117,7 @@ pub fn move_system(
                     contents_query
                         .get_mut(location.room())
                         .unwrap()
-                        .remove_object(*actor);
+                        .remove(*actor);
                     contents_query.get_mut(destination).unwrap().insert(*actor);
                 }
                 Id::Room(_) => todo!(),
@@ -133,6 +131,7 @@ pub fn move_system(
                 || format!("{} appears.", name),
                 |from| format!("{} arrives {}.", name, from.as_from_str()),
             );
+
             for player in destination_players {
                 messages_query
                     .get_mut(player)

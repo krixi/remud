@@ -28,6 +28,7 @@ use crate::{
     },
     world::{
         action::{commands::Commands, observe::Look, system::Login, Action},
+        types::player::{self, PlayerFlags},
         GameWorld,
     },
     ClientId,
@@ -467,7 +468,16 @@ impl Engine {
                 }
                 State::InGame { player } => {
                     tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
-                    match self.commands.parse(*player, &input, false) {
+                    let immortal = self
+                        .game_world
+                        .get_world()
+                        .read()
+                        .unwrap()
+                        .get::<PlayerFlags>(*player)
+                        .unwrap()
+                        .contains(player::Flags::IMMORTAL);
+
+                    match self.commands.parse(*player, &input, !immortal) {
                         Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
                             client
