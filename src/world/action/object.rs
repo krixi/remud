@@ -151,7 +151,7 @@ pub fn get_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
     mut getting_query: Query<(&Id, &Location, &mut Contents), Without<Room>>,
-    object_query: Query<(&Object, &Named, &Keywords, &Flags)>,
+    object_query: Query<(&Object, &Named, &Keywords, &ObjectFlags)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -191,7 +191,7 @@ pub fn get_system(
                     let object_entity = contents[pos];
 
                     let (_, named, _, flags) = object_query.get(object_entity).unwrap();
-                    if flags.contains(ObjectFlags::FIXED) {
+                    if flags.contains(Flags::FIXED) {
                         if let Ok(mut messages) = messages_query.get_mut(*actor) {
                             let name = named.as_str();
                             messages

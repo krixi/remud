@@ -152,7 +152,7 @@ pub fn object_create_system(
     prototypes: Res<Prototypes>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
-    prototypes_query: Query<(&Named, &Description, &Flags, &Keywords, &ScriptHooks)>,
+    prototypes_query: Query<(&Named, &Description, &ObjectFlags, &Keywords, &ScriptHooks)>,
     player_query: Query<&Location, With<Player>>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
@@ -240,7 +240,7 @@ pub fn object_info_system(
         &Object,
         &Named,
         &Description,
-        &Flags,
+        &ObjectFlags,
         &Keywords,
         &ScriptHooks,
         Option<&Container>,
@@ -347,7 +347,7 @@ pub fn object_inherit_fields_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut object_query: Query<&mut Object>,
-    prototype_query: Query<(&Named, &Description, &Flags, &Keywords, &ScriptHooks)>,
+    prototype_query: Query<(&Named, &Description, &ObjectFlags, &Keywords, &ScriptHooks)>,
     mut updates: ResMut<Updates>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -392,6 +392,117 @@ pub fn object_inherit_fields_system(
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Object {} fields set to inherit.", id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ObjectUpdateFlags {
+    pub actor: Entity,
+    pub id: ObjectId,
+    pub flags: Vec<String>,
+    pub clear: bool,
+}
+
+into_action!(ObjectUpdateFlags);
+
+pub fn object_update_flags_system(
+    mut action_reader: EventReader<Action>,
+    objects: Res<Objects>,
+    mut updates: ResMut<Updates>,
+    mut object_query: Query<&mut ObjectFlags>,
+    mut messages: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateFlags(ObjectUpdateFlags {
+            actor,
+            id,
+            flags,
+            clear,
+        }) = action
+        {
+            let object_entity = if let Some(object) = objects.by_id(*id) {
+                object
+            } else {
+                if let Ok(mut messages) = messages.get_mut(*actor) {
+                    messages.queue(format!("Object {} not found.", id));
+                }
+                continue;
+            };
+
+            let changed_flags = match Flags::try_from(flags.as_slice()) {
+                Ok(flags) => flags,
+                Err(e) => {
+                    if let Ok(mut messages) = messages.get_mut(*actor) {
+                        messages.queue(e.to_string());
+                    }
+                    continue;
+                }
+            };
+
+            let flags = {
+                let mut flags = object_query.get_mut(object_entity).unwrap();
+
+                if *clear {
+                    flags.remove(changed_flags);
+                } else {
+                    flags.insert(changed_flags);
+                }
+
+                flags.get_flags()
+            };
+
+            updates.persist(persist::object::Flags::new(*id, flags));
+
+            if let Ok(mut messages) = messages.get_mut(*actor) {
+                messages.queue(format!("Updated object {} flags.", id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct ObjectUpdateKeywords {
+    pub actor: Entity,
+    pub id: ObjectId,
+    pub keywords: Vec<String>,
+}
+
+into_action!(ObjectUpdateKeywords);
+
+pub fn object_update_keywords_system(
+    mut action_reader: EventReader<Action>,
+    objects: Res<Objects>,
+    mut updates: ResMut<Updates>,
+    mut object_query: Query<&mut Keywords>,
+    mut messages: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
+            actor,
+            id,
+            keywords,
+        }) = action
+        {
+            let object_entity = if let Some(object) = objects.by_id(*id) {
+                object
+            } else {
+                if let Ok(mut messages) = messages.get_mut(*actor) {
+                    messages.queue(format!("Object {} not found.", id));
+                }
+                continue;
+            };
+
+            object_query
+                .get_mut(object_entity)
+                .unwrap()
+                .set_list(keywords.clone());
+
+            updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
+
+            if let Ok(mut messages) = messages.get_mut(*actor) {
+                messages.queue(format!("Updated object {} keywords.", id));
             }
         }
     }
@@ -448,117 +559,6 @@ pub fn object_remove_system(
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(format!("Object {} removed.", id));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct ObjectUpdateKeywords {
-    pub actor: Entity,
-    pub id: ObjectId,
-    pub keywords: Vec<String>,
-}
-
-into_action!(ObjectUpdateKeywords);
-
-pub fn object_update_keywords_system(
-    mut action_reader: EventReader<Action>,
-    objects: Res<Objects>,
-    mut updates: ResMut<Updates>,
-    mut object_query: Query<&mut Keywords>,
-    mut messages: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::ObjectUpdateKeywords(ObjectUpdateKeywords {
-            actor,
-            id,
-            keywords,
-        }) = action
-        {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Object {} not found.", id));
-                }
-                continue;
-            };
-
-            object_query
-                .get_mut(object_entity)
-                .unwrap()
-                .set_list(keywords.clone());
-
-            updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
-
-            if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated object {} keywords.", id));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct ObjectUpdateFlags {
-    pub actor: Entity,
-    pub id: ObjectId,
-    pub flags: Vec<String>,
-    pub clear: bool,
-}
-
-into_action!(ObjectUpdateFlags);
-
-pub fn object_update_flags_system(
-    mut action_reader: EventReader<Action>,
-    objects: Res<Objects>,
-    mut updates: ResMut<Updates>,
-    mut object_query: Query<&mut Flags>,
-    mut messages: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::ObjectUpdateFlags(ObjectUpdateFlags {
-            actor,
-            id,
-            flags,
-            clear,
-        }) = action
-        {
-            let object_entity = if let Some(object) = objects.by_id(*id) {
-                object
-            } else {
-                if let Ok(mut messages) = messages.get_mut(*actor) {
-                    messages.queue(format!("Object {} not found.", id));
-                }
-                continue;
-            };
-
-            let changed_flags = match ObjectFlags::try_from(flags.as_slice()) {
-                Ok(flags) => flags,
-                Err(e) => {
-                    if let Ok(mut messages) = messages.get_mut(*actor) {
-                        messages.queue(e.to_string());
-                    }
-                    continue;
-                }
-            };
-
-            let flags = {
-                let mut flags = object_query.get_mut(object_entity).unwrap();
-
-                if *clear {
-                    flags.remove(changed_flags);
-                } else {
-                    flags.insert(changed_flags);
-                }
-
-                flags.get_flags()
-            };
-
-            updates.persist(persist::object::Flags::new(*id, flags));
-
-            if let Ok(mut messages) = messages.get_mut(*actor) {
-                messages.queue(format!("Updated object {} flags.", id));
             }
         }
     }

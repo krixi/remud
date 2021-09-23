@@ -3,7 +3,11 @@ use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::{object::ObjectId, player::PlayerId, room::RoomId},
+    world::types::{
+        object::ObjectId,
+        player::{self, PlayerId},
+        room::RoomId,
+    },
 };
 
 pub struct AddObject {
@@ -49,6 +53,30 @@ impl Persist for Description {
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE players SET description = ? WHERE id = ?")
             .bind(self.description.as_str())
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub struct Flags {
+    id: PlayerId,
+    flags: player::Flags,
+}
+
+impl Flags {
+    pub fn new(id: PlayerId, flags: player::Flags) -> Box<Self> {
+        Box::new(Flags { id, flags })
+    }
+}
+
+#[async_trait]
+impl Persist for Flags {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE players SET flags = ? WHERE id = ?")
+            .bind(self.flags.bits())
             .bind(self.id)
             .execute(pool)
             .await?;

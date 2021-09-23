@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::object::{InheritableFields, ObjectFlags, ObjectId, PrototypeId},
+    world::types::object::{self, InheritableFields, ObjectId, PrototypeId},
 };
 
 pub struct Create {
@@ -113,11 +113,11 @@ impl Persist for Inherit {
 
 pub struct Flags {
     id: ObjectId,
-    flags: ObjectFlags,
+    flags: object::Flags,
 }
 
 impl Flags {
-    pub fn new(id: ObjectId, flags: ObjectFlags) -> Box<Self> {
+    pub fn new(id: ObjectId, flags: object::Flags) -> Box<Self> {
         Box::new(Flags { id, flags })
     }
 }

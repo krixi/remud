@@ -18,7 +18,7 @@ pub struct PrototypeBundle {
     pub prototype: Prototype,
     pub name: Named,
     pub description: Description,
-    pub flags: Flags,
+    pub flags: ObjectFlags,
     pub keywords: Keywords,
     pub hooks: ScriptHooks,
 }
@@ -29,7 +29,7 @@ pub struct ObjectBundle {
     pub object: Object,
     pub name: Named,
     pub description: Description,
-    pub flags: Flags,
+    pub flags: ObjectFlags,
     pub keywords: Keywords,
     pub hooks: ScriptHooks,
 }
@@ -114,40 +114,40 @@ impl From<Vec<String>> for Keywords {
 }
 
 #[derive(Debug, Clone)]
-pub struct Flags {
-    flags: ObjectFlags,
+pub struct ObjectFlags {
+    flags: Flags,
 }
 
-impl Flags {
-    pub fn contains(&self, flags: ObjectFlags) -> bool {
+impl ObjectFlags {
+    pub fn contains(&self, flags: Flags) -> bool {
         self.flags.contains(flags)
     }
 
-    pub fn insert(&mut self, flags: ObjectFlags) {
+    pub fn insert(&mut self, flags: Flags) {
         self.flags.insert(flags);
     }
 
-    pub fn remove(&mut self, flags: ObjectFlags) {
+    pub fn remove(&mut self, flags: Flags) {
         self.flags.remove(flags);
     }
 
-    pub fn get_flags(&self) -> ObjectFlags {
+    pub fn get_flags(&self) -> Flags {
         self.flags
     }
 }
 
-impl Default for Flags {
+impl Default for ObjectFlags {
     fn default() -> Self {
         Self {
-            flags: ObjectFlags::empty(),
+            flags: Flags::empty(),
         }
     }
 }
 
-impl From<i64> for Flags {
+impl From<i64> for ObjectFlags {
     fn from(value: i64) -> Self {
-        Flags {
-            flags: ObjectFlags::from_bits_truncate(value),
+        ObjectFlags {
+            flags: Flags::from_bits_truncate(value),
         }
     }
 }
@@ -171,6 +171,55 @@ impl From<Entity> for Container {
     fn from(entity: Entity) -> Self {
         Container { entity }
     }
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, EnumString)]
+pub enum InheritableFields {
+    #[strum(serialize = "flags")]
+    Flags,
+    #[strum(serialize = "name")]
+    Name,
+    #[strum(serialize = "desc")]
+    Description,
+    #[strum(serialize = "keywords")]
+    Keywords,
+    #[strum(serialize = "hooks")]
+    Hooks,
+}
+
+bitflags! {
+    pub struct Flags: i64 {
+        const FIXED = 0b0001;
+        const SUBTLE = 0b0010;
+    }
+}
+
+impl TryFrom<&[String]> for Flags {
+    type Error = FlagsParseError;
+
+    fn try_from(strs: &[String]) -> Result<Self, Self::Error> {
+        let mut flags = Flags::empty();
+
+        for flag in strs {
+            match flag.to_lowercase().as_str() {
+                "fixed" => flags.insert(Flags::FIXED),
+                "subtle" => flags.insert(Flags::SUBTLE),
+                _ => {
+                    return Err(FlagsParseError {
+                        invalid_flag: flag.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(flags)
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Invalid object flag: {invalid_flag}. Valid flags: fixed, subtle.")]
+pub struct FlagsParseError {
+    invalid_flag: String,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
@@ -264,55 +313,6 @@ impl fmt::Display for ObjectIdParseError {
     }
 }
 impl error::Error for ObjectIdParseError {}
-
-bitflags! {
-    pub struct ObjectFlags: i64{
-        const FIXED = 0b0001;
-        const SUBTLE = 0b0010;
-    }
-}
-
-impl TryFrom<&[String]> for ObjectFlags {
-    type Error = FlagsParseError;
-
-    fn try_from(strs: &[String]) -> Result<Self, Self::Error> {
-        let mut flags = ObjectFlags::empty();
-
-        for flag in strs {
-            match flag.to_lowercase().as_str() {
-                "fixed" => flags.insert(ObjectFlags::FIXED),
-                "subtle" => flags.insert(ObjectFlags::SUBTLE),
-                _ => {
-                    return Err(FlagsParseError {
-                        invalid_flag: flag.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(flags)
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Invalid object flag: {invalid_flag}. Valid flags: fixed, subtle.")]
-pub struct FlagsParseError {
-    invalid_flag: String,
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, EnumString)]
-pub enum InheritableFields {
-    #[strum(serialize = "flags")]
-    Flags,
-    #[strum(serialize = "name")]
-    Name,
-    #[strum(serialize = "desc")]
-    Description,
-    #[strum(serialize = "keywords")]
-    Keywords,
-    #[strum(serialize = "hooks")]
-    Hooks,
-}
 
 pub struct Objects {
     by_id: HashMap<ObjectId, Entity>,

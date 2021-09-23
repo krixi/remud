@@ -4,8 +4,6 @@
 
 - add some pizzaz for players who are teleported on room deletion so they have some idea about what is happening
 
-- add immortal flag for players
-
 - restrict immortal commands to players with the immortal flag
 
 - add object quantity and associated manipulation commands

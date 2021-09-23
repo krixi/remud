@@ -367,7 +367,13 @@ fn default_commands() -> Vec<Command> {
                 "info",
                 Help::new("player <name> info", "Displays information about a player.")
                     .with_example("player Ted info"),
-            ),
+            )
+            .with_subhelp("set", Help::new("player <name> set <flag> [<flag>..]", "Sets one or more flags on the player. Use \"help player flags\" for more information about flags.")
+            .with_example( "player Ted set immortal"))
+            .with_subhelp("unset", Help::new("player <name> unset <flag> [<flag>..]", "Clears one or more flags on the player. Use \"help player flags\" for more information about flags.")
+            .with_example( "player 2 unset immortal"))
+            .with_subhelp("flags", Help::new_simple("Flags are used to set binary properties on players.\r\n  |white|immortal|-|: grants the player access to all immortal commands."))
+            ,
         )
         .restricted(),
     );
@@ -386,11 +392,10 @@ fn default_commands() -> Vec<Command> {
             .with_example( "prototype 2 desc An adorable teddy bear. It looks well loved."))
             .with_subhelp("remove", Help::new("prototype <id> remove", "Removes the prototype from the game world. This will remove all instances of the prototype from rooms, players, and other containers.")
             .with_example( "prototype 2 remove"))
-            .with_subhelp("set", Help::new("prototype <id> set <flag> [<flag>..]", "Sets one or more flags on the prototype. Use \"help prototype flags\" for more information about flags.")
+            .with_subhelp("set", Help::new("prototype <id> set <flag> [<flag>..]", "Sets one or more flags on the prototype. Use \"help object flags\" for more information about flags.")
             .with_example( "prototype 2 set fixed subtle"))
-            .with_subhelp("unset", Help::new("prototype <id> unset <flag> [<flag>..]", "Clears one or more flags on the prototype. Use \"help prototype flags\" for more information about flags.")
+            .with_subhelp("unset", Help::new("prototype <id> unset <flag> [<flag>..]", "Clears one or more flags on the prototype. Use \"help object flags\" for more information about flags.")
             .with_example( "prototype 2 unset fixed subtle"))
-            .with_subhelp("flags", Help::new_simple("Flags are used to set binary properties on prototypes.\r\n  |white|fixed|-|: prevents the prototype from being picked up.\r\n  |white|subtle|-|: prevents the prototype from being listed in the rooms item list when the look command is used. It can still be looked at, however."))
         ).restricted());
     commands.push(Command::new("room", parse_room, Help::new("room <subcommand>", "Creates, modifies, and removes rooms from the game world. All room commands apply to the room you are in (aside from \"room new\").")
         .with_subhelp("info", Help::new("help info", "Displays information about the current room."))

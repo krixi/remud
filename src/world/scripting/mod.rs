@@ -243,6 +243,7 @@ impl TriggerEvent {
             Action::ObjectUpdateFlags(_) => None,
             Action::ObjectUpdateKeywords(_) => None,
             Action::PlayerInfo(_) => None,
+            Action::PlayerUpdateFlags(_) => None,
             Action::PrototypeCreate(_) => None,
             Action::PrototypeInfo(_) => None,
             Action::PrototypeRemove(_) => None,

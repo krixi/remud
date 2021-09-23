@@ -65,7 +65,7 @@ pub fn look_system(
     looker_query: Query<&Location, With<Player>>,
     room_query: Query<(&Room, &Named, &Description, &Contents)>,
     player_query: Query<&Named>,
-    object_query: Query<(&Named, &Flags)>,
+    object_query: Query<(&Named, &ObjectFlags)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -125,7 +125,7 @@ pub fn look_system(
                 .objects()
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
-                .filter(|(_, flags)| !flags.contains(ObjectFlags::SUBTLE))
+                .filter(|(_, flags)| !flags.contains(Flags::SUBTLE))
                 .map(|(named, _)| named.to_string())
                 .collect_vec();
 

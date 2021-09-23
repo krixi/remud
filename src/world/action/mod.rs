@@ -22,7 +22,7 @@ use crate::world::action::{
             ObjectCreate, ObjectInfo, ObjectInheritFields, ObjectRemove, ObjectUpdateFlags,
             ObjectUpdateKeywords,
         },
-        player::{player_info_system, PlayerInfo},
+        player::{player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags},
         prototype::{
             prototype_create_system, prototype_info_system, prototype_remove_system,
             prototype_update_flags_system, prototype_update_keywords_system, PrototypeCreate,
@@ -72,6 +72,7 @@ pub enum Action {
     ObjectUpdateFlags(ObjectUpdateFlags),
     ObjectUpdateKeywords(ObjectUpdateKeywords),
     PlayerInfo(PlayerInfo),
+    PlayerUpdateFlags(PlayerUpdateFlags),
     PrototypeCreate(PrototypeCreate),
     PrototypeInfo(PrototypeInfo),
     PrototypeRemove(PrototypeRemove),
@@ -115,6 +116,7 @@ impl Action {
             Action::ObjectUpdateFlags(action) => action.actor,
             Action::ObjectUpdateKeywords(action) => action.actor,
             Action::PlayerInfo(action) => action.actor,
+            Action::PlayerUpdateFlags(action) => action.actor,
             Action::PrototypeCreate(action) => action.actor,
             Action::PrototypeInfo(action) => action.actor,
             Action::PrototypeRemove(action) => action.actor,
@@ -158,6 +160,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(object_update_flags_system.system());
     stage.add_system(object_update_keywords_system.system());
     stage.add_system(player_info_system.system());
+    stage.add_system(player_update_flags_system.system());
     stage.add_system(prototype_create_system.system());
     stage.add_system(prototype_info_system.system());
     stage.add_system(prototype_remove_system.system());

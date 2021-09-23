@@ -13,7 +13,7 @@ use crate::{
         scripting::{Script, ScriptHook, ScriptHooks, ScriptInit, Scripts, TriggerKind},
         types::{
             object::{
-                Flags, Keywords, Object, ObjectId, Objects, Prototype, PrototypeBundle,
+                Keywords, Object, ObjectFlags, ObjectId, Objects, Prototype, PrototypeBundle,
                 PrototypeId, Prototypes,
             },
             room::{Direction, Regions, Room, RoomBundle, RoomId, Rooms},
@@ -139,7 +139,7 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result
         let id = PrototypeId::try_from(prototype_row.id)?;
         let bundle = PrototypeBundle {
             prototype: Prototype::from(id),
-            flags: Flags::from(prototype_row.flags),
+            flags: ObjectFlags::from(prototype_row.flags),
             name: Named::from(prototype_row.name.clone()),
             description: Description::from(prototype_row.description.clone()),
             keywords: Keywords::from(prototype_row.keywords()),

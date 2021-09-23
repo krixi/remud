@@ -1,7 +1,11 @@
+use std::convert::TryFrom;
+
 use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
+use itertools::Itertools;
 
 use crate::{
+    engine::persist::{self, Updates},
     into_action,
     text::Tokenizer,
     world::{
@@ -9,7 +13,7 @@ use crate::{
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::Object,
-            player::{Messages, Player, Players},
+            player::{self, Messages, Player, PlayerFlags, Players},
             room::Room,
             Contents, Description, Location, Named,
         },
@@ -26,6 +30,46 @@ pub fn parse_player(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                     actor: player,
                     name: name.to_string(),
                 })),
+                "set" => {
+                    if tokenizer.rest().is_empty() {
+                        Err(
+                            "Enter a space separated list of flags. Valid flags: immortal."
+                                .to_string(),
+                        )
+                    } else {
+                        Ok(Action::from(PlayerUpdateFlags {
+                            actor: player,
+                            name: name.to_string(),
+                            flags: tokenizer
+                                .rest()
+                                .to_string()
+                                .split_whitespace()
+                                .map(|flag| flag.to_string())
+                                .collect_vec(),
+                            clear: false,
+                        }))
+                    }
+                }
+                "unset" => {
+                    if tokenizer.rest().is_empty() {
+                        Err(
+                            "Enter a space separated list of flags. Valid flags: immortal."
+                                .to_string(),
+                        )
+                    } else {
+                        Ok(Action::from(PlayerUpdateFlags {
+                            actor: player,
+                            name: name.to_string(),
+                            flags: tokenizer
+                                .rest()
+                                .to_string()
+                                .split_whitespace()
+                                .map(|flag| flag.to_string())
+                                .collect_vec(),
+                            clear: true,
+                        }))
+                    }
+                }
                 _ => Err("Enter a valid player subcommand: info.".to_string()),
             }
         } else {
@@ -49,6 +93,7 @@ pub fn player_info_system(
     players: Res<Players>,
     player_query: Query<(
         &Player,
+        &PlayerFlags,
         &Description,
         &Contents,
         &Location,
@@ -69,7 +114,7 @@ pub fn player_info_system(
                 continue;
             };
 
-            let (player, description, contents, location, hooks) =
+            let (player, flags, description, contents, location, hooks) =
                 player_query.get(player).unwrap();
             let room = room_query.get(location.room()).unwrap();
 
@@ -77,6 +122,9 @@ pub fn player_info_system(
 
             message.push_str("\r\n  |white|id|-|: ");
             message.push_str(player.id().to_string().as_str());
+
+            message.push_str("\r\n  |white|flags|-|: ");
+            message.push_str(format!("{:?}", flags.get_flags()).as_str());
 
             message.push_str("\r\n  |white|description|-|: ");
             message.push_str(description.as_str());
@@ -111,6 +159,71 @@ pub fn player_info_system(
 
             if let Ok(mut messages) = message_query.get_mut(*actor) {
                 messages.queue(message);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct PlayerUpdateFlags {
+    pub actor: Entity,
+    pub name: String,
+    pub flags: Vec<String>,
+    pub clear: bool,
+}
+
+into_action!(PlayerUpdateFlags);
+
+pub fn player_update_flags_system(
+    mut action_reader: EventReader<Action>,
+    players: Res<Players>,
+    mut updates: ResMut<Updates>,
+    mut player_query: Query<(&Player, &mut PlayerFlags)>,
+    mut messages: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::PlayerUpdateFlags(PlayerUpdateFlags {
+            actor,
+            name,
+            flags,
+            clear,
+        }) = action
+        {
+            let player_entity = if let Some(player) = players.by_name(name.as_str()) {
+                player
+            } else {
+                if let Ok(mut messages) = messages.get_mut(*actor) {
+                    messages.queue(format!("Player {} not found.", name));
+                }
+                continue;
+            };
+
+            let changed_flags = match player::Flags::try_from(flags.as_slice()) {
+                Ok(flags) => flags,
+                Err(e) => {
+                    if let Ok(mut messages) = messages.get_mut(*actor) {
+                        messages.queue(e.to_string());
+                    }
+                    continue;
+                }
+            };
+
+            let (id, flags) = {
+                let (player, mut flags) = player_query.get_mut(player_entity).unwrap();
+
+                if *clear {
+                    flags.remove(changed_flags);
+                } else {
+                    flags.insert(changed_flags);
+                }
+
+                (player.id(), flags.get_flags())
+            };
+
+            updates.persist(persist::player::Flags::new(id, flags));
+
+            if let Ok(mut messages) = messages.get_mut(*actor) {
+                messages.queue(format!("Updated player {} flags.", name));
             }
         }
     }

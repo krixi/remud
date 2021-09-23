@@ -20,7 +20,7 @@ use crate::world::{
     },
     types::{
         object::{
-            Flags, Keywords, Object, ObjectBundle, ObjectId, Objects, PrototypeId, Prototypes,
+            Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes,
         },
         player::Player,
         room::RoomId,
@@ -332,7 +332,7 @@ impl ObjectRow {
         Ok(ObjectBundle {
             id: Id::Object(id),
             object: Object::new(id, prototype, self.inherit_scripts),
-            flags: Flags::from(self.flags),
+            flags: ObjectFlags::from(self.flags),
             name: Named::from(self.name.clone()),
             description: Description::from(self.description.clone()),
             keywords: Keywords::from(self.keywords()),

@@ -138,7 +138,7 @@ pub fn prototype_create_system(
 
             let bundle = PrototypeBundle {
                 prototype: Prototype::from(id),
-                flags: Flags::default(),
+                flags: ObjectFlags::default(),
                 keywords: Keywords::from(vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()]),
                 name: Named::from(DEFAULT_PROTOTYPE_NAME.to_string()),
                 description: Description::from(DEFAULT_PROTOTYPE_DESCRIPTION.to_string()),
@@ -177,7 +177,7 @@ pub fn prototype_info_system(
     prototypes: Res<Prototypes>,
     prototype_query: Query<(
         &Prototype,
-        &Flags,
+        &ObjectFlags,
         &Keywords,
         &Named,
         &Description,
@@ -351,7 +351,7 @@ pub fn prototype_update_flags_system(
     mut action_reader: EventReader<Action>,
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
-    mut prototype_query: Query<&mut Flags>,
+    mut prototype_query: Query<&mut ObjectFlags>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -371,7 +371,7 @@ pub fn prototype_update_flags_system(
                 continue;
             };
 
-            let changed_flags = match ObjectFlags::try_from(flags.as_slice()) {
+            let changed_flags = match Flags::try_from(flags.as_slice()) {
                 Ok(flags) => flags,
                 Err(e) => {
                     if let Ok(mut messages) = messages.get_mut(*actor) {

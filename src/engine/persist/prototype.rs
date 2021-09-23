@@ -3,14 +3,14 @@ use sqlx::SqlitePool;
 
 use crate::{
     engine::persist::Persist,
-    world::types::object::{ObjectFlags, PrototypeId},
+    world::types::object::{self, PrototypeId},
 };
 
 pub struct Create {
     id: PrototypeId,
     name: String,
     description: String,
-    flags: ObjectFlags,
+    flags: object::Flags,
     keywords: Vec<String>,
 }
 
@@ -19,7 +19,7 @@ impl Create {
         id: PrototypeId,
         name: String,
         description: String,
-        flags: ObjectFlags,
+        flags: object::Flags,
         keywords: Vec<String>,
     ) -> Box<Self> {
         Box::new(Create {
@@ -76,11 +76,11 @@ impl Persist for Description {
 
 pub struct Flags {
     id: PrototypeId,
-    flags: ObjectFlags,
+    flags: object::Flags,
 }
 
 impl Flags {
-    pub fn new(id: PrototypeId, flags: ObjectFlags) -> Box<Self> {
+    pub fn new(id: PrototypeId, flags: object::Flags) -> Box<Self> {
         Box::new(Flags { id, flags })
     }
 }

@@ -16,7 +16,7 @@ use crate::{
         scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
             object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
-            player::{Messages, Player, PlayerBundle, PlayerId, Players},
+            player::{Messages, Player, PlayerBundle, PlayerFlags, PlayerId, Players},
             room::{Room, RoomId, Rooms},
             Contents, Description, Id, Location, Named,
         },
@@ -35,7 +35,7 @@ pub async fn load_player(
 ) -> anyhow::Result<Entity> {
     let (player, id) = {
         let player_row = sqlx::query_as::<_, PlayerRow>(
-            "SELECT id, description, room FROM players WHERE username = ?",
+            "SELECT id, description, room, flags FROM players WHERE username = ?",
         )
         .bind(name)
         .fetch_one(pool)
@@ -64,13 +64,14 @@ pub async fn load_player(
         let player = world
             .spawn()
             .insert_bundle(PlayerBundle {
+                id: Id::Player(id),
+                player: Player::from(id),
+                flags: PlayerFlags::from(player_row.flags),
                 name: Named::from(name.to_string()),
                 description: Description::from(player_row.description),
                 location: Location::from(room),
-                player: Player::from(id),
                 contents: Contents::default(),
                 messages: Messages::default(),
-                id: Id::Player(id),
                 health: Health::new(&attributes),
                 attributes,
                 hooks: ScriptHooks::default(),
@@ -221,4 +222,5 @@ struct PlayerRow {
     id: i64,
     description: String,
     room: i64,
+    flags: i64,
 }
