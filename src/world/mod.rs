@@ -27,11 +27,12 @@ use crate::{
         action::{register_action_systems, Action},
         fsm::system::state_machine_system,
         scripting::{
-            create_script_engine, init_script_system, post_action_script_system,
-            queued_action_script_system, run_init_scripts, run_post_action_scripts,
-            run_pre_action_scripts, script_compiler_system,
+            init_script_system, post_action_script_system, queued_action_script_system,
+            run_init_scripts, run_post_action_scripts, run_pre_action_scripts,
+            script_compiler_system,
             timed_actions::{timed_actions_system, TimedActions},
-            QueuedAction, Script, ScriptHooks, ScriptInit, ScriptName, ScriptRuns, TriggerEvent,
+            QueuedAction, Script, ScriptEngine, ScriptHooks, ScriptInit, ScriptName, ScriptRuns,
+            TriggerEvent,
         },
         types::{
             object::PrototypeId,
@@ -67,14 +68,14 @@ impl GameWorld {
         world.insert_resource(Players::default());
         world.insert_resource(ScriptRuns::default());
         world.insert_resource(TimedActions::default());
-        world.insert_resource(create_script_engine());
+        world.insert_resource(ScriptEngine::default());
 
         // Add events
         // The ScriptInit resource is added by the DB.
         pre_event_schedule
             .add_system_to_stage(STAGE_FIRST, Events::<ScriptInit>::update_system.system());
-        add_events::<QueuedAction>(&mut world, &mut pre_event_schedule);
-        add_events::<Action>(&mut world, &mut pre_event_schedule);
+        add_event::<QueuedAction>(&mut world, &mut pre_event_schedule);
+        add_event::<Action>(&mut world, &mut pre_event_schedule);
 
         // Create emergency room
         add_void_room(&mut world);
@@ -373,7 +374,7 @@ fn build_schedules() -> (Schedule, Schedule, Schedule) {
     (pre_event_schedule, update_schedule, post_event_schedule)
 }
 
-fn add_events<T: 'static + Send + Sync>(world: &mut World, schedule: &mut Schedule) {
+fn add_event<T: 'static + Send + Sync>(world: &mut World, schedule: &mut Schedule) {
     world.insert_resource(Events::<T>::default());
     schedule.add_system_to_stage(STAGE_FIRST, Events::<T>::update_system.system());
 }

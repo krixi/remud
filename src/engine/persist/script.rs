@@ -233,6 +233,28 @@ impl Persist for Detach {
     }
 }
 
+pub struct Remove {
+    name: String,
+}
+
+impl Remove {
+    pub fn new(name: String) -> Box<Self> {
+        Box::new(Remove { name })
+    }
+}
+
+#[async_trait]
+impl Persist for Remove {
+    async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM scripts WHERE name = ?")
+            .bind(self.name.as_str())
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct Update {
     name: String,
     trigger: String,
@@ -255,28 +277,6 @@ impl Persist for Update {
         sqlx::query("UPDATE scripts SET trigger = ?, code = ? WHERE name = ?")
             .bind(self.trigger.to_string())
             .bind(self.code.as_str())
-            .bind(self.name.as_str())
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub struct Delete {
-    name: String,
-}
-
-impl Delete {
-    pub fn new(name: String) -> Box<Self> {
-        Box::new(Delete { name })
-    }
-}
-
-#[async_trait]
-impl Persist for Delete {
-    async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM scripts WHERE name = ?")
             .bind(self.name.as_str())
             .execute(pool)
             .await?;

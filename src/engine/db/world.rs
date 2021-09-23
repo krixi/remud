@@ -8,9 +8,12 @@ use itertools::Itertools;
 use sqlx::{Row, SqlitePool};
 
 use crate::{
-    engine::db::{HookRow, ObjectRow, ScriptRow},
+    engine::db::{HookRow, ObjectRow},
     world::{
-        scripting::{Script, ScriptHook, ScriptHooks, ScriptInit, Scripts, TriggerKind},
+        scripting::{
+            Script, ScriptHook, ScriptHooks, ScriptInit, ScriptName, Scripts, TriggerEvent,
+            TriggerKind,
+        },
         types::{
             object::{
                 Keywords, Object, ObjectFlags, ObjectId, Objects, Prototype, PrototypeBundle,
@@ -350,6 +353,20 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct RoomRow {
+    id: i64,
+    name: String,
+    description: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExitRow {
+    room_from: i64,
+    room_to: i64,
+    direction: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct RoomObjectRow {
     room_id: i64,
     object_id: i64,
@@ -363,20 +380,6 @@ impl TryFrom<RoomObjectRow> for (RoomId, ObjectId) {
         let object_id = ObjectId::try_from(value.object_id)?;
         Ok((room_id, object_id))
     }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct RoomRow {
-    id: i64,
-    name: String,
-    description: String,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct ExitRow {
-    room_from: i64,
-    room_to: i64,
-    direction: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -394,5 +397,27 @@ impl PrototypeRow {
             .split(',')
             .map(ToString::to_string)
             .collect_vec()
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ScriptRow {
+    name: String,
+    trigger: String,
+    code: String,
+}
+
+impl TryFrom<ScriptRow> for Script {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ScriptRow) -> Result<Self, Self::Error> {
+        let name = ScriptName::try_from(value.name)?;
+        let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+
+        Ok(Script {
+            name,
+            trigger,
+            code: value.code,
+        })
     }
 }

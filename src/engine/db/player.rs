@@ -12,7 +12,6 @@ use sqlx::SqlitePool;
 use crate::{
     engine::db::HookRow,
     world::{
-        action,
         scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
             object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
@@ -43,10 +42,7 @@ pub async fn load_player(
 
         let mut world = world.write().unwrap();
 
-        let id = match PlayerId::try_from(player_row.id) {
-            Ok(id) => id,
-            Err(_) => bail!("Failed to deserialize object ID: {}", player_row.id),
-        };
+        let id = PlayerId::try_from(player_row.id)?;
 
         let room = RoomId::try_from(player_row.room)
             .ok()
@@ -78,10 +74,7 @@ pub async fn load_player(
             })
             .id();
 
-        world
-            .get_mut::<Room>(room)
-            .ok_or(action::Error::MissingComponent(room, "Room"))?
-            .insert_player(player);
+        world.get_mut::<Room>(room).unwrap().insert_player(player);
 
         world
             .get_resource_mut::<Players>()

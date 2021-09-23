@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod execution;
 mod modules;
 pub mod timed_actions;
 
@@ -21,11 +22,40 @@ use crate::world::{
     action::Action,
     fsm::{StateId, StateMachineBuilder},
     scripting::{
-        actions::{run_init_script, run_post_event_script, run_pre_event_script},
+        execution::{run_init_script, run_post_event_script, run_pre_event_script},
         modules::{event_api, rand_api, self_api, states_api, time_api, world_api},
     },
     types::{object::Container, room::Room, Contents, Location},
 };
+
+#[derive(Bundle)]
+pub struct CompiledScript {
+    pub script: Script,
+    pub ast: ScriptAst,
+}
+
+#[derive(Bundle)]
+pub struct FailedScript {
+    pub script: Script,
+    pub error: CompilationError,
+}
+
+#[derive(Debug, Clone)]
+pub struct Script {
+    pub name: ScriptName,
+    pub trigger: TriggerEvent,
+    pub code: String,
+}
+
+#[derive(Clone)]
+pub struct ScriptAst {
+    pub ast: AST,
+}
+
+#[derive(Debug)]
+pub struct CompilationError {
+    pub error: ParseError,
+}
 
 pub struct ScriptEngine {
     engine: Arc<RwLock<rhai::Engine>>,
@@ -41,29 +71,29 @@ impl ScriptEngine {
     }
 }
 
-#[derive(Default)]
-pub struct Scripts {
-    by_name: HashMap<ScriptName, Entity>,
-}
+impl Default for ScriptEngine {
+    fn default() -> Self {
+        let mut engine = rhai::Engine::default();
 
-impl Scripts {
-    pub fn insert(&mut self, name: ScriptName, script: Entity) {
-        self.by_name.insert(name, script);
+        engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+
+        engine.register_type_with_name::<StateMachineBuilder>("StateMachineBuilder");
+        engine.register_fn("fsm_builder", StateMachineBuilder::default);
+        engine.register_fn("add_state", StateMachineBuilder::add_state);
+
+        engine.register_type_with_name::<StateId>("StateId");
+        engine.register_static_module("StateId", exported_module!(states_api).into());
+
+        engine.register_global_module(exported_module!(world_api).into());
+        engine.register_global_module(exported_module!(event_api).into());
+        engine.register_global_module(exported_module!(self_api).into());
+        engine.register_global_module(exported_module!(time_api).into());
+        engine.register_global_module(exported_module!(rand_api).into());
+
+        ScriptEngine {
+            engine: Arc::new(RwLock::new(engine)),
+        }
     }
-
-    pub fn remove(&mut self, name: &ScriptName) {
-        self.by_name.remove(name);
-    }
-
-    pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
-        self.by_name.get(name).copied()
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct ScriptRuns {
-    pub runs: Vec<(Action, Vec<ScriptRun>)>,
-    pub init_runs: Vec<ScriptRun>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -91,33 +121,29 @@ impl fmt::Display for ScriptName {
 #[error("Failed to parse script name: must be ASCII and contain no whitespace.")]
 pub struct ScriptNameParseError {}
 
-#[derive(Debug, Clone)]
-pub struct Script {
-    pub name: ScriptName,
-    pub trigger: TriggerEvent,
-    pub code: String,
+#[derive(Default)]
+pub struct Scripts {
+    by_name: HashMap<ScriptName, Entity>,
 }
 
-#[derive(Bundle)]
-pub struct CompiledScript {
-    pub script: Script,
-    pub ast: ScriptAst,
+impl Scripts {
+    pub fn insert(&mut self, name: ScriptName, script: Entity) {
+        self.by_name.insert(name, script);
+    }
+
+    pub fn remove(&mut self, name: &ScriptName) {
+        self.by_name.remove(name);
+    }
+
+    pub fn by_name(&self, name: &ScriptName) -> Option<Entity> {
+        self.by_name.get(name).copied()
+    }
 }
 
-#[derive(Bundle)]
-pub struct FailedScript {
-    pub script: Script,
-    pub error: CompilationError,
-}
-
-#[derive(Clone)]
-pub struct ScriptAst {
-    pub ast: AST,
-}
-
-#[derive(Debug)]
-pub struct CompilationError {
-    pub error: ParseError,
+#[derive(Default, Debug)]
+pub struct ScriptRuns {
+    pub runs: Vec<(Action, Vec<ScriptRun>)>,
+    pub init_runs: Vec<ScriptRun>,
 }
 
 #[derive(Debug)]
@@ -423,29 +449,6 @@ pub fn post_action_script_system(
         if !runs.is_empty() {
             script_runs.runs.push((action.clone(), runs));
         }
-    }
-}
-
-pub fn create_script_engine() -> ScriptEngine {
-    let mut engine = rhai::Engine::default();
-
-    engine.register_type_with_name::<Arc<RwLock<World>>>("World");
-
-    engine.register_type_with_name::<StateMachineBuilder>("StateMachineBuilder");
-    engine.register_fn("fsm_builder", StateMachineBuilder::default);
-    engine.register_fn("add_state", StateMachineBuilder::add_state);
-
-    engine.register_type_with_name::<StateId>("StateId");
-    engine.register_static_module("StateId", exported_module!(states_api).into());
-
-    engine.register_global_module(exported_module!(world_api).into());
-    engine.register_global_module(exported_module!(event_api).into());
-    engine.register_global_module(exported_module!(self_api).into());
-    engine.register_global_module(exported_module!(time_api).into());
-    engine.register_global_module(exported_module!(rand_api).into());
-
-    ScriptEngine {
-        engine: Arc::new(RwLock::new(engine)),
     }
 }
 

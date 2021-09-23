@@ -15,9 +15,7 @@ use lazy_static::lazy_static;
 use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::world::{
-    scripting::{
-        Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
-    },
+    scripting::{ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind},
     types::{
         self,
         object::{
@@ -137,7 +135,7 @@ impl Db {
     pub async fn reload_prototype(
         &self,
         world: Arc<RwLock<World>>,
-        prototype: PrototypeId,
+        prototype_id: PrototypeId,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
@@ -148,10 +146,20 @@ impl Db {
                     INNER JOIN prototypes ON objects.prototype_id = prototypes.id
                     WHERE prototypes.id = ?"#,
         )
-        .bind(prototype)
+        .bind(prototype_id)
         .fetch(&self.pool);
 
+        let prototype = world
+            .read()
+            .unwrap()
+            .get_resource::<Prototypes>()
+            .unwrap()
+            .by_id(PrototypeId::try_from(prototype_id)?)
+            .unwrap();
+
         while let Some(object_row) = results.try_next().await? {
+            let inherit_scripts = object_row.inherit_scripts;
+
             let object_id = ObjectId::try_from(object_row.id)?;
             let object = world
                 .read()
@@ -161,15 +169,6 @@ impl Db {
                 .by_id(object_id)
                 .unwrap();
 
-            let prototype_id = object_row.prototype_id;
-            let prototype = world
-                .read()
-                .unwrap()
-                .get_resource::<Prototypes>()
-                .unwrap()
-                .by_id(PrototypeId::try_from(object_row.prototype_id)?)
-                .unwrap();
-
             let bundle = object_row.into_object_bundle(prototype)?;
 
             world
@@ -177,13 +176,6 @@ impl Db {
                 .unwrap()
                 .entity_mut(object)
                 .insert_bundle(bundle);
-
-            let inherit_scripts = world
-                .read()
-                .unwrap()
-                .get::<Object>(object)
-                .unwrap()
-                .inherit_scripts();
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -229,6 +221,8 @@ impl Db {
             .bind(id)
             .fetch_one(&self.pool).await?;
 
+            let inherit_scripts = object_row.inherit_scripts;
+
             let prototype_id = object_row.prototype_id;
             let prototype = world
                 .read()
@@ -245,13 +239,6 @@ impl Db {
                 .unwrap()
                 .entity_mut(object)
                 .insert_bundle(bundle);
-
-            let inherit_scripts = world
-                .read()
-                .unwrap()
-                .get::<Object>(object)
-                .unwrap()
-                .inherit_scripts();
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -275,28 +262,6 @@ impl Db {
         }
 
         Ok(())
-    }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct ScriptRow {
-    name: String,
-    trigger: String,
-    code: String,
-}
-
-impl TryFrom<ScriptRow> for Script {
-    type Error = anyhow::Error;
-
-    fn try_from(value: ScriptRow) -> Result<Self, Self::Error> {
-        let name = ScriptName::try_from(value.name)?;
-        let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
-
-        Ok(Script {
-            name,
-            trigger,
-            code: value.code,
-        })
     }
 }
 

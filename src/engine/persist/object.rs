@@ -54,6 +54,30 @@ impl Persist for Description {
     }
 }
 
+pub struct Flags {
+    id: ObjectId,
+    flags: object::Flags,
+}
+
+impl Flags {
+    pub fn new(id: ObjectId, flags: object::Flags) -> Box<Self> {
+        Box::new(Flags { id, flags })
+    }
+}
+
+#[async_trait]
+impl Persist for Flags {
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE objects SET flags = ? WHERE id = ?")
+            .bind(self.flags.bits())
+            .bind(self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct Inherit {
     id: ObjectId,
     fields: Vec<InheritableFields>,
@@ -107,30 +131,6 @@ impl Persist for Inherit {
                 }
             }
         }
-        Ok(())
-    }
-}
-
-pub struct Flags {
-    id: ObjectId,
-    flags: object::Flags,
-}
-
-impl Flags {
-    pub fn new(id: ObjectId, flags: object::Flags) -> Box<Self> {
-        Box::new(Flags { id, flags })
-    }
-}
-
-#[async_trait]
-impl Persist for Flags {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("UPDATE objects SET flags = ? WHERE id = ?")
-            .bind(self.flags.bits())
-            .bind(self.id)
-            .execute(pool)
-            .await?;
-
         Ok(())
     }
 }

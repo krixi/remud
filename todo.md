@@ -4,8 +4,6 @@
 
 - add some pizzaz for players who are teleported on room deletion so they have some idea about what is happening
 
-- restrict immortal commands to players with the immortal flag
-
 - add object quantity and associated manipulation commands
 
 - add combat
@@ -14,12 +12,14 @@
 
 - deduplicate object/prototype systems
 
-- deduplicate DB code where possible
-
 - add hp to prompt
 
 - add customizable prompts
 
-- use resolved events in post-event scripts - i.e. what ended up being looked at? allows scripts to know precisely what was interacted with
+- add a resolve step for events to resolve targets so scripts have access to target information (get, drop, look at as examples)
 
 - password verification is slow - do it in another task
+
+- make objects.prototype_id a foreign key with on delete cascade
+
+- figure out how to factor out Engine.process_input (needed for character creation)
