@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
     into_action,
-    text::{word_list, Tokenizer},
+    text::Tokenizer,
     world::{
         action::{
             immortal::{UpdateDescription, UpdateName},
@@ -16,14 +16,13 @@ use crate::{
         fsm::StateMachine,
         scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
-            self,
             object::{
-                InheritableFields, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, Prototype,
-                PrototypeId, Prototypes,
+                Container, Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags,
+                ObjectId, Objects, Prototype, PrototypeId, Prototypes,
             },
             player::{Messages, Player},
             room::Room,
-            ActionTarget, Container, Contents, Description, Flags, Id, Keywords, Location, Named,
+            ActionTarget, Contents, Description, Id, Location, Named,
         },
     },
 };
@@ -179,18 +178,14 @@ pub fn object_create_system(
 
             let room_entity = player_query
                 .get(*actor)
-                .map(|location| location.room)
+                .map(|location| location.room())
                 .unwrap();
 
             let id = objects.next_id();
 
             let object_entity = commands
                 .spawn_bundle(ObjectBundle {
-                    object: Object {
-                        id,
-                        prototype,
-                        inherit_scripts: true,
-                    },
+                    object: Object::new(id, prototype, true),
                     id: Id::Object(id),
                     flags: flags.clone(),
                     name: named.clone(),
@@ -198,7 +193,7 @@ pub fn object_create_system(
                     keywords: keywords.clone(),
                     hooks: hooks.clone(),
                 })
-                .insert(Location { room: room_entity })
+                .insert(Location::from(room_entity))
                 .id();
 
             hooks
@@ -212,8 +207,8 @@ pub fn object_create_system(
 
             let room_id = {
                 let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
-                contents.objects.push(object_entity);
-                room.id
+                contents.insert(object_entity);
+                room.id()
             };
 
             updates.persist(UpdateGroup::new(vec![
@@ -245,7 +240,7 @@ pub fn object_info_system(
         &Object,
         &Named,
         &Description,
-        &types::Flags,
+        &Flags,
         &Keywords,
         &ScriptHooks,
         Option<&Container>,
@@ -271,41 +266,41 @@ pub fn object_info_system(
             let (object, named, description, flags, keywords, hooks, container, location, fsm) =
                 object_query.get(object_entity).unwrap();
 
-            let prototype_id = prototype_query.get(object.prototype).unwrap().id;
+            let prototype_id = prototype_query.get(object.prototype()).unwrap().id();
 
-            let mut message = format!("|white|Object {}|-|", object.id);
+            let mut message = format!("|white|Object {}|-|", object.id());
 
             message.push_str("\r\n  |white|prototype|-|: ");
             message.push_str(prototype_id.to_string().as_str());
 
             message.push_str("\r\n  |white|inherit scripts|-|: ");
-            message.push_str(&object.inherit_scripts.to_string());
+            message.push_str(object.inherit_scripts().to_string().as_str());
 
             message.push_str("\r\n  |white|name|-|: ");
-            message.push_str(named.name.replace("|", "||").as_str());
+            message.push_str(named.escaped().as_str());
 
             message.push_str("\r\n  |white|description|-|: ");
-            message.push_str(description.text.replace("|", "||").as_str());
+            message.push_str(description.escaped().as_str());
 
             message.push_str("\r\n  |white|flags|-|: ");
-            message.push_str(format!("{:?}", flags.flags).as_str());
+            message.push_str(format!("{:?}", flags.get_flags()).as_str());
 
             message.push_str("\r\n  |white|keywords|-|: ");
-            message.push_str(word_list(keywords.list.clone()).as_str());
+            message.push_str(keywords.as_word_list().as_str());
 
             message.push_str("\r\n  |white|container|-|: ");
             if let Some(container) = container {
-                if let Ok(named) = player_query.get(container.entity) {
+                if let Ok(named) = player_query.get(container.entity()) {
                     message.push_str("player ");
-                    message.push_str(named.name.as_str());
+                    message.push_str(named.as_str());
                 } else {
                     message.push_str("other ");
-                    message.push_str(format!("{:?}", container.entity).as_str());
+                    message.push_str(format!("{:?}", container.entity()).as_str());
                 }
             } else if let Some(location) = location {
-                if let Ok(room) = room_query.get(location.room) {
+                if let Ok(room) = room_query.get(location.room()) {
                     message.push_str("room ");
-                    message.push_str(room.id.to_string().as_str());
+                    message.push_str(room.id().to_string().as_str());
                 }
             }
 
@@ -370,7 +365,7 @@ pub fn object_inherit_fields_system(
             let mut object = object_query.get_mut(object_entity).unwrap();
 
             let (named, description, flags, keywords, hooks) =
-                prototype_query.get(object.prototype).unwrap();
+                prototype_query.get(object.prototype()).unwrap();
 
             for field in fields {
                 match field {
@@ -387,7 +382,7 @@ pub fn object_inherit_fields_system(
                         commands.entity(object_entity).insert(keywords.clone());
                     }
                     InheritableFields::Hooks => {
-                        object.inherit_scripts = true;
+                        object.set_inherit_scripts(true);
                         commands.entity(object_entity).insert(hooks.clone());
                     }
                 }
@@ -432,9 +427,9 @@ pub fn object_remove_system(
             };
 
             let container = if let Ok(container) = container_query.get(object_entity) {
-                container.entity
+                container.entity()
             } else if let Ok(location) = location_query.get(object_entity) {
-                location.room
+                location.room()
             } else {
                 if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Object {} not in a location or container.", id));
@@ -447,7 +442,7 @@ pub fn object_remove_system(
             contents_query
                 .get_mut(container)
                 .unwrap()
-                .remove(object_entity);
+                .remove_object(object_entity);
 
             updates.persist(persist::object::Remove::new(*id));
 
@@ -490,7 +485,10 @@ pub fn object_update_keywords_system(
                 continue;
             };
 
-            object_query.get_mut(object_entity).unwrap().list = keywords.clone();
+            object_query
+                .get_mut(object_entity)
+                .unwrap()
+                .set_list(keywords.clone());
 
             updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
 
@@ -515,7 +513,7 @@ pub fn object_update_flags_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     mut updates: ResMut<Updates>,
-    mut object_query: Query<&mut types::Flags>,
+    mut object_query: Query<&mut Flags>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -549,12 +547,12 @@ pub fn object_update_flags_system(
                 let mut flags = object_query.get_mut(object_entity).unwrap();
 
                 if *clear {
-                    flags.flags.remove(changed_flags);
+                    flags.remove(changed_flags);
                 } else {
-                    flags.flags.insert(changed_flags);
+                    flags.insert(changed_flags);
                 }
 
-                flags.flags
+                flags.get_flags()
             };
 
             updates.persist(persist::object::Flags::new(*id, flags));

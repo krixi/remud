@@ -31,7 +31,6 @@ pub struct UpdateDescription {
 into_action!(UpdateDescription);
 
 pub fn update_description_system(
-    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     prototypes: Res<Prototypes>,
@@ -71,25 +70,20 @@ pub fn update_description_system(
                     }
                 }
                 ActionTarget::PlayerSelf => {
-                    let id = player_query.get(*actor).unwrap().id;
+                    let id = player_query.get(*actor).unwrap().id();
                     (Id::Player(id), *actor)
                 }
                 ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room;
-                    let id = room_query.get(room).unwrap().id;
+                    let room = location_query.get(*actor).unwrap().room();
+                    let id = room_query.get(room).unwrap().id();
                     (Id::Room(id), room)
                 }
             };
 
-            description_query.get_mut(entity).unwrap().text = description.clone();
-
-            if let Ok(mut desc) = description_query.get_mut(entity) {
-                desc.text = description.clone();
-            } else {
-                commands.entity(entity).insert(Description {
-                    text: description.clone(),
-                });
-            }
+            description_query
+                .get_mut(entity)
+                .unwrap()
+                .set_text(description.clone());
 
             match id {
                 Id::Player(id) => {
@@ -127,7 +121,6 @@ pub struct UpdateName {
 into_action!(UpdateName);
 
 pub fn update_name_system(
-    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     prototypes: Res<Prototypes>,
@@ -167,17 +160,13 @@ pub fn update_name_system(
                     }
                 }
                 ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room;
-                    let id = room_query.get(room).unwrap().id;
+                    let room = location_query.get(*actor).unwrap().room();
+                    let id = room_query.get(room).unwrap().id();
                     (Id::Room(id), room)
                 }
             };
 
-            if let Ok(mut named) = name_query.get_mut(entity) {
-                named.name = name.clone();
-            } else {
-                commands.entity(entity).insert(Named { name: name.clone() });
-            }
+            name_query.get_mut(entity).unwrap().set_name(name.clone());
 
             match id {
                 Id::Prototype(id) => {

@@ -19,23 +19,90 @@ pub struct RoomBundle {
 }
 
 pub struct Room {
-    pub id: RoomId,
-    pub exits: HashMap<Direction, Entity>,
-    pub players: Vec<Entity>,
+    id: RoomId,
+    exits: HashMap<Direction, Entity>,
+    players: Vec<Entity>,
 }
 
 impl Room {
-    pub fn new(id: RoomId) -> Self {
+    pub fn new(id: RoomId, exits: HashMap<Direction, Entity>, players: Vec<Entity>) -> Self {
+        Room { id, exits, players }
+    }
+
+    pub fn id(&self) -> RoomId {
+        self.id
+    }
+
+    pub fn exit(&self, direction: &Direction) -> Option<Entity> {
+        self.exits.get(direction).copied()
+    }
+
+    pub fn exits(&self) -> &HashMap<Direction, Entity> {
+        &self.exits
+    }
+
+    pub fn insert_exit(&mut self, direction: Direction, destination: Entity) {
+        self.exits.insert(direction, destination);
+    }
+
+    pub fn remove_exit(&mut self, direction: &Direction) -> Option<Entity> {
+        self.exits.remove(direction)
+    }
+
+    pub fn players(&self) -> &[Entity] {
+        self.players.as_slice()
+    }
+
+    pub fn get_players(&self) -> Vec<Entity> {
+        self.players.clone()
+    }
+
+    pub fn insert_player(&mut self, player: Entity) {
+        self.players.push(player);
+    }
+
+    pub fn remove_player(&mut self, player: Entity) {
+        if let Some(index) = self.players.iter().position(|p| *p == player) {
+            self.players.remove(index);
+        }
+    }
+}
+
+impl From<RoomId> for Room {
+    fn from(id: RoomId) -> Self {
         Room {
             id,
             exits: HashMap::new(),
             players: Vec::new(),
         }
     }
+}
 
-    pub fn remove_player(&mut self, player: Entity) {
-        if let Some(index) = self.players.iter().position(|p| *p == player) {
-            self.players.remove(index);
+#[derive(Default)]
+pub struct Regions {
+    list: Vec<String>,
+}
+
+impl Regions {
+    pub fn new(list: Vec<String>) -> Self {
+        Regions { list }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    pub fn get_list(&self) -> Vec<String> {
+        self.list.clone()
+    }
+
+    pub fn extend<T: IntoIterator<Item = String>>(&mut self, iter: T) {
+        self.list.extend(iter)
+    }
+
+    pub fn remove(&mut self, region: &str) {
+        if let Some(position) = self.list.iter().position(|r| r.as_str() == region) {
+            self.list.remove(position);
         }
     }
 }
@@ -167,19 +234,6 @@ impl fmt::Display for Direction {
             Direction::West => write!(f, "west"),
             Direction::Up => write!(f, "up"),
             Direction::Down => write!(f, "down"),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Regions {
-    pub list: Vec<String>,
-}
-
-impl Regions {
-    pub fn remove(&mut self, region: &str) {
-        if let Some(position) = self.list.iter().position(|r| r.as_str() == region) {
-            self.list.remove(position);
         }
     }
 }

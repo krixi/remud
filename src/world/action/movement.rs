@@ -41,7 +41,7 @@ pub fn move_system(
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
                 if let Ok((id, named, location)) = moving_query.get_mut(*actor) {
-                    (id, named.name.as_str(), location)
+                    (id, named.as_str(), location)
                 } else {
                     tracing::warn!("Cannot move {:?} without Named and Location.", actor);
                     continue;
@@ -50,18 +50,18 @@ pub fn move_system(
             // Retrieve information about the origin/current room.
             let (destination, origin_players, room_id) = {
                 let room = room_query
-                    .get_mut(location.room)
+                    .get_mut(location.room())
                     .expect("Location contains a valid room.");
 
-                if let Some(destination) = room.exits.get(direction) {
+                if let Some(destination) = room.exit(direction) {
                     (
-                        *destination,
-                        room.players
+                        destination,
+                        room.players()
                             .iter()
                             .filter(|present_player| **present_player != *actor)
                             .copied()
                             .collect_vec(),
-                        room.id,
+                        room.id(),
                     )
                 } else {
                     if let Ok(mut messages) = messages_query.get_mut(*actor) {
@@ -87,51 +87,46 @@ pub fn move_system(
                     .expect("Destinations are valid rooms.");
 
                 let direction = room
-                    .exits
+                    .exits()
                     .iter()
-                    .find(|(_, room)| **room == location.room)
+                    .find(|(_, room)| **room == location.room())
                     .map(|(direction, _)| direction)
                     .copied();
 
                 let present_players = room
-                    .players
+                    .players()
                     .iter()
                     .filter(|present_player| **present_player != *actor)
                     .copied()
                     .collect_vec();
 
-                (room.id, direction, present_players)
+                (room.id(), direction, present_players)
             };
 
             // Move the entity.
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.room)
+                        .get_mut(location.room())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
                         .get_mut(destination)
                         .unwrap()
-                        .players
-                        .push(*actor);
+                        .insert_player(*actor);
                 }
                 Id::Object(_) => {
                     contents_query
-                        .get_mut(location.room)
+                        .get_mut(location.room())
                         .unwrap()
-                        .remove(*actor);
-                    contents_query
-                        .get_mut(destination)
-                        .unwrap()
-                        .objects
-                        .push(*actor);
+                        .remove_object(*actor);
+                    contents_query.get_mut(destination).unwrap().insert(*actor);
                 }
                 Id::Room(_) => todo!(),
                 Id::Prototype(_) => todo!(),
             }
 
-            location.room = destination;
+            location.set_room(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = from_direction.map_or_else(
@@ -217,7 +212,7 @@ pub fn teleport_system(
             // Retrieve information about the moving entity.
             let (id, name, mut location) =
                 if let Ok((id, named, location)) = moving_query.get_mut(*actor) {
-                    (id, named.name.as_str(), location)
+                    (id, named.as_str(), location)
                 } else {
                     tracing::warn!("Cannot teleport {:?} without Named and Location.", actor);
                     continue;
@@ -225,9 +220,9 @@ pub fn teleport_system(
 
             // Retrieve information about the origin/current room.
             let origin_players = room_query
-                .get_mut(location.room)
+                .get_mut(location.room())
                 .expect("Location contains a valid room.")
-                .players
+                .players()
                 .iter()
                 .filter(|present_player| **present_player != *actor)
                 .copied()
@@ -246,7 +241,7 @@ pub fn teleport_system(
             let destination_players = room_query
                 .get_mut(destination)
                 .expect("Destinations are valid rooms.")
-                .players
+                .players()
                 .iter()
                 .filter(|present_player| **present_player != *actor)
                 .copied()
@@ -256,21 +251,20 @@ pub fn teleport_system(
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.room)
+                        .get_mut(location.room())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
                         .get_mut(destination)
                         .unwrap()
-                        .players
-                        .push(*actor);
+                        .insert_player(*actor);
                 }
                 Id::Object(_) => todo!(),
                 Id::Room(_) => todo!(),
                 Id::Prototype(_) => todo!(),
             }
 
-            location.room = destination;
+            location.set_room(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = format!("{} appears in a flash of light.", name);

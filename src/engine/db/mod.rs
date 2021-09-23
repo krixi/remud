@@ -19,11 +19,12 @@ use crate::world::{
         Script, ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
     },
     types::{
-        self,
-        object::{Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes},
+        object::{
+            Flags, Keywords, Object, ObjectBundle, ObjectId, Objects, PrototypeId, Prototypes,
+        },
         player::Player,
         room::RoomId,
-        Contents, Description, Id, Keywords, Named,
+        Contents, Description, Id, Named,
     },
 };
 
@@ -170,7 +171,7 @@ impl Db {
                 .unwrap()
                 .get::<Object>(object)
                 .unwrap()
-                .inherit_scripts;
+                .inherit_scripts();
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -198,13 +199,13 @@ impl Db {
             world
                 .query_filtered::<&Contents, With<Player>>()
                 .iter(&*world)
-                .flat_map(|contents| contents.objects.iter().copied())
+                .flat_map(|contents| contents.get_objects())
                 .dedup()
                 .collect_vec()
         };
 
         for object in player_objects {
-            let id = world.read().unwrap().get::<Object>(object).unwrap().id;
+            let id = world.read().unwrap().get::<Object>(object).unwrap().id();
             let object_row = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
                         COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
@@ -238,7 +239,7 @@ impl Db {
                 .unwrap()
                 .get::<Object>(object)
                 .unwrap()
-                .inherit_scripts;
+                .inherit_scripts();
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -330,23 +331,11 @@ impl ObjectRow {
 
         Ok(ObjectBundle {
             id: Id::Object(id),
-            object: Object {
-                id,
-                prototype,
-                inherit_scripts: self.inherit_scripts,
-            },
-            flags: types::Flags {
-                flags: ObjectFlags::from_bits_truncate(self.flags),
-            },
-            name: Named {
-                name: self.name.clone(),
-            },
-            description: Description {
-                text: self.description.clone(),
-            },
-            keywords: Keywords {
-                list: self.keywords(),
-            },
+            object: Object::new(id, prototype, self.inherit_scripts),
+            flags: Flags::from(self.flags),
+            name: Named::from(self.name.clone()),
+            description: Description::from(self.description.clone()),
+            keywords: Keywords::from(self.keywords()),
             hooks: ScriptHooks::default(),
         })
     }

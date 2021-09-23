@@ -12,12 +12,12 @@ use crate::{
     world::{
         scripting::{Script, ScriptHook, ScriptHooks, ScriptInit, Scripts, TriggerKind},
         types::{
-            self,
             object::{
-                Object, ObjectId, Objects, Prototype, PrototypeBundle, PrototypeId, Prototypes,
+                Flags, Keywords, Object, ObjectId, Objects, Prototype, PrototypeBundle,
+                PrototypeId, Prototypes,
             },
             room::{Direction, Regions, Room, RoomBundle, RoomId, Rooms},
-            Configuration, Contents, Description, Id, Keywords, Location, Named,
+            Configuration, Contents, Description, Id, Location, Named,
         },
     },
 };
@@ -82,17 +82,11 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
             .spawn()
             .insert_bundle(RoomBundle {
                 id: Id::Room(id),
-                name: Named { name: room.name },
-                description: Description {
-                    text: room.description.clone(),
-                },
-                room: Room {
-                    id,
-                    exits: HashMap::new(),
-                    players: Vec::new(),
-                },
+                name: Named::from(room.name),
+                description: Description::from(room.description.clone()),
+                room: Room::from(id),
                 contents: Contents::default(),
-                regions: Regions { list: regions },
+                regions: Regions::new(regions),
                 hooks: ScriptHooks::default(),
             })
             .id();
@@ -127,8 +121,7 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         world
             .get_mut::<Room>(from)
             .unwrap()
-            .exits
-            .insert(direction, to);
+            .insert_exit(direction, to);
     }
 
     Ok(())
@@ -145,19 +138,11 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result
     while let Some(prototype_row) = results.try_next().await? {
         let id = PrototypeId::try_from(prototype_row.id)?;
         let bundle = PrototypeBundle {
-            prototype: Prototype { id },
-            flags: types::Flags {
-                flags: types::object::ObjectFlags::from_bits_truncate(prototype_row.flags),
-            },
-            name: Named {
-                name: prototype_row.name.clone(),
-            },
-            description: Description {
-                text: prototype_row.description.clone(),
-            },
-            keywords: Keywords {
-                list: prototype_row.keywords(),
-            },
+            prototype: Prototype::from(id),
+            flags: Flags::from(prototype_row.flags),
+            name: Named::from(prototype_row.name.clone()),
+            description: Description::from(prototype_row.description.clone()),
+            keywords: Keywords::from(prototype_row.keywords()),
             hooks: ScriptHooks::default(),
         };
 
@@ -206,12 +191,12 @@ async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
         };
 
         let bundle = object_row.into_object_bundle(prototype)?;
-        let location = Location { room: room_entity };
+        let location = Location::from(room_entity);
 
         let object_entity = world.spawn().insert_bundle(bundle).insert(location).id();
 
         match world.get_mut::<Contents>(room_entity) {
-            Some(mut contents) => contents.objects.push(object_entity),
+            Some(mut contents) => contents.insert(object_entity),
             None => bail!("Failed to retrieve Room for room {:?}", room_entity),
         }
 
@@ -254,7 +239,7 @@ async fn load_prototype_scripts(pool: &SqlitePool, world: &mut World) -> anyhow:
     let prototypes = world
         .query::<&Prototype>()
         .iter(world)
-        .map(|prototype| prototype.id)
+        .map(|prototype| prototype.id())
         .collect_vec();
 
     for prototype_id in prototypes {
@@ -288,7 +273,7 @@ async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
     let rooms = world
         .query::<&Room>()
         .iter(world)
-        .map(|room| room.id)
+        .map(|room| room.id())
         .collect_vec();
 
     for room_id in rooms {
@@ -318,7 +303,7 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
     let objects = world
         .query::<&Object>()
         .iter(world)
-        .map(|object| (object.id, object.inherit_scripts, object.prototype))
+        .map(|object| (object.id(), object.inherit_scripts(), object.prototype()))
         .collect_vec();
 
     for (object_id, inherit, prototype) in objects {
@@ -329,7 +314,7 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Re
             .unwrap();
 
         let mut results = if inherit {
-            let prototype_id = world.get::<Prototype>(prototype).unwrap().id;
+            let prototype_id = world.get::<Prototype>(prototype).unwrap().id();
             sqlx::query_as::<_, HookRow>(
                 r#"SELECT kind, script, trigger FROM prototype_scripts WHERE prototype_id = ?"#,
             )

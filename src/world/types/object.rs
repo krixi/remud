@@ -5,10 +5,173 @@ use bitflags::bitflags;
 use strum::EnumString;
 use thiserror::Error;
 
-use crate::world::{
-    scripting::ScriptHooks,
-    types::{self, Description, Id, Keywords, Named},
+use crate::{
+    text::word_list,
+    world::{
+        scripting::ScriptHooks,
+        types::{Description, Id, Named},
+    },
 };
+
+#[derive(Debug, Bundle)]
+pub struct PrototypeBundle {
+    pub prototype: Prototype,
+    pub name: Named,
+    pub description: Description,
+    pub flags: Flags,
+    pub keywords: Keywords,
+    pub hooks: ScriptHooks,
+}
+
+#[derive(Debug, Bundle)]
+pub struct ObjectBundle {
+    pub id: Id,
+    pub object: Object,
+    pub name: Named,
+    pub description: Description,
+    pub flags: Flags,
+    pub keywords: Keywords,
+    pub hooks: ScriptHooks,
+}
+
+#[derive(Debug)]
+pub struct Prototype {
+    id: PrototypeId,
+}
+
+impl Prototype {
+    pub fn id(&self) -> PrototypeId {
+        self.id
+    }
+}
+
+impl From<PrototypeId> for Prototype {
+    fn from(id: PrototypeId) -> Self {
+        Prototype { id }
+    }
+}
+
+#[derive(Debug)]
+pub struct Object {
+    id: ObjectId,
+    prototype: Entity,
+    inherit_scripts: bool,
+}
+
+impl Object {
+    pub fn new(id: ObjectId, prototype: Entity, inherit_scripts: bool) -> Self {
+        Object {
+            id,
+            prototype,
+            inherit_scripts,
+        }
+    }
+
+    pub fn id(&self) -> ObjectId {
+        self.id
+    }
+
+    pub fn prototype(&self) -> Entity {
+        self.prototype
+    }
+
+    pub fn inherit_scripts(&self) -> bool {
+        self.inherit_scripts
+    }
+
+    pub fn set_inherit_scripts(&mut self, inherit: bool) {
+        self.inherit_scripts = inherit;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Keywords {
+    list: Vec<String>,
+}
+
+impl Keywords {
+    pub fn get_list(&self) -> Vec<String> {
+        self.list.clone()
+    }
+
+    pub fn set_list(&mut self, list: Vec<String>) {
+        self.list = list
+    }
+
+    pub fn contains_all(&self, words: &[String]) -> bool {
+        words.iter().all(|word| self.list.contains(word))
+    }
+
+    pub fn as_word_list(&self) -> String {
+        word_list(self.list.clone())
+    }
+}
+
+impl From<Vec<String>> for Keywords {
+    fn from(list: Vec<String>) -> Self {
+        Keywords { list }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Flags {
+    flags: ObjectFlags,
+}
+
+impl Flags {
+    pub fn contains(&self, flags: ObjectFlags) -> bool {
+        self.flags.contains(flags)
+    }
+
+    pub fn insert(&mut self, flags: ObjectFlags) {
+        self.flags.insert(flags);
+    }
+
+    pub fn remove(&mut self, flags: ObjectFlags) {
+        self.flags.remove(flags);
+    }
+
+    pub fn get_flags(&self) -> ObjectFlags {
+        self.flags
+    }
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Self {
+            flags: ObjectFlags::empty(),
+        }
+    }
+}
+
+impl From<i64> for Flags {
+    fn from(value: i64) -> Self {
+        Flags {
+            flags: ObjectFlags::from_bits_truncate(value),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Container {
+    entity: Entity,
+}
+
+impl Container {
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+
+    pub fn set_entity(&mut self, entity: Entity) {
+        self.entity = entity;
+    }
+}
+
+impl From<Entity> for Container {
+    fn from(entity: Entity) -> Self {
+        Container { entity }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -135,39 +298,6 @@ impl TryFrom<&[String]> for ObjectFlags {
 #[error("Invalid object flag: {invalid_flag}. Valid flags: fixed, subtle.")]
 pub struct FlagsParseError {
     invalid_flag: String,
-}
-
-#[derive(Debug, Bundle)]
-pub struct PrototypeBundle {
-    pub prototype: Prototype,
-    pub name: Named,
-    pub description: Description,
-    pub flags: types::Flags,
-    pub keywords: Keywords,
-    pub hooks: ScriptHooks,
-}
-
-#[derive(Debug, Bundle)]
-pub struct ObjectBundle {
-    pub id: Id,
-    pub object: Object,
-    pub name: Named,
-    pub description: Description,
-    pub flags: types::Flags,
-    pub keywords: Keywords,
-    pub hooks: ScriptHooks,
-}
-
-#[derive(Debug)]
-pub struct Prototype {
-    pub id: PrototypeId,
-}
-
-#[derive(Debug)]
-pub struct Object {
-    pub id: ObjectId,
-    pub prototype: Entity,
-    pub inherit_scripts: bool,
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, EnumString)]

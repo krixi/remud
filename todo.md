@@ -23,3 +23,5 @@
 - add customizable prompts
 
 - use resolved events in post-event scripts - i.e. what ended up being looked at? allows scripts to know precisely what was interacted with
+
+- password verification is slow - do it in another task

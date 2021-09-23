@@ -71,27 +71,27 @@ pub fn player_info_system(
 
             let (player, description, contents, location, hooks) =
                 player_query.get(player).unwrap();
-            let room = room_query.get(location.room).unwrap();
+            let room = room_query.get(location.room()).unwrap();
 
             let mut message = format!("|white|Player {}|-|", name);
 
             message.push_str("\r\n  |white|id|-|: ");
-            message.push_str(player.id.to_string().as_str());
+            message.push_str(player.id().to_string().as_str());
 
             message.push_str("\r\n  |white|description|-|: ");
-            message.push_str(description.text.as_str());
+            message.push_str(description.as_str());
 
             message.push_str("\r\n  |white|room|-|: ");
-            message.push_str(room.id.to_string().as_str());
+            message.push_str(room.id().to_string().as_str());
 
             message.push_str("\r\n  |white|inventory|-|:");
             contents
-                .objects
+                .objects()
                 .iter()
                 .filter_map(|object| {
                     object_query
                         .get(*object)
-                        .map(|(object, named)| (object.id, named.name.as_str()))
+                        .map(|(object, named)| (object.id(), named.as_str()))
                         .ok()
                 })
                 .for_each(|(id, name)| {

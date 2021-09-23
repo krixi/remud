@@ -247,15 +247,15 @@ pub fn script_attach_system(
 
             let id = match target {
                 Either::Left(id) => *id,
-                Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id),
+                Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id()),
             };
 
             let copy = match id {
                 Id::Object(_) => {
                     let mut object = object_query.get_mut(target_entity).unwrap();
-                    if object.inherit_scripts {
-                        object.inherit_scripts = false;
-                        Some(prototype_query.get(object.prototype).unwrap().id)
+                    if object.inherit_scripts() {
+                        object.set_inherit_scripts(false);
+                        Some(prototype_query.get(object.prototype()).unwrap().id())
                     } else {
                         None
                     }
@@ -395,15 +395,15 @@ pub fn script_detach_system(
 
             let id = match target {
                 Either::Left(id) => *id,
-                Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id),
+                Either::Right(_) => Id::Player(player_query.get(target_entity).unwrap().id()),
             };
 
             let copy = match id {
                 Id::Object(_) => {
                     let mut object = object_query.get_mut(target_entity).unwrap();
-                    if object.inherit_scripts {
-                        object.inherit_scripts = false;
-                        Some(prototype_query.get(object.prototype).unwrap().id)
+                    if object.inherit_scripts() {
+                        object.set_inherit_scripts(false);
+                        Some(prototype_query.get(object.prototype()).unwrap().id())
                     } else {
                         None
                     }

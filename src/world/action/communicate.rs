@@ -42,7 +42,7 @@ pub fn emote_system(
     for action in action_reader.iter() {
         if let Action::Emote(Emote { actor, emote }) = action {
             let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*actor) {
-                (named.name.as_str(), location.room)
+                (named.as_str(), location.room())
             } else {
                 tracing::warn!(
                     "Entity {:?} cannot emote without Named and Location.",
@@ -57,7 +57,7 @@ pub fn emote_system(
                 .get(room_entity)
                 .expect("Location contains a valid room.");
 
-            for player in &room.players {
+            for player in room.players() {
                 if let Ok(mut messages) = present_query.get_mut(*player) {
                     messages.queue(message.clone());
                 }
@@ -83,7 +83,7 @@ pub fn message_system(
     for action in action_reader.iter() {
         if let Action::Message(Message { actor, message }) = action {
             let room_entity = if let Ok(location) = messaging_query.get(*actor) {
-                location.room
+                location.room()
             } else {
                 tracing::warn!("Entity {:?} cannot message without Location.", actor);
                 continue;
@@ -93,7 +93,7 @@ pub fn message_system(
                 .get(room_entity)
                 .expect("Location contains a valid room.");
 
-            for player in &room.players {
+            for player in room.players() {
                 if let Ok(mut messages) = present_query.get_mut(*player) {
                     messages.queue(message.clone());
                 }
@@ -130,7 +130,7 @@ pub fn say_system(
     for action in action_reader.iter() {
         if let Action::Say(Say { actor, message }) = action {
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
-                (named.name.as_str(), location.room)
+                (named.as_str(), location.room())
             } else {
                 tracing::warn!("Entity {:?} cannot say without Named and Location.", actor);
                 continue;
@@ -142,7 +142,7 @@ pub fn say_system(
                 .get(room_entity)
                 .expect("Location contains a valid room.");
 
-            for player in &room.players {
+            for player in room.players() {
                 if *player == *actor {
                     if let Ok(mut messages) = present_query.get_mut(*player) {
                         messages.queue(format!("You say \"{}\"", message));
@@ -198,7 +198,7 @@ pub fn send_system(
         }) = action
         {
             let name = if let Ok(named) = saying_query.get(*actor) {
-                named.name.as_str()
+                named.as_str()
             } else {
                 tracing::warn!("Nameless entity {:?} cannot send a message.", actor);
                 continue;

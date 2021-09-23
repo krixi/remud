@@ -33,10 +33,10 @@ impl State for WanderState {
         // Check to see if a player has come within range (in the same room) for long enough (requires timer).
 
         // get the current room from the entity
-        let room = world.get::<Location>(entity).unwrap().room;
+        let room = world.get::<Location>(entity).unwrap().room();
 
         // get the players in the room
-        let players = &world.get::<Room>(room).unwrap().players;
+        let players = &world.get::<Room>(room).unwrap().players();
 
         if !players.is_empty() {
             Some(Transition::SawPlayer)
@@ -47,8 +47,8 @@ impl State for WanderState {
 
     fn act(&mut self, entity: Entity, world: &mut World) {
         // no player seen. Pick an exit and go through it.
-        let room = world.get::<Location>(entity).unwrap().room;
-        let exits = &world.get::<Room>(room).unwrap().exits;
+        let room = world.get::<Location>(entity).unwrap().room();
+        let exits = &world.get::<Room>(room).unwrap().exits();
 
         self.tick_timer += 1;
 
@@ -99,11 +99,11 @@ impl State for ChaseState {
         self.tick_timer = 0;
 
         // get the players in the room, pick one to chase
-        let room = world.get::<Location>(entity).unwrap().room;
-        let players = &world.get::<Room>(room).unwrap().players;
+        let room = world.get::<Location>(entity).unwrap().room();
+        let players = &world.get::<Room>(room).unwrap().players();
         let mut rng = thread_rng();
-        let player = *players.as_slice().choose(&mut rng).unwrap();
-        let player_name = world.get::<Named>(player).unwrap().name.clone();
+        let player = *players.choose(&mut rng).unwrap();
+        let player_name = world.get::<Named>(player).unwrap().to_string();
         self.chasing = Some(player);
 
         // say "i'm gonna get you"
@@ -119,7 +119,7 @@ impl State for ChaseState {
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
         // Check current an all surrounding rooms for the player we are chasing.
         let room = match world.get::<Location>(entity) {
-            Some(location) => location.room,
+            Some(location) => location.room(),
             None => return None,
         };
 
@@ -128,7 +128,7 @@ impl State for ChaseState {
         world
             .get::<Room>(room)
             .unwrap()
-            .exits
+            .exits()
             .iter()
             .for_each(|(d, r)| rooms.push((Some(*d), *r)));
 
@@ -138,7 +138,7 @@ impl State for ChaseState {
             if world
                 .get::<Room>(room)
                 .unwrap()
-                .players
+                .players()
                 .iter()
                 .any(|p| *p == self.chasing.unwrap())
             {

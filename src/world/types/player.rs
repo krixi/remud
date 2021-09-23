@@ -57,20 +57,52 @@ pub struct PlayerBundle {
 }
 
 pub struct Player {
-    pub id: PlayerId,
+    id: PlayerId,
+}
+
+impl Player {
+    pub fn id(&self) -> PlayerId {
+        self.id
+    }
+}
+
+impl From<PlayerId> for Player {
+    fn from(id: PlayerId) -> Self {
+        Player { id }
+    }
 }
 
 #[derive(Default)]
 pub struct Messages {
-    pub received_input: bool,
-    pub queue: VecDeque<String>,
-    pub plain_queue: VecDeque<String>,
+    received_input: bool,
+    queue: VecDeque<String>,
 }
 
 impl Messages {
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+
     pub fn queue(&mut self, mut message: String) {
         message.push_str("\r\n");
         self.queue.push_back(message);
+    }
+
+    pub fn get_queue(&mut self) -> VecDeque<String> {
+        let mut queue = VecDeque::new();
+        std::mem::swap(&mut queue, &mut self.queue);
+
+        if !self.received_input {
+            queue.push_front("\r\n".to_string());
+        }
+
+        self.received_input = false;
+
+        queue
+    }
+
+    pub fn set_received_input(&mut self) {
+        self.received_input = true;
     }
 }
 

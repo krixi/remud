@@ -24,7 +24,7 @@ use crate::world::{
         actions::{run_init_script, run_post_event_script, run_pre_event_script},
         modules::{event_api, rand_api, self_api, states_api, time_api, world_api},
     },
-    types::{room::Room, Container, Contents, Location},
+    types::{object::Container, room::Room, Contents, Location},
 };
 
 pub struct ScriptEngine {
@@ -522,19 +522,19 @@ fn action_room(
     container_query: &Query<&Container>,
 ) -> Option<Entity> {
     if let Ok(location) = location_query.get(enactor) {
-        Some(location.room)
+        Some(location.room())
     } else if room_query.get(enactor).is_ok() {
         Some(enactor)
     } else {
         let mut containing_entity = enactor;
 
         while let Ok(container) = container_query.get(containing_entity) {
-            containing_entity = container.entity;
+            containing_entity = container.entity();
         }
 
         location_query
             .get(containing_entity)
-            .map(|location| location.room)
+            .map(|location| location.room())
             .ok()
     }
 }
@@ -558,7 +558,7 @@ fn get_script_runs(
     }
 
     let contents = contents_query.get(room).unwrap();
-    for object in &contents.objects {
+    for object in contents.objects() {
         if let Ok(hooks) = hooks_query.get(*object) {
             for script in hooks.by_trigger(trigger) {
                 runs.push(ScriptRun {
@@ -570,7 +570,7 @@ fn get_script_runs(
     }
 
     let room = room_query.get(room).unwrap();
-    for player in &room.players {
+    for player in room.players() {
         if let Ok(hooks) = hooks_query.get(*player) {
             for script in hooks.by_trigger(trigger) {
                 runs.push(ScriptRun {
@@ -581,7 +581,7 @@ fn get_script_runs(
         }
 
         let contents = contents_query.get(*player).unwrap();
-        for object in contents.objects.iter() {
+        for object in contents.objects() {
             if let Ok(hooks) = hooks_query.get(*object) {
                 for script in hooks.by_trigger(trigger) {
                     runs.push(ScriptRun {

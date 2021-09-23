@@ -1,9 +1,9 @@
-use std::fmt;
+use std::{fmt, ops::Index};
 
 use bevy_ecs::prelude::Entity;
 
 use crate::world::types::{
-    object::{ObjectFlags, ObjectId, PrototypeId},
+    object::{ObjectId, PrototypeId},
     player::PlayerId,
     room::RoomId,
 };
@@ -39,48 +39,131 @@ pub enum ActionTarget {
     CurrentRoom,
 }
 
-// Components
-#[derive(Debug, Default)]
-pub struct Contents {
-    pub objects: Vec<Entity>,
+#[derive(Debug, Clone)]
+pub struct Named {
+    name: String,
 }
 
-impl Contents {
-    pub fn remove(&mut self, object: Entity) {
-        if let Some(index) = self.objects.iter().position(|o| *o == object) {
-            self.objects.remove(index);
-        }
+impl Named {
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn escaped(&self) -> String {
+        self.name.replace("|", "||")
+    }
+}
+
+impl From<String> for Named {
+    fn from(name: String) -> Self {
+        Named { name }
+    }
+}
+
+impl fmt::Display for Named {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Named {
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct Description {
-    pub text: String,
+    text: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct Keywords {
-    pub list: Vec<String>,
+impl Description {
+    pub fn set_text(&mut self, text: String) {
+        self.text = text;
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.text.as_str()
+    }
+
+    pub fn escaped(&self) -> String {
+        self.text.replace("|", "||")
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct Flags {
-    pub flags: ObjectFlags,
+impl fmt::Display for Description {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
+impl From<String> for Description {
+    fn from(text: String) -> Self {
+        Description { text }
+    }
 }
 
 #[derive(Debug)]
 pub struct Location {
-    pub room: Entity,
+    room: Entity,
 }
 
-#[derive(Debug)]
-pub struct Container {
-    pub entity: Entity,
+impl Location {
+    pub fn set_room(&mut self, room: Entity) {
+        self.room = room;
+    }
+
+    pub fn room(&self) -> Entity {
+        self.room
+    }
+}
+
+impl From<Entity> for Location {
+    fn from(room: Entity) -> Self {
+        Location { room }
+    }
+}
+
+// Components
+#[derive(Debug, Default)]
+pub struct Contents {
+    objects: Vec<Entity>,
+}
+
+impl Contents {
+    pub fn insert(&mut self, object: Entity) {
+        self.objects.push(object);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    pub fn remove(&mut self, index: usize) -> Entity {
+        self.objects.remove(index)
+    }
+
+    pub fn remove_object(&mut self, object: Entity) -> Option<Entity> {
+        if let Some(index) = self.objects.iter().position(|o| *o == object) {
+            Some(self.objects.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn objects(&self) -> &[Entity] {
+        self.objects.as_slice()
+    }
+
+    pub fn get_objects(&self) -> Vec<Entity> {
+        self.objects.clone()
+    }
+}
+
+impl Index<usize> for Contents {
+    type Output = Entity;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.objects[index]
+    }
 }
 
 // Resources

@@ -51,8 +51,10 @@ pub mod world_api {
     use rhai::Dynamic;
 
     use crate::world::types::{
-        object::Object, player::Player, room::Room, Container, Contents, Description, Keywords,
-        Location, Named,
+        object::{Container, Keywords, Object},
+        player::Player,
+        room::Room,
+        Contents, Description, Location, Named,
     };
 
     #[rhai_fn(pure)]
@@ -73,7 +75,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_name(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(named) = world.read().unwrap().get::<Named>(entity) {
-            Dynamic::from(named.name.clone())
+            Dynamic::from(named.to_string())
         } else {
             Dynamic::UNIT
         }
@@ -82,7 +84,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_description(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(description) = world.read().unwrap().get::<Description>(entity) {
-            Dynamic::from(description.text.clone())
+            Dynamic::from(description.to_string())
         } else {
             Dynamic::UNIT
         }
@@ -91,7 +93,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_keywords(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(keywords) = world.read().unwrap().get::<Keywords>(entity) {
-            Dynamic::from(keywords.list.clone())
+            Dynamic::from(keywords.get_list())
         } else {
             Dynamic::UNIT
         }
@@ -100,7 +102,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_location(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(location) = world.read().unwrap().get::<Location>(entity) {
-            Dynamic::from(location.room)
+            Dynamic::from(location.room())
         } else {
             Dynamic::UNIT
         }
@@ -109,7 +111,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_container(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(container) = world.read().unwrap().get::<Container>(entity) {
-            Dynamic::from(container.entity)
+            Dynamic::from(container.entity())
         } else {
             Dynamic::UNIT
         }
@@ -118,7 +120,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_contents(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(contents) = world.read().unwrap().get::<Contents>(entity) {
-            Dynamic::from(contents.objects.clone())
+            Dynamic::from(contents.get_objects())
         } else {
             Dynamic::UNIT
         }
@@ -127,7 +129,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_players(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
         if let Some(room) = world.read().unwrap().get::<Room>(entity) {
-            Dynamic::from(room.players.clone())
+            Dynamic::from(room.get_players())
         } else {
             Dynamic::UNIT
         }

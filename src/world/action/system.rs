@@ -31,13 +31,13 @@ pub fn login_system(
         if let Action::Login(Login { actor }) = action {
             let (name, room) = player_query
                 .get(*actor)
-                .map(|(named, location)| (named.name.as_str(), location.room))
+                .map(|(named, location)| (named.as_str(), location.room()))
                 .unwrap();
 
             let players = room_query
                 .get(room)
                 .unwrap()
-                .players
+                .players()
                 .iter()
                 .filter(|player| **player != *actor)
                 .copied()

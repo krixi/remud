@@ -143,14 +143,14 @@ impl GameWorld {
         let (name, room) = world
             .query::<(&Named, &Location)>()
             .get(&*world, player)
-            .map(|(named, location)| (named.name.clone(), location.room))
+            .map(|(named, location)| (named.to_string(), location.room()))
             .ok()
             .ok_or(action::Error::MissingComponent(player, "Player"))?;
 
         let players = world
             .get::<Room>(room)
             .unwrap()
-            .players
+            .players()
             .iter()
             .filter(|p| **p != player)
             .copied()
@@ -166,7 +166,7 @@ impl GameWorld {
 
         if let Some(objects) = world
             .get::<Contents>(player)
-            .map(|contents| contents.objects.clone())
+            .map(|contents| contents.get_objects())
         {
             for object in objects {
                 world.despawn(object);
@@ -191,7 +191,7 @@ impl GameWorld {
         world
             .get_mut::<Messages>(action.actor())
             .unwrap()
-            .received_input = true;
+            .set_received_input();
 
         world
             .get_resource_mut::<Events<QueuedAction>>()
@@ -231,20 +231,11 @@ impl GameWorld {
         for player in players_with_messages {
             let mut messages = world.get_mut::<Messages>(player).unwrap();
 
-            if messages.queue.is_empty() {
+            if messages.is_empty() {
                 continue;
             }
 
-            let mut queue = VecDeque::new();
-            std::mem::swap(&mut queue, &mut messages.queue);
-
-            if !messages.received_input {
-                queue.push_front("\r\n".to_string());
-            }
-
-            messages.received_input = false;
-
-            outgoing.push((player, queue));
+            outgoing.push((player, messages.get_queue()));
         }
 
         outgoing
@@ -345,11 +336,9 @@ fn add_void_room(world: &mut World) {
         let description = "A dark void extends infinitely in all directions.".to_string();
         let bundle = RoomBundle {
             id: Id::Room(*VOID_ROOM_ID),
-            room: Room::new(*VOID_ROOM_ID),
-            name: Named { name: name.clone() },
-            description: Description {
-                text: description.clone(),
-            },
+            room: Room::from(*VOID_ROOM_ID),
+            name: Named::from(name.clone()),
+            description: Description::from(description.clone()),
             contents: Contents::default(),
             regions: Regions::default(),
             hooks: ScriptHooks::default(),

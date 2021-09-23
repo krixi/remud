@@ -9,10 +9,10 @@ use crate::{
     world::{
         action::Action,
         types::{
-            object::{Object, ObjectFlags},
+            object::{Container, Flags, Keywords, Object, ObjectFlags},
             player::Messages,
             room::Room,
-            Container, Contents, Flags, Id, Keywords, Location, Named,
+            Contents, Id, Location, Named,
         },
     },
 };
@@ -56,19 +56,17 @@ pub fn drop_system(
             // Find entity to drop in contents of dropping entity, if it exists. Grab some other data as well.
             let (entity_id, room_entity, pos) =
                 if let Ok((id, location, contents)) = dropping_query.get_mut(*actor) {
-                    let pos = contents.objects.iter().position(|object| {
+                    let pos = contents.objects().iter().position(|object| {
                         object_query
                             .get(*object)
                             .map(|(_, _, object_keywords)| {
                                 {
-                                    keywords
-                                        .iter()
-                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                    object_keywords.contains_all(keywords.as_slice())
                                 }
                             })
                             .unwrap_or(false)
                     });
-                    (*id, location.room, pos)
+                    (*id, location.room(), pos)
                 } else {
                     tracing::warn!("Entity {:?} cannot drop an item without Contents.", actor);
                     continue;
@@ -78,7 +76,7 @@ pub fn drop_system(
                 // Move the object from the entity to the room
                 let object_entity = dropping_query
                     .get_mut(*actor)
-                    .map(|(_, _, mut contents)| contents.objects.remove(pos))
+                    .map(|(_, _, mut contents)| contents.remove(pos))
                     .unwrap();
 
                 let room_id = {
@@ -86,18 +84,18 @@ pub fn drop_system(
                         .get_mut(room_entity)
                         .expect("Location has valid Room");
 
-                    contents.objects.push(object_entity);
-                    room.id
+                    contents.insert(object_entity);
+                    room.id()
                 };
 
                 let (object_id, name) = {
                     let (object, named, _) = object_query.get(object_entity).unwrap();
                     commands
                         .entity(object_entity)
-                        .insert(Location { room: room_entity })
+                        .insert(Location::from(room_entity))
                         .remove::<Container>();
 
-                    (object.id, named.name.as_str())
+                    (object.id(), named.as_str())
                 };
 
                 // Persist the changes for the object's position
@@ -162,7 +160,7 @@ pub fn get_system(
             // Get the room that entity is in.
             let (entity_id, room_entity) =
                 if let Ok((id, location, _)) = getting_query.get_mut(*actor) {
-                    (*id, location.room)
+                    (*id, location.room())
                 } else {
                     tracing::warn!("Entity {:?} without Contents cannot get an item.", actor);
                     continue;
@@ -172,14 +170,12 @@ pub fn get_system(
             let pos = room_query
                 .get_mut(room_entity)
                 .map(|(_, contents)| {
-                    contents.objects.iter().position(|object| {
+                    contents.objects().iter().position(|object| {
                         object_query
                             .get(*object)
                             .map(|(_, _, object_keywords, _)| {
                                 {
-                                    keywords
-                                        .iter()
-                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                    object_keywords.contains_all(keywords.as_slice())
                                 }
                             })
                             .unwrap_or(false)
@@ -192,26 +188,26 @@ pub fn get_system(
                 let (room_id, object_entity) = {
                     let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
 
-                    let object_entity = contents.objects[pos];
+                    let object_entity = contents[pos];
 
                     let (_, named, _, flags) = object_query.get(object_entity).unwrap();
-                    if flags.flags.contains(ObjectFlags::FIXED) {
+                    if flags.contains(ObjectFlags::FIXED) {
                         if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                            let name = named.name.as_str();
+                            let name = named.as_str();
                             messages
                                 .queue(format!("Try as you might, you cannot pick up {}.", name));
                         }
                         continue;
                     }
 
-                    contents.objects.remove(pos);
+                    contents.remove(pos);
 
-                    (room.id, object_entity)
+                    (room.id(), object_entity)
                 };
 
                 getting_query
                     .get_mut(*actor)
-                    .map(|(_, _, mut contents)| contents.objects.push(object_entity))
+                    .map(|(_, _, mut contents)| contents.insert(object_entity))
                     .expect("Location has valid Room");
 
                 let (object_id, name) = {
@@ -219,10 +215,10 @@ pub fn get_system(
 
                     commands
                         .entity(object_entity)
-                        .insert(Container { entity: *actor })
+                        .insert(Container::from(*actor))
                         .remove::<Location>();
 
-                    (object.id, named.name.as_str())
+                    (object.id(), named.as_str())
                 };
 
                 // Persist the changes for the object's position
@@ -278,14 +274,14 @@ pub fn inventory_system(
                 continue;
             };
 
-            if contents.objects.is_empty() {
+            if contents.is_empty() {
                 message.push_str(" nothing.|-|");
             } else {
                 message.push_str(":|-|");
-                for object_entity in contents.objects.iter() {
+                for object_entity in contents.objects().iter() {
                     let named = object_query.get(*object_entity).unwrap();
                     message.push_str("\r\n  ");
-                    message.push_str(named.name.as_str());
+                    message.push_str(named.as_str());
                 }
             }
 

@@ -15,10 +15,10 @@ use crate::{
         action,
         scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
         types::{
-            object::{ObjectId, Objects, PrototypeId, Prototypes},
+            object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
             player::{Messages, Player, PlayerBundle, PlayerId, Players},
             room::{Room, RoomId, Rooms},
-            Container, Contents, Description, Id, Location, Named,
+            Contents, Description, Id, Location, Named,
         },
         VOID_ROOM_ID,
     },
@@ -64,14 +64,10 @@ pub async fn load_player(
         let player = world
             .spawn()
             .insert_bundle(PlayerBundle {
-                name: Named {
-                    name: name.to_string(),
-                },
-                description: Description {
-                    text: player_row.description,
-                },
-                location: Location { room },
-                player: Player { id },
+                name: Named::from(name.to_string()),
+                description: Description::from(player_row.description),
+                location: Location::from(room),
+                player: Player::from(id),
                 contents: Contents::default(),
                 messages: Messages::default(),
                 id: Id::Player(id),
@@ -84,8 +80,7 @@ pub async fn load_player(
         world
             .get_mut::<Room>(room)
             .ok_or(action::Error::MissingComponent(room, "Room"))?
-            .players
-            .push(player);
+            .insert_player(player);
 
         world
             .get_resource_mut::<Players>()
@@ -139,15 +134,14 @@ async fn load_player_inventory(
 
             let bundle = object_row.into_object_bundle(prototype)?;
 
-            let container = Container { entity: player };
+            let container = Container::from(player);
 
             let object_entity = world.spawn().insert_bundle(bundle).insert(container).id();
 
             world
                 .get_mut::<Contents>(player)
                 .unwrap()
-                .objects
-                .push(object_entity);
+                .insert(object_entity);
 
             world
                 .get_resource_mut::<Objects>()

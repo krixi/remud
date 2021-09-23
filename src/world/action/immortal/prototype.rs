@@ -15,10 +15,12 @@ use crate::{
         },
         scripting::{ScriptHook, ScriptHooks},
         types::{
-            self,
-            object::{Object, ObjectFlags, Prototype, PrototypeBundle, PrototypeId, Prototypes},
+            object::{
+                Container, Flags, Keywords, Object, ObjectFlags, Prototype, PrototypeBundle,
+                PrototypeId, Prototypes,
+            },
             player::Messages,
-            ActionTarget, Container, Contents, Description, Keywords, Location, Named,
+            ActionTarget, Contents, Description, Location, Named,
         },
     },
 };
@@ -135,28 +137,20 @@ pub fn prototype_create_system(
             let id = prototypes.next_id();
 
             let bundle = PrototypeBundle {
-                prototype: Prototype { id },
-                flags: types::Flags {
-                    flags: ObjectFlags::empty(),
-                },
-                keywords: Keywords {
-                    list: vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()],
-                },
-                name: Named {
-                    name: DEFAULT_PROTOTYPE_NAME.to_string(),
-                },
-                description: Description {
-                    text: DEFAULT_PROTOTYPE_DESCRIPTION.to_string(),
-                },
+                prototype: Prototype::from(id),
+                flags: Flags::default(),
+                keywords: Keywords::from(vec![DEFAULT_PROTOTYPE_KEYWORD.to_string()]),
+                name: Named::from(DEFAULT_PROTOTYPE_NAME.to_string()),
+                description: Description::from(DEFAULT_PROTOTYPE_DESCRIPTION.to_string()),
                 hooks: ScriptHooks::default(),
             };
 
             updates.persist(persist::prototype::Create::new(
                 id,
-                bundle.name.name.clone(),
-                bundle.description.text.clone(),
-                bundle.flags.flags,
-                bundle.keywords.list.clone(),
+                bundle.name.to_string(),
+                bundle.description.to_string(),
+                bundle.flags.get_flags(),
+                bundle.keywords.get_list(),
             ));
 
             let prototype_entity = commands.spawn_bundle(bundle).id();
@@ -183,7 +177,7 @@ pub fn prototype_info_system(
     prototypes: Res<Prototypes>,
     prototype_query: Query<(
         &Prototype,
-        &types::Flags,
+        &Flags,
         &Keywords,
         &Named,
         &Description,
@@ -205,14 +199,14 @@ pub fn prototype_info_system(
             let (prototype, flags, keywords, named, description, hooks) =
                 prototype_query.get(prototype_entity).unwrap();
 
-            let mut message = format!("|white|Prototype {}|-|", prototype.id);
+            let mut message = format!("|white|Prototype {}|-|", prototype.id());
             message.push_str("\r\n  |white|name|-|: ");
-            message.push_str(named.name.replace("|", "||").as_str());
+            message.push_str(named.escaped().as_str());
             message.push_str("\r\n  |white|description|-|: ");
-            message.push_str(description.text.replace("|", "||").as_str());
-            message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.flags).as_str());
+            message.push_str(description.escaped().as_str());
+            message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.get_flags()).as_str());
             message.push_str("\r\n  |white|keywords|-|: ");
-            message.push_str(word_list(keywords.list.clone()).as_str());
+            message.push_str(word_list(keywords.get_list()).as_str());
             message.push_str("\r\n  |white|script hooks|-|:");
             if hooks.list.is_empty() {
                 message.push_str(" none");
@@ -260,7 +254,10 @@ pub fn prototype_update_keywords_system(
                 continue;
             };
 
-            prototype_query.get_mut(prototype_entity).unwrap().list = keywords.clone();
+            prototype_query
+                .get_mut(prototype_entity)
+                .unwrap()
+                .set_list(keywords.clone());
 
             updates.persist(persist::prototype::Keywords::new(*id, keywords.clone()));
             updates.reload(*id);
@@ -303,9 +300,9 @@ pub fn prototype_remove_system(
             };
 
             let container = if let Ok(container) = container_query.get(prototype_entity) {
-                container.entity
+                container.entity()
             } else if let Ok(location) = location_query.get(prototype_entity) {
-                location.room
+                location.room()
             } else {
                 if let Ok(mut messages) = messages_query.get_mut(*actor) {
                     messages.queue(format!("Prototype {} not in a location or container.", id));
@@ -318,12 +315,12 @@ pub fn prototype_remove_system(
             contents_query
                 .get_mut(container)
                 .unwrap()
-                .remove(prototype_entity);
+                .remove_object(prototype_entity);
 
             let objects = object_query
                 .iter()
-                .filter(|(_, o)| o.prototype == prototype_entity)
-                .map(|(e, o)| (e, o.id))
+                .filter(|(_, object)| object.prototype() == prototype_entity)
+                .map(|(object_entity, object)| (object_entity, object.id()))
                 .collect_vec();
 
             for (entity, id) in objects {
@@ -354,7 +351,7 @@ pub fn prototype_update_flags_system(
     mut action_reader: EventReader<Action>,
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
-    mut prototype_query: Query<&mut types::Flags>,
+    mut prototype_query: Query<&mut Flags>,
     mut messages: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -388,12 +385,12 @@ pub fn prototype_update_flags_system(
                 let mut flags = prototype_query.get_mut(prototype_entity).unwrap();
 
                 if *clear {
-                    flags.flags.remove(changed_flags);
+                    flags.remove(changed_flags);
                 } else {
-                    flags.flags.insert(changed_flags);
+                    flags.insert(changed_flags);
                 }
 
-                flags.flags
+                flags.get_flags()
             };
 
             updates.persist(persist::prototype::Flags::new(*id, flags));

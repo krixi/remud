@@ -10,10 +10,10 @@ use crate::{
     world::{
         action::Action,
         types::{
-            object::ObjectFlags,
+            object::{Flags, Keywords, ObjectFlags},
             player::{Messages, Player},
             room::{Direction, Room},
-            Contents, Description, Flags, Keywords, Location, Named,
+            Contents, Description, Location, Named,
         },
     },
 };
@@ -72,16 +72,16 @@ pub fn look_system(
         if let Action::Look(Look { actor, direction }) = action {
             let current_room = looker_query
                 .get(*actor)
-                .map(|location| location.room)
+                .map(|location| location.room())
                 .unwrap();
 
             let target_room = if let Some(direction) = direction {
                 if let Some(room) = room_query
                     .get(current_room)
-                    .map(|(room, _, _, _)| room.exits.get(direction))
+                    .map(|(room, _, _, _)| room.exit(direction))
                     .expect("Location has a valid room.")
                 {
-                    *room
+                    room
                 } else {
                     if let Ok(mut messages) = messages_query.get_mut(*actor) {
                         messages.queue(format!("There is no room {}.", direction.as_to_str()));
@@ -94,16 +94,16 @@ pub fn look_system(
 
             let (room, named, description, contents) = room_query.get(target_room).unwrap();
 
-            let mut message = format!("|white|{}|-|\r\n", named.name.as_str());
+            let mut message = format!("|white|{}|-|\r\n", named.as_str());
 
-            message.push_str(description.text.as_str());
+            message.push_str(description.as_str());
 
             let present_names = room
-                .players
+                .players()
                 .iter()
                 .filter(|present_player| **present_player != *actor)
                 .filter_map(|player| player_query.get(*player).ok())
-                .map(|named| named.name.clone())
+                .map(|named| named.to_string())
                 .sorted()
                 .collect_vec();
 
@@ -122,11 +122,11 @@ pub fn look_system(
             }
 
             let objects = contents
-                .objects
+                .objects()
                 .iter()
                 .filter_map(|object| object_query.get(*object).ok())
-                .filter(|(_, flags)| !flags.flags.contains(ObjectFlags::SUBTLE))
-                .map(|(named, _)| named.name.to_string())
+                .filter(|(_, flags)| !flags.contains(ObjectFlags::SUBTLE))
+                .map(|(named, _)| named.to_string())
                 .collect_vec();
 
             if !objects.is_empty() {
@@ -164,15 +164,15 @@ pub fn look_at_system(
             let description = looker_query
                 .get(*actor)
                 .ok()
-                .map(|location| location.room)
+                .map(|location| location.room())
                 .and_then(|room| room_query.get(room).ok())
                 .and_then(|room| {
                     if keywords.len() == 1 {
-                        room.players
+                        room.players()
                             .iter()
                             .filter_map(|player| player_query.get(*player).ok())
-                            .find(|(name, _)| keywords[0].as_str() == name.name.as_str())
-                            .map(|(_, description)| description.text.as_str())
+                            .find(|(name, _)| keywords[0].as_str() == name.as_str())
+                            .map(|(_, description)| description.as_str())
                     } else {
                         None
                     }
@@ -181,33 +181,29 @@ pub fn look_at_system(
                     looker_query
                         .get(*actor)
                         .ok()
-                        .map(|location| location.room)
+                        .map(|location| location.room())
                         .and_then(|room| contents_query.get(room).ok())
                         .and_then(|contents| {
                             contents
-                                .objects
+                                .objects()
                                 .iter()
                                 .filter_map(|object| object_query.get(*object).ok())
                                 .find(|(_, object_keywords)| {
-                                    keywords
-                                        .iter()
-                                        .all(|keyword| object_keywords.list.contains(keyword))
+                                    object_keywords.contains_all(keywords.as_slice())
                                 })
-                                .map(|(description, _)| description.text.as_str())
+                                .map(|(description, _)| description.as_str())
                         })
                 })
                 .or_else(|| {
                     contents_query.get(*actor).ok().and_then(|contents| {
                         contents
-                            .objects
+                            .objects()
                             .iter()
                             .filter_map(|object| object_query.get(*object).ok())
                             .find(|(_, object_keywords)| {
-                                keywords
-                                    .iter()
-                                    .all(|keyword| object_keywords.list.contains(keyword))
+                                object_keywords.contains_all(keywords.as_slice())
                             })
-                            .map(|(description, _)| description.text.as_str())
+                            .map(|(description, _)| description.as_str())
                     })
                 });
 
@@ -244,13 +240,13 @@ pub fn exits_system(
         if let Action::Exits(Exits { actor }) = action {
             let current_room = exiter_query
                 .get(*actor)
-                .map(|location| location.room)
+                .map(|location| location.room())
                 .unwrap();
 
             let exits = room_query
                 .get(current_room)
                 .unwrap()
-                .exits
+                .exits()
                 .keys()
                 .map(Direction::as_str)
                 .map(ToString::to_string)
@@ -288,7 +284,7 @@ pub fn who_system(
         if let Action::Who(Who { actor }) = action {
             let players = player_query
                 .iter()
-                .map(|named| format!("  {}", named.name))
+                .map(|named| format!("  {}", named.as_str()))
                 .sorted()
                 .join("\r\n");
 
