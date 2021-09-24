@@ -2,10 +2,10 @@ use std::{collections::HashMap, fmt};
 
 use bevy_ecs::prelude::Entity;
 use itertools::Itertools;
-use lazy_static::lazy_static;
-use regex::{Regex, Replacer};
+use regex::Replacer;
 
 use crate::{
+    macros::regex,
     text::{word_list, Tokenizer},
     world::{
         action::{
@@ -24,11 +24,6 @@ use crate::{
         types::{room::Direction, ActionTarget},
     },
 };
-
-lazy_static! {
-    static ref HIGHLIGHT_USAGE: Regex =
-        Regex::new(r#"(?P<symbol>[<>\[\]\(\)]|\|\||\.\.)"#).unwrap();
-}
 
 pub struct Commands {
     commands: HashMap<&'static str, Command>,
@@ -228,7 +223,8 @@ impl Help {
 impl fmt::Display for Help {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(usage) = self.usage {
-            let usage = HIGHLIGHT_USAGE.replace_all(usage, UsageColorizer {});
+            let re = regex!(r#"(?P<symbol>[<>\[\]\(\)]|\|\||\.\.)"#);
+            let usage = re.replace_all(usage, UsageColorizer {});
             write!(f, "|white|Usage:|-| {}\r\n\r\n", usage)?;
         }
         write!(f, "{}", self.description)?;

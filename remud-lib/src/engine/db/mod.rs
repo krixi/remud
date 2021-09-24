@@ -11,8 +11,8 @@ use std::{
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use itertools::Itertools;
-use lazy_static::lazy_static;
-use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
+use sqlx::{migrate::MigrateError, sqlite::SqliteConnectOptions, Row, SqlitePool};
+use thiserror::Error;
 
 use crate::world::{
     scripting::{ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind},
@@ -27,8 +27,21 @@ use crate::world::{
     },
 };
 
-lazy_static! {
-    static ref DB_NOT_FOUND_CODE: &'static str = "14";
+const DB_NOT_FOUND_CODE: &str = "14";
+const DEFAULT_PLAYER_DESCRIPTION: &str = "A being exists here.";
+
+type DbResult<T> = Result<T, DbError>;
+
+#[derive(Debug, Error)]
+pub enum DbError {
+    #[error("failed to execute migrations")]
+    MigrationError(#[from] MigrateError),
+    #[error("SQL error")]
+    SqlError(#[from] sqlx::Error),
+    #[error("failed to deserialize value")]
+    DeserializeError(&'static str),
+    #[error("missing data")]
+    MissingData(&'static str),
 }
 
 pub struct Db {
@@ -36,7 +49,7 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn new(db: Option<&str>) -> anyhow::Result<Self> {
+    pub async fn new(db: Option<&str>) -> DbResult<Self> {
         let uri = db
             .map(|path| format!("sqlite://{}", path))
             .unwrap_or_else(|| "sqlite::memory:".to_string());
@@ -47,7 +60,7 @@ impl Db {
                 Err(e) => Err(e.into()),
             },
             Err(e) => {
-                if let sqlx::Error::Database(de) = e {
+                if let sqlx::Error::Database(ref de) = e {
                     if de.code() == Some(Cow::Borrowed(&DB_NOT_FOUND_CODE)) {
                         tracing::warn!("World database {} not found, creating new instance.", uri);
                         let options = SqliteConnectOptions::from_str(&uri)
@@ -57,10 +70,10 @@ impl Db {
                         sqlx::migrate!("../migrations").run(&pool).await?;
                         Ok(Db { pool })
                     } else {
-                        Err(de.into())
+                        return Err(DbError::SqlError(e));
                     }
                 } else {
-                    Err(e.into())
+                    Err(DbError::SqlError(e))
                 }
             }
         };
@@ -76,7 +89,7 @@ impl Db {
         &self.pool
     }
 
-    pub async fn vacuum(&self) -> anyhow::Result<()> {
+    pub async fn vacuum(&self) -> Result<(), sqlx::Error> {
         sqlx::query("VACUUM").execute(&self.pool).await?;
         Ok(())
     }
@@ -92,11 +105,13 @@ impl Db {
 
     pub async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {
         let results = sqlx::query(
-            "INSERT INTO players (username, password, room) VALUES (?, ?, ?) RETURNING id",
+            "INSERT INTO players (username, password, room, description, flags) VALUES (?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(user)
         .bind(hash)
         .bind(room)
+        .bind(0)
+        .bind(DEFAULT_PLAYER_DESCRIPTION)
         .fetch_one(&self.pool)
         .await?;
 
@@ -104,7 +119,7 @@ impl Db {
 
         // Player 1 is always an immortal by default.
         if id == 1 {
-            sqlx::query("UPDATE players SET flags = ? WHERE name = ?")
+            sqlx::query("UPDATE players SET flags = ? WHERE username = ?")
                 .bind(types::player::Flags::IMMORTAL.bits())
                 .bind(user)
                 .execute(&self.pool)
@@ -123,7 +138,7 @@ impl Db {
         Ok(results.get("password"))
     }
 
-    pub async fn load_world(&self) -> anyhow::Result<World> {
+    pub async fn load_world(&self) -> DbResult<World> {
         world::load_world(&self.pool).await
     }
 
@@ -280,19 +295,23 @@ struct HookRow {
 }
 
 impl TryFrom<HookRow> for ScriptHook {
-    type Error = anyhow::Error;
+    type Error = DbError;
 
     fn try_from(value: HookRow) -> Result<Self, Self::Error> {
-        let script = ScriptName::try_from(value.script)?;
-        let kind = TriggerKind::from_str(value.kind.as_str())?;
+        let script = ScriptName::try_from(value.script)
+            .map_err(|_| DbError::DeserializeError("script name"))?;
+        let kind = TriggerKind::from_str(value.kind.as_str())
+            .map_err(|_| DbError::DeserializeError("script trigger kind"))?;
         let trigger = match kind {
             TriggerKind::Init => ScriptTrigger::Init,
             TriggerKind::PreEvent => {
-                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+                let trigger = TriggerEvent::from_str(value.trigger.as_str())
+                    .map_err(|_| DbError::DeserializeError("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::PostEvent => {
-                let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+                let trigger = TriggerEvent::from_str(value.trigger.as_str())
+                    .map_err(|_| DbError::DeserializeError("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::Timer => ScriptTrigger::Timer(value.trigger),
@@ -315,8 +334,8 @@ struct ObjectRow {
 }
 
 impl ObjectRow {
-    fn into_object_bundle(self, prototype: Entity) -> anyhow::Result<ObjectBundle> {
-        let id = ObjectId::try_from(self.id)?;
+    fn into_object_bundle(self, prototype: Entity) -> DbResult<ObjectBundle> {
+        let id = ObjectId::try_from(self.id).map_err(|_| DbError::DeserializeError("object ID"))?;
 
         Ok(ObjectBundle {
             id: Id::Object(id),

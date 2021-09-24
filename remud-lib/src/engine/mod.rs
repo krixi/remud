@@ -8,9 +8,8 @@ use argon2::{
 };
 use futures::future::join_all;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use rand::rngs::OsRng;
-use regex::Regex;
+use thiserror::Error;
 use tokio::{
     sync::mpsc,
     time::{interval, Duration, Interval},
@@ -19,8 +18,9 @@ use tokio::{
 use crate::{
     engine::{
         client::{Client, Clients, State},
-        db::Db,
+        db::{Db, DbError},
     },
+    macros::regex,
     web::{
         JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse, WebMessage, WebRequest,
         WebResponse,
@@ -64,13 +64,19 @@ pub struct Engine {
     tick: u64,
 }
 
+#[derive(Debug, Error)]
+pub enum EngineError {
+    #[error("error with database")]
+    DbError(#[from] DbError),
+}
+
 impl Engine {
     pub(crate) async fn new(
         db: Option<&str>,
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
         web_message_rx: mpsc::Receiver<WebMessage>,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, EngineError> {
         let db = Db::new(db).await?;
         let world = db.load_world().await?;
 
@@ -158,12 +164,12 @@ impl Engine {
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client_id, tx) => {
-                tracing::info!("{}> {:?} connected", self.tick, client_id);
+                tracing::info!("[{}] {} connected", self.tick, client_id);
 
                 self.clients.add(client_id, tx);
             }
             ClientMessage::Disconnect(client_id) => {
-                tracing::info!("{}> {:?} disconnected", self.tick, client_id);
+                tracing::info!("[{}] {} disconnected", self.tick, client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
                     if let Err(e) = self.game_world.despawn_player(player) {
@@ -178,7 +184,7 @@ impl Engine {
                     .ok();
             }
             ClientMessage::Ready(client_id) => {
-                tracing::info!("{}> {:?} ready", self.tick, client_id);
+                tracing::info!("[{}] {} ready", self.tick, client_id);
 
                 let message = String::from(
                     "\r\n|SteelBlue3|Connected to|-| \
@@ -191,6 +197,7 @@ impl Engine {
                 }
             }
             ClientMessage::Input(client_id, input) => {
+                tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
                 self.process_input(client_id, input).await;
             }
         }
@@ -521,11 +528,8 @@ fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
 }
 
 fn name_valid(name: &str) -> bool {
-    lazy_static! {
-        // Match names with between 2 and 32 characters which are alphanumeric and possibly include
-        // the following characters: ' ', ''', '-', and '_'
-        static ref NAME_FILTER: Regex = Regex::new(r"^[[:alnum:] '\-_]{2,32}$").unwrap();
-    }
-
-    NAME_FILTER.is_match(name)
+    // Match names with between 2 and 32 characters which are alphanumeric and possibly include
+    // the following characters: ' ', ''', '-', and '_'
+    let re = regex!(r#"^[[:alnum:] '\-_]{2,32}$"#);
+    re.is_match(name)
 }

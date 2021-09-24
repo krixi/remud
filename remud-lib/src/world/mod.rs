@@ -17,7 +17,7 @@ use bevy_app::Events;
 use bevy_core::Time;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use rhai::ParseError;
 
 use crate::{
@@ -42,9 +42,7 @@ use crate::{
 pub const STAGE_FIRST: &str = "first";
 pub const STAGE_UPDATE: &str = "update";
 
-lazy_static! {
-    pub static ref VOID_ROOM_ID: RoomId = RoomId::try_from(0).unwrap();
-}
+pub static VOID_ROOM_ID: Lazy<RoomId> = Lazy::new(|| RoomId::try_from(0).unwrap());
 
 pub struct GameWorld {
     world: Arc<RwLock<World>>,

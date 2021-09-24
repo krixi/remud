@@ -31,6 +31,7 @@ impl Client {
     }
 
     pub async fn send(&self, message: Cow<'_, str>) {
+        tracing::debug!("{:?} <- {:?}.", self.id, message);
         if self
             .tx
             .send(EngineMessage::Output(message.to_string()))
@@ -43,7 +44,7 @@ impl Client {
 
     pub async fn send_batch(&self, tick: u64, messages: VecDeque<String>) {
         for message in messages {
-            tracing::debug!("{}> {:?} received {:?}.", tick, self.id, message);
+            tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
             if self.tx.send(EngineMessage::Output(message)).await.is_err() {
                 tracing::error!("Failed to send message to client {:?}", self.id);
                 break;

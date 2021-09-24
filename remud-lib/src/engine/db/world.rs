@@ -1,6 +1,5 @@
 use std::{collections::HashMap, convert::TryFrom, str::FromStr};
 
-use anyhow::bail;
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
@@ -8,7 +7,7 @@ use itertools::Itertools;
 use sqlx::{Row, SqlitePool};
 
 use crate::{
-    engine::db::{HookRow, ObjectRow},
+    engine::db::{DbError, DbResult, HookRow, ObjectRow},
     world::{
         scripting::{
             Script, ScriptHook, ScriptHooks, ScriptInit, ScriptName, Scripts, TriggerEvent,
@@ -25,7 +24,7 @@ use crate::{
     },
 };
 
-pub async fn load_world(pool: &SqlitePool) -> anyhow::Result<World> {
+pub async fn load_world(pool: &SqlitePool) -> Result<World, DbError> {
     let mut world = World::new();
 
     world.insert_resource(Events::<ScriptInit>::default());
@@ -43,13 +42,18 @@ pub async fn load_world(pool: &SqlitePool) -> anyhow::Result<World> {
     Ok(world)
 }
 
-async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_configuration(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let config_row = sqlx::query(r#"SELECT value FROM config WHERE key = "spawn_room""#)
         .fetch_one(pool)
         .await?;
 
     let spawn_room_str: String = config_row.get("value");
-    let spawn_room = RoomId::try_from(spawn_room_str.parse::<i64>()?)?;
+    let spawn_room = RoomId::try_from(
+        spawn_room_str
+            .parse::<i64>()
+            .map_err(|_| DbError::DeserializeError("spawn room config value"))?,
+    )
+    .map_err(|_| DbError::DeserializeError("spawn room Room ID"))?;
 
     let configuration = Configuration {
         shutdown: false,
@@ -61,7 +65,7 @@ async fn load_configuration(pool: &SqlitePool, world: &mut World) -> anyhow::Res
     Ok(())
 }
 
-async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_rooms(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let mut rooms_by_id = HashMap::new();
 
     let mut results =
@@ -80,7 +84,7 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
         .map(|row| row.get::<String, _>("name"))
         .collect_vec();
 
-        let id = RoomId::try_from(room.id)?;
+        let id = RoomId::try_from(room.id).map_err(|_| DbError::DeserializeError("room ID"))?;
         let entity = world
             .spawn()
             .insert_bundle(RoomBundle {
@@ -106,15 +110,25 @@ async fn load_rooms(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_exits(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let mut results =
         sqlx::query_as::<_, ExitRow>("SELECT room_from, room_to, direction FROM exits").fetch(pool);
 
     while let Some(exit) = results.try_next().await? {
         let (from, to) = {
             let rooms = &world.get_resource::<Rooms>().unwrap();
-            let from = rooms.by_id(RoomId::try_from(exit.room_from)?).unwrap();
-            let to = rooms.by_id(RoomId::try_from(exit.room_to)?).unwrap();
+            let from = rooms
+                .by_id(
+                    RoomId::try_from(exit.room_from)
+                        .map_err(|_| DbError::DeserializeError("room exit from Room ID"))?,
+                )
+                .unwrap();
+            let to = rooms
+                .by_id(
+                    RoomId::try_from(exit.room_to)
+                        .map_err(|_| DbError::DeserializeError("room exit to Room ID"))?,
+                )
+                .unwrap();
             (from, to)
         };
 
@@ -129,7 +143,7 @@ async fn load_exits(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let mut results = sqlx::query_as::<_, PrototypeRow>(
         r#"SELECT id, flags, keywords, name, description FROM prototypes"#,
     )
@@ -138,7 +152,8 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result
     let mut by_id = HashMap::new();
 
     while let Some(prototype_row) = results.try_next().await? {
-        let id = PrototypeId::try_from(prototype_row.id)?;
+        let id = PrototypeId::try_from(prototype_row.id)
+            .map_err(|_| DbError::DeserializeError("prototype ID"))?;
         let bundle = PrototypeBundle {
             prototype: Prototype::from(id),
             flags: ObjectFlags::from(prototype_row.flags),
@@ -162,7 +177,7 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> anyhow::Result
     Ok(())
 }
 
-async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let mut results = sqlx::query_as::<_, ObjectRow>(
         r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, room_id AS container,
                     COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
@@ -176,30 +191,33 @@ async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
     let mut by_id = HashMap::new();
 
     while let Some(object_row) = results.try_next().await? {
-        let room_id = RoomId::try_from(object_row.container.unwrap())?;
-        let room_entity = match world.get_resource::<Rooms>().unwrap().by_id(room_id) {
-            Some(entity) => entity,
-            None => bail!("Room {} not found", room_id),
-        };
-        let id = ObjectId::try_from(object_row.id)?;
-        let prototype = match world
+        let room_id = RoomId::try_from(object_row.container.unwrap())
+            .map_err(|_| DbError::DeserializeError("room ID"))?;
+        let room_entity = world
+            .get_resource::<Rooms>()
+            .unwrap()
+            .by_id(room_id)
+            .ok_or(DbError::MissingData("room not found"))?;
+        let id = ObjectId::try_from(object_row.id)
+            .map_err(|_| DbError::DeserializeError("object ID"))?;
+        let prototype = world
             .get_resource::<Prototypes>()
             .unwrap()
-            .by_id(PrototypeId::try_from(object_row.prototype_id)?)
-        {
-            Some(entity) => entity,
-            None => bail!("Prototype {} not found", object_row.prototype_id),
-        };
+            .by_id(
+                PrototypeId::try_from(object_row.prototype_id)
+                    .map_err(|_| DbError::DeserializeError("prototype ID"))?,
+            )
+            .ok_or(DbError::MissingData("prototype not found"))?;
 
         let bundle = object_row.into_object_bundle(prototype)?;
         let location = Location::from(room_entity);
 
         let object_entity = world.spawn().insert_bundle(bundle).insert(location).id();
 
-        match world.get_mut::<Contents>(room_entity) {
-            Some(mut contents) => contents.insert(object_entity),
-            None => bail!("Failed to retrieve Room for room {:?}", room_entity),
-        }
+        world
+            .get_mut::<Contents>(room_entity)
+            .ok_or(DbError::MissingData("room contents"))?
+            .insert(object_entity);
 
         by_id.insert(id, object_entity);
     }
@@ -214,7 +232,7 @@ async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
     Ok(())
 }
 
-pub async fn load_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+pub async fn load_scripts(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     world.insert_resource(Scripts::default());
 
     let mut results = sqlx::query_as::<_, ScriptRow>(
@@ -236,7 +254,7 @@ pub async fn load_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resul
     Ok(())
 }
 
-async fn load_prototype_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_prototype_scripts(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let prototypes = world
         .query::<&Prototype>()
         .iter(world)
@@ -270,7 +288,7 @@ async fn load_prototype_scripts(pool: &SqlitePool, world: &mut World) -> anyhow:
     Ok(())
 }
 
-async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let rooms = world
         .query::<&Room>()
         .iter(world)
@@ -304,7 +322,7 @@ async fn load_room_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Resu
     Ok(())
 }
 
-async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> anyhow::Result<()> {
+async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let objects = world
         .query::<&Object>()
         .iter(world)
@@ -410,11 +428,13 @@ struct ScriptRow {
 }
 
 impl TryFrom<ScriptRow> for Script {
-    type Error = anyhow::Error;
+    type Error = DbError;
 
     fn try_from(value: ScriptRow) -> Result<Self, Self::Error> {
-        let name = ScriptName::try_from(value.name)?;
-        let trigger = TriggerEvent::from_str(value.trigger.as_str())?;
+        let name = ScriptName::try_from(value.name)
+            .map_err(|_| DbError::DeserializeError("script name"))?;
+        let trigger = TriggerEvent::from_str(value.trigger.as_str())
+            .map_err(|_| DbError::DeserializeError("script trigger event"))?;
 
         Ok(Script::new(name, trigger, value.code))
     }

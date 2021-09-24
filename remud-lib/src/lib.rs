@@ -3,25 +3,28 @@
 
 mod color;
 mod engine;
+mod macros;
 mod telnet;
 mod text;
 mod web;
 mod world;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt, io};
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
 use futures::{future::join_all, SinkExt, StreamExt};
+use thiserror::Error;
+use tide::listener::Listener;
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 use tokio_util::codec::Framed;
 
 use crate::{
     color::colorize,
-    engine::{ClientMessage, ControlMessage, Engine, EngineMessage},
+    engine::{ClientMessage, ControlMessage, Engine, EngineError, EngineMessage},
     telnet::{Codec, Frame, Telnet},
     web::build_web_server,
 };
@@ -29,7 +32,26 @@ use crate::{
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct ClientId(usize);
 
-pub async fn run_remud(db: Option<&str>) -> anyhow::Result<()> {
+impl fmt::Display for ClientId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "client {}", self.0)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum RemudError {
+    #[error("could not bind to provided address")]
+    BindError(#[from] io::Error),
+    #[error("engine failed to execute")]
+    EngineError(#[from] EngineError),
+}
+
+pub async fn run_remud(
+    telnet_address: &str,
+    web_address: &str,
+    db: Option<&str>,
+    ready_tx: Option<oneshot::Sender<()>>,
+) -> Result<(), RemudError> {
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
@@ -41,23 +63,18 @@ pub async fn run_remud(db: Option<&str>) -> anyhow::Result<()> {
     });
     tracing::info!("Engine started.");
 
-    let web_address = "0.0.0.0:2080";
-    tokio::spawn(async move {
-        match web_server.listen(web_address).await {
-            Ok(_) => (),
-            Err(e) => tracing::error!("Listen error: {}", e),
-        }
-    });
+    let mut server = web_server.bind(web_address).await?;
+    tokio::spawn(async move { server.accept().await });
     tracing::info!("Web listening on {}", web_address);
 
-    let telnet_address = "0.0.0.0:2004";
-    let telnet_listener = TcpListener::bind(telnet_address)
-        .await
-        .unwrap_or_else(|_| panic!("Cannot bind to {:?}", telnet_address));
+    let telnet_listener = TcpListener::bind(telnet_address).await?;
     tracing::info!("Telnet listening on {}", telnet_address);
 
-    let mut next_client_id = 1;
+    if let Some(tx) = ready_tx {
+        tx.send(()).ok();
+    }
 
+    let mut next_client_id = 1;
     let mut join_handles = HashMap::new();
 
     loop {
@@ -150,8 +167,10 @@ async fn process(
                             }
                         }
                         EngineMessage::EndOutput => {
-                            if framed.send(Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))).await.is_err() {
-                                break
+                            if input_buffer.len() > 0 {
+                                if framed.send(Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))).await.is_err() {
+                                    break
+                                }
                             }
                         }
                     }
@@ -200,8 +219,8 @@ async fn process(
                                 append_input(data, &mut input_buffer);
                             }
                         },
-                        Err(e) => {
-                            tracing::error!("Error decoding frame: {:?}", e);
+                        Err(_) => {
+                            tracing::info!("Client disconnected");
                             break;
                         }
                     }

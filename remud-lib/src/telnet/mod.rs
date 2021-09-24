@@ -6,7 +6,7 @@ use std::{
 
 use bitflags::bitflags;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use tokio_util::codec::{Decoder, Encoder};
 
 use crate::color::ColorSupport;
@@ -179,7 +179,7 @@ impl Decoder for Codec {
             Some(Frame::Data(src.split_to(src.len()).freeze()))
         };
 
-        tracing::debug!("-> {:?}", frame);
+        tracing::trace!("-> {:?}", frame);
 
         Ok(frame)
     }
@@ -189,7 +189,7 @@ impl Encoder<Frame> for Codec {
     type Error = io::Error;
 
     fn encode(&mut self, frame: Frame, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
-        tracing::debug!("<- {:?}", frame);
+        tracing::trace!("<- {:?}", frame);
 
         let bytes = Bytes::from(frame);
         dst.reserve(bytes.len());
@@ -232,9 +232,6 @@ impl Telnet {
         if let Some(frame) = self.options.enable(OptionCode::TerminalType) {
             frames.push(frame);
         }
-        if let Some(frame) = self.options.enable(OptionCode::Naws) {
-            frames.push(frame);
-        }
         frames
     }
 
@@ -243,6 +240,11 @@ impl Telnet {
         if let Some(response) = self.options.negotiate(command, option) {
             frames.push(response);
         }
+
+        if self.options.disabled(OptionCode::TerminalType) {
+            self.terminal_selection_state = TerminalSelectionState::Done(None);
+        }
+
         frames
     }
 
@@ -324,8 +326,10 @@ impl Telnet {
     }
 
     pub fn configured(&self) -> bool {
-        !self.options.negotiating()
-            && matches! {self.terminal_selection_state, TerminalSelectionState::Done(_)}
+        let negotiating = self.options.negotiating();
+        let terminal_selected =
+            matches! {self.terminal_selection_state, TerminalSelectionState::Done(_)};
+        !negotiating && terminal_selected
     }
 
     pub fn color_support(&self) -> ColorSupport {
@@ -356,14 +360,11 @@ const SE: u8 = 240;
 
 const TERMINAL_TYPE_SEND: u8 = 1;
 
-lazy_static! {
-    static ref ALLOWED_OPTIONS: HashSet<OptionCode> = {
-        let mut allowed = HashSet::new();
-        allowed.insert(OptionCode::TerminalType);
-        allowed.insert(OptionCode::Naws);
-        allowed
-    };
-}
+static ALLOWED_OPTIONS: Lazy<HashSet<OptionCode>> = Lazy::new(|| {
+    let mut allowed = HashSet::new();
+    allowed.insert(OptionCode::TerminalType);
+    allowed
+});
 
 enum OptionState {
     No,
