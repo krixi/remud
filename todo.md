@@ -16,8 +16,6 @@
 
 - password verification is slow - do it in another task
 
-- make objects.prototype_id a foreign key with on delete cascade
-
 - figure out how to factor out Engine.process_input (needed for character creation)
 
 - consider saving timers, or at least not removing them until the end of the tick
