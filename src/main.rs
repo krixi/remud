@@ -4,6 +4,8 @@
 pub mod color;
 mod engine;
 mod telnet;
+#[cfg(test)]
+mod test_e2e;
 mod text;
 mod web;
 mod world;
@@ -32,7 +34,10 @@ pub struct ClientId(usize);
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+    run().await
+}
 
+pub async fn run() -> anyhow::Result<()> {
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
