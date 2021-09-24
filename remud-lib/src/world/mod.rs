@@ -333,7 +333,7 @@ fn add_void_room(world: &mut World) {
             .unwrap()
             .persist(persist::room::Create::new(*VOID_ROOM_ID, name, description));
 
-        tracing::warn!("Void room was deleted and has been recreated.");
+        tracing::warn!("Void room was created.");
     }
 }
 

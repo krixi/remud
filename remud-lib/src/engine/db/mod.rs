@@ -27,8 +27,8 @@ use crate::world::{
     },
 };
 
-const DB_NOT_FOUND_CODE: &str = "14";
 const DEFAULT_PLAYER_DESCRIPTION: &str = "A being exists here.";
+const DB_NOT_FOUND_CODE: &str = "14";
 
 type DbResult<T> = Result<T, DbError>;
 

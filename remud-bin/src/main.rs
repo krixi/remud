@@ -1,17 +1,116 @@
-use std::env;
+use std::{env, fs::create_dir_all, io, path::PathBuf};
 
-use remud_lib::{run_remud, RemudError};
+use anyhow::bail;
+use clap::{App, Arg};
+use remud_lib::run_remud;
 
 #[tokio::main]
-async fn main() -> Result<(), RemudError> {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    tracing::info!("Running ReMUD from {:?}", env::current_dir());
+    let matches = App::new("ReMUD")
+        .version("0.1")
+        .author("Shaen & krixi")
+        .about("A MUD in Rust")
+        .arg(
+            Arg::with_name("telnet")
+                .short("t")
+                .long("telnet")
+                .default_value("2004")
+                .help("Sets the telnet port")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("web")
+                .short("w")
+                .long("web")
+                .default_value("2080")
+                .help("Sets the web API port")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("db")
+                .short("d")
+                .long("db")
+                .default_value("./world.db")
+                .help("Sets the database file path")
+                .takes_value(true),
+        ).arg(
+            Arg::with_name("in-memory")
+                .long("in-memory")
+                .help("Runs ReMUD with an in-memory SQLite database - all data will be lost when the program is closed")
+        ).get_matches();
 
-    let db = Some("./world.db");
+    let db = if matches.is_present("in-memory") {
+        None
+    } else {
+        let path_str = matches.value_of("db").unwrap();
 
-    let telnet_addr = "0.0.0.0:2004";
-    let web_addr = "0.0.0.0:2080";
+        let path = PathBuf::from(path_str);
 
-    run_remud(telnet_addr, web_addr, db, None).await
+        // Validate the database path, creating directories if necessary.
+        if path.is_dir() {
+            bail!("Parameter 'db' must be a filename, not a directory.");
+        }
+
+        if let Some(parent) = path.parent() {
+            match parent.metadata() {
+                Ok(_) => (),
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::NotFound {
+                        if let Err(e) = create_dir_all(parent) {
+                            bail!("Failed to create directory path for database: {}", e);
+                        }
+                    } else {
+                        bail!("Unable to access database parent directory: {}", e);
+                    }
+                }
+            }
+        } else {
+            bail!(
+                "Unable to determine parent directory of database: {:?}",
+                path.as_os_str()
+            );
+        }
+
+        Some(path_str)
+    };
+
+    let telnet = parse_port(matches.value_of("telnet").unwrap())?;
+    let web = parse_port(matches.value_of("web").unwrap())?;
+
+    let db_str = match db {
+        Some(path) => path,
+        None => "in-memory",
+    };
+
+    let telnet_addr = format!("0.0.0.0:{}", telnet);
+    let web_addr = format!("0.0.0.0:{}", web);
+
+    let cwd = env::current_dir();
+    let dir = match &cwd {
+        Ok(path) => path.to_str(),
+        Err(e) => bail!("Cannot determine current working directory: {}", e),
+    };
+
+    match dir {
+        Some(dir) => tracing::info!("Running ReMUD from {:?} with:", dir),
+        None => tracing::info!("Running Remud with:"),
+    }
+    tracing::info!("  database: {}", db_str);
+    tracing::info!("  telnet: {}", telnet_addr);
+    tracing::info!("  web: {}", web_addr);
+
+    run_remud(telnet_addr.as_str(), web_addr.as_str(), db, None).await?;
+
+    Ok(())
+}
+
+fn parse_port(port: &str) -> anyhow::Result<u16> {
+    let port = match port.parse::<u16>() {
+        Ok(port) => port,
+        Err(_) => bail!("Ports should be an integer between 1024 and 65,535 inclusive."),
+    };
+
+    Ok(port)
 }

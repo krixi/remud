@@ -49,7 +49,7 @@ pub enum RemudError {
 pub async fn run_remud(
     telnet_address: &str,
     web_address: &str,
-    db: Option<&str>,
+    db_path: Option<&str>,
     ready_tx: Option<oneshot::Sender<()>>,
 ) -> Result<(), RemudError> {
     let (engine_tx, engine_rx) = mpsc::channel(256);
@@ -57,18 +57,18 @@ pub async fn run_remud(
 
     let (web_server, web_message_rx) = build_web_server();
 
-    let mut engine = Engine::new(db, engine_rx, control_tx, web_message_rx).await?;
+    let mut engine = Engine::new(db_path, engine_rx, control_tx, web_message_rx).await?;
     tokio::spawn(async move {
         engine.run().await;
     });
-    tracing::info!("Engine started.");
+    tracing::debug!("Engine started.");
 
     let mut server = web_server.bind(web_address).await?;
     tokio::spawn(async move { server.accept().await });
-    tracing::info!("Web listening on {}", web_address);
+    tracing::debug!("Web listening on {}", web_address);
 
     let telnet_listener = TcpListener::bind(telnet_address).await?;
-    tracing::info!("Telnet listening on {}", telnet_address);
+    tracing::debug!("Telnet listening on {}", telnet_address);
 
     if let Some(tx) = ready_tx {
         tx.send(()).ok();
