@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, convert::TryFrom, str::FromStr};
 
 use bevy_app::{EventReader, EventWriter};
 use bevy_ecs::prelude::*;
@@ -10,11 +10,14 @@ use crate::{
     text::{word_list, Tokenizer},
     world::{
         action::{
-            immortal::{Initialize, UpdateDescription, UpdateName},
+            immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
             observe::Look,
             Action,
         },
-        scripting::{time::Timers, QueuedAction, ScriptData, ScriptHook, ScriptHooks},
+        scripting::{
+            time::Timers, ExecutionErrors, QueuedAction, ScriptData, ScriptHook, ScriptHooks,
+            ScriptName,
+        },
         types::{
             object::{Container, Object},
             player::{Messages, Player},
@@ -40,6 +43,19 @@ pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
+            "error" => {
+                if tokenizer.rest().is_empty() {
+                    Err("Enter a script to look for its errors.".to_string())
+                } else {
+                    let script = ScriptName::try_from(tokenizer.next().unwrap().to_string())
+                        .map_err(|e| e.to_string())?;
+                    Ok(Action::from(ShowError {
+                        actor: player,
+                        target: ActionTarget::CurrentRoom,
+                        script,
+                    }))
+                }
+            }
             "desc" => {
                 if tokenizer.rest().is_empty() {
                     Err("Enter a description.".to_string())
@@ -295,6 +311,7 @@ pub fn room_info_system(
         Option<&ScriptHooks>,
         Option<&Timers>,
         Option<&ScriptData>,
+        Option<&ExecutionErrors>,
     )>,
     named_query: Query<&Named>,
     object_query: Query<(&Object, &Named)>,
@@ -309,7 +326,7 @@ pub fn room_info_system(
                 continue;
             };
 
-            let (room, named, description, regions, contents, hooks, timers, data) =
+            let (room, named, description, regions, contents, hooks, timers, data, errors) =
                 room_query.get(room_entity).unwrap();
 
             let mut message = format!("|white|Room {}|-|", room.id());
@@ -326,7 +343,7 @@ pub fn room_info_system(
                 .filter_map(|(direction, room)| {
                     room_query
                         .get(*room)
-                        .map(|(room, named, _, _, _, _, _, _)| {
+                        .map(|(room, named, _, _, _, _, _, _, _)| {
                             (direction, named.as_str(), room.id())
                         })
                         .ok()
@@ -375,6 +392,10 @@ pub fn room_info_system(
                 }
                 for ScriptHook { trigger, script } in hooks.hooks().iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+
+                    if errors.map(|e| e.has_error(script)).unwrap_or(false) {
+                        message.push_str(" |red|(error)|-|");
+                    }
                 }
             } else {
                 message.push_str(" none");

@@ -20,8 +20,8 @@
 
 - consider saving timers, or at least not removing them until the end of the tick
 
-- add script log that shows script execution errors in game for the last script execution
-
 - change states to use timers
 
 - collapse the db changes again in preparation for hosting
+
+- finish building the dog

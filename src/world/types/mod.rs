@@ -23,10 +23,10 @@ pub enum Id {
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Id::Player(id) => write!(f, "{}", id),
-            Id::Prototype(id) => write!(f, "{}", id),
-            Id::Object(id) => write!(f, "{}", id),
-            Id::Room(id) => write!(f, "{}", id),
+            Id::Player(id) => write!(f, "player {}", id),
+            Id::Prototype(id) => write!(f, "prototype {}", id),
+            Id::Object(id) => write!(f, "object {}", id),
+            Id::Room(id) => write!(f, "room {}", id),
         }
     }
 }
@@ -38,6 +38,18 @@ pub enum ActionTarget {
     PlayerSelf,
     Player(String),
     Prototype(PrototypeId),
+}
+
+impl fmt::Display for ActionTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ActionTarget::CurrentRoom => write!(f, "current room"),
+            ActionTarget::Object(id) => write!(f, "object {}", id),
+            ActionTarget::PlayerSelf => write!(f, "current player"),
+            ActionTarget::Player(name) => write!(f, "player {}", name),
+            ActionTarget::Prototype(id) => write!(f, "prototype {}", id),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -33,7 +33,8 @@ use crate::world::action::{
             RoomRemove, RoomUnlink, RoomUpdateRegions,
         },
         script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
-        update_description_system, update_name_system, Initialize, UpdateDescription, UpdateName,
+        show_error_system, update_description_system, update_name_system, Initialize, ShowError,
+        UpdateDescription, UpdateName,
     },
     movement::{move_system, teleport_system, Move, Teleport},
     object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
@@ -84,6 +85,7 @@ pub enum Action {
     ScriptAttach(ScriptAttach),
     ScriptDetach(ScriptDetach),
     Send(SendMessage),
+    ShowError(ShowError),
     Shutdown(Shutdown),
     Stats(Stats),
     Teleport(Teleport),
@@ -127,6 +129,7 @@ impl Action {
             Action::ScriptAttach(action) => action.actor,
             Action::ScriptDetach(action) => action.actor,
             Action::Send(action) => action.actor,
+            Action::ShowError(action) => action.actor,
             Action::Shutdown(action) => action.actor,
             Action::Stats(action) => action.actor,
             Action::Teleport(action) => action.actor,
@@ -170,6 +173,7 @@ pub fn register_action_systems(stage: &mut SystemStage) {
     stage.add_system(script_attach_system.system());
     stage.add_system(script_detach_system.system());
     stage.add_system(send_system.system().after("look"));
+    stage.add_system(show_error_system.system());
     stage.add_system(shutdown_system.system());
     stage.add_system(stats_system.system());
     stage.add_system(teleport_system.system());

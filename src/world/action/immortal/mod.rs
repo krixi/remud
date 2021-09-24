@@ -6,13 +6,18 @@ pub mod script;
 
 use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
+use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, Updates},
     into_action,
     world::{
         action::Action,
-        scripting::{ScriptHooks, ScriptRun, ScriptRuns, ScriptTrigger},
+        fsm::StateMachines,
+        scripting::{
+            time::Timers, ExecutionErrors, Script, ScriptData, ScriptHooks, ScriptName, ScriptRun,
+            ScriptRuns, ScriptTrigger, Scripts,
+        },
         types::{
             object::{Objects, Prototypes},
             player::{Messages, Player, Players},
@@ -31,6 +36,7 @@ pub struct Initialize {
 into_action!(Initialize);
 
 pub fn initialize_system(
+    mut commands: Commands,
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
     players: Res<Players>,
@@ -90,15 +96,137 @@ pub fn initialize_system(
                 }
             }
 
+            commands
+                .entity(entity)
+                .remove::<Timers>()
+                .remove::<ScriptData>()
+                .remove::<StateMachines>();
+
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 if queued > 0 {
                     messages.queue(format!(
-                        "Queued {} init scripts for execution on {:?}.",
+                        "Queued {} init scripts for execution on {}.",
                         queued, target
                     ));
                 } else {
-                    messages.queue(format!("Found no init scripts for {:?}.", target));
+                    messages.queue(format!("Found no init scripts for {}.", target));
                 }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ShowError {
+    pub actor: Entity,
+    pub target: ActionTarget,
+    pub script: ScriptName,
+}
+
+into_action!(ShowError);
+
+pub fn show_error_system(
+    mut action_reader: EventReader<Action>,
+    objects: Res<Objects>,
+    players: Res<Players>,
+    scripts: Res<Scripts>,
+    errors_query: Query<&ExecutionErrors>,
+    script_query: Query<&Script>,
+    location_query: Query<&Location>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::ShowError(ShowError {
+            actor,
+            target,
+            script,
+        }) = action
+        {
+            let entity = match target {
+                ActionTarget::PlayerSelf => *actor,
+                ActionTarget::Player(name) => {
+                    if let Some(entity) = players.by_name(name.as_str()) {
+                        entity
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Player {} not found", name));
+                        }
+                        continue;
+                    }
+                }
+                ActionTarget::Prototype(_) => {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                        messages
+                            .queue("Prototypes cannot have their init scripts run.".to_string());
+                    }
+                    continue;
+                }
+                ActionTarget::Object(id) => {
+                    if let Some(entity) = objects.by_id(*id) {
+                        entity
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue(format!("Object {} not found.", id));
+                        }
+                        continue;
+                    }
+                }
+                ActionTarget::CurrentRoom => {
+                    if let Ok(location) = location_query.get(*actor) {
+                        location.room()
+                    } else {
+                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                            messages.queue("Current room not found.".to_string());
+                        }
+                        continue;
+                    }
+                }
+            };
+
+            let script_entity = if let Some(entity) = scripts.by_name(script) {
+                entity
+            } else {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                    messages.queue(format!("Script {} not found.", script));
+                }
+                continue;
+            };
+
+            let error = if let Ok(errors) = errors_query.get(entity) {
+                if let Some(error) = errors.get(script) {
+                    error
+                } else {
+                    if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                        messages.queue(format!("No errors found for script {}.", script));
+                    }
+                    continue;
+                }
+            } else {
+                if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                    messages.queue(format!("No errors found for {}.", target));
+                }
+                continue;
+            };
+
+            let mut code = script_query.get(script_entity).unwrap().code();
+            let message = if let Some(line) = error.position().line() {
+                let mut lines = code.lines().map(ToString::to_string).collect_vec();
+                if let Some(position) = error.position().position() {
+                    lines[line - 1].insert_str(position - 1, "|red|");
+                    lines[line - 1].push_str("|-|");
+                } else {
+                    lines[line - 1] = format!("|red|{}|-|", lines[line - 1]);
+                }
+                let mut joined = lines.join("\r\n");
+                joined.push_str(format!("\r\n\r\n|red|{}|-|", error.to_string()).as_ref());
+                joined
+            } else {
+                code.push_str(format!("\r\n\r\n|red|{}|-|", error.to_string()).as_ref());
+                code
+            };
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                messages.queue(message);
             }
         }
     }
@@ -200,7 +328,7 @@ pub fn update_description_system(
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated description for {:?}.", target));
+                messages.queue(format!("Updated description for {}.", target));
             }
         }
     }
@@ -279,7 +407,7 @@ pub fn update_name_system(
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated {:?} name.", target));
+                messages.queue(format!("Updated name for {}.", target));
             }
         }
     }

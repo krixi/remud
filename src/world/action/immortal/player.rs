@@ -9,8 +9,13 @@ use crate::{
     into_action,
     text::Tokenizer,
     world::{
-        action::{immortal::Initialize, Action},
-        scripting::{time::Timers, ScriptData, ScriptHook, ScriptHooks},
+        action::{
+            immortal::{Initialize, ShowError},
+            Action,
+        },
+        scripting::{
+            time::Timers, ExecutionErrors, ScriptData, ScriptHook, ScriptHooks, ScriptName,
+        },
         types::{
             object::Object,
             player::{self, Messages, Player, PlayerFlags, Players},
@@ -26,6 +31,19 @@ pub fn parse_player(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
     if let Some(name) = tokenizer.next() {
         if let Some(token) = tokenizer.next() {
             match token {
+                "error" => {
+                    if tokenizer.rest().is_empty() {
+                        Err("Enter a script to look for its errors.".to_string())
+                    } else {
+                        let script = ScriptName::try_from(tokenizer.next().unwrap().to_string())
+                            .map_err(|e| e.to_string())?;
+                        Ok(Action::from(ShowError {
+                            actor: player,
+                            target: ActionTarget::Player(name.to_string()),
+                            script,
+                        }))
+                    }
+                }
                 "info" => Ok(Action::from(PlayerInfo {
                     actor: player,
                     name: name.to_string(),
@@ -104,6 +122,7 @@ pub fn player_info_system(
         Option<&ScriptHooks>,
         Option<&Timers>,
         Option<&ScriptData>,
+        Option<&ExecutionErrors>,
     )>,
     room_query: Query<(&Room, &Named)>,
     object_query: Query<(&Object, &Named)>,
@@ -120,7 +139,7 @@ pub fn player_info_system(
                 continue;
             };
 
-            let (player, flags, description, contents, location, hooks, timers, data) =
+            let (player, flags, description, contents, location, hooks, timers, data, errors) =
                 player_query.get(player).unwrap();
             let (room, room_name) = room_query.get(location.room()).unwrap();
 
@@ -159,6 +178,10 @@ pub fn player_info_system(
                 }
                 for ScriptHook { trigger, script } in hooks.hooks().iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+
+                    if errors.map(|e| e.has_error(script)).unwrap_or(false) {
+                        message.push_str(" |red|(error)|-|");
+                    }
                 }
             } else {
                 message.push_str(" none");

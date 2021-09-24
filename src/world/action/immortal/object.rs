@@ -10,11 +10,14 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
-            immortal::{Initialize, UpdateDescription, UpdateName},
+            immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
             Action,
         },
         fsm::StateMachine,
-        scripting::{time::Timers, ScriptData, ScriptHook, ScriptHooks, ScriptInit, ScriptTrigger},
+        scripting::{
+            time::Timers, ExecutionErrors, ScriptData, ScriptHook, ScriptHooks, ScriptInit,
+            ScriptName, ScriptTrigger,
+        },
         types::{
             object::{
                 Container, Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags,
@@ -46,6 +49,31 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
 
                 if let Some(token) = tokenizer.next() {
                     match token {
+                        "desc" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a long description.".to_string())
+                            } else {
+                                Ok(Action::from(UpdateDescription {
+                                    actor: player,
+                                    target: ActionTarget::Object(id),
+                                    description: tokenizer.rest().to_string(),
+                                }))
+                            }
+                        }
+                        "error" => {
+                            if tokenizer.rest().is_empty() {
+                                Err("Enter a script to look for its errors.".to_string())
+                            } else {
+                                let script =
+                                    ScriptName::try_from(tokenizer.next().unwrap().to_string())
+                                        .map_err(|e| e.to_string())?;
+                                Ok(Action::from(ShowError {
+                                    actor: player,
+                                    target: ActionTarget::Object(id),
+                                    script,
+                                }))
+                            }
+                        }
                         "info" => Ok(Action::from(ObjectInfo { actor: player, id })),
                         "inherit" => {
                             if tokenizer.rest().is_empty() {
@@ -90,14 +118,14 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                 }))
                             }
                         }
-                        "desc" => {
+                        "name" => {
                             if tokenizer.rest().is_empty() {
-                                Err("Enter a long description.".to_string())
+                                Err("Enter a short description.".to_string())
                             } else {
-                                Ok(Action::from(UpdateDescription {
+                                Ok(Action::from(UpdateName {
                                     actor: player,
                                     target: ActionTarget::Object(id),
-                                    description: tokenizer.rest().to_string(),
+                                    name: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
@@ -120,17 +148,6 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                         .map(|flag| flag.to_string())
                                         .collect_vec(),
                                     clear: false,
-                                }))
-                            }
-                        }
-                        "name" => {
-                            if tokenizer.rest().is_empty() {
-                                Err("Enter a short description.".to_string())
-                            } else {
-                                Ok(Action::from(UpdateName {
-                                    actor: player,
-                                    target: ActionTarget::Object(id),
-                                    name: tokenizer.rest().to_string(),
                                 }))
                             }
                         }
@@ -293,6 +310,7 @@ pub fn object_info_system(
         Option<&Timers>,
         Option<&StateMachine>,
         Option<&ScriptData>,
+        Option<&ExecutionErrors>,
     )>,
     prototype_query: Query<&Prototype>,
     room_query: Query<&Room>,
@@ -322,6 +340,7 @@ pub fn object_info_system(
                 timers,
                 fsm,
                 data,
+                errors,
             ) = object_query.get(object_entity).unwrap();
 
             let prototype_id = prototype_query.get(object.prototype()).unwrap().id();
@@ -369,6 +388,10 @@ pub fn object_info_system(
                 } else {
                     for ScriptHook { trigger, script } in hooks.hooks().iter() {
                         message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
+
+                        if errors.map(|e| e.has_error(script)).unwrap_or(false) {
+                            message.push_str(" |red|(error)|-|");
+                        }
                     }
                 }
             } else {

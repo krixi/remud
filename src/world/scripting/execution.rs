@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::world::{
     action::Action,
-    scripting::{modules::Me, ScriptAst, ScriptEngine, ScriptName, Scripts},
+    scripting::{modules::Me, ExecutionErrors, ScriptAst, ScriptEngine, ScriptName, Scripts},
 };
 
 use bevy_ecs::prelude::*;
@@ -22,7 +22,7 @@ pub fn run_init_script(world: Arc<RwLock<World>>, entity: Entity, script: Script
             entity,
         },
     );
-    scope.push_constant("WORLD", world);
+    scope.push_constant("WORLD", world.clone());
 
     match engine
         .read()
@@ -30,7 +30,20 @@ pub fn run_init_script(world: Arc<RwLock<World>>, entity: Entity, script: Script
         .consume_ast_with_scope(&mut scope, &ast)
     {
         Ok(_) => (),
-        Err(e) => tracing::warn!("Init script {} execution error: {}", script, e),
+        Err(error) => {
+            tracing::warn!("Init script {} execution error: {}", script, error);
+
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
+                errors.insert(script, error)
+            } else {
+                world
+                    .write()
+                    .unwrap()
+                    .get_entity_mut(entity)
+                    .unwrap()
+                    .insert(ExecutionErrors::new_with_error(script, error));
+            }
+        }
     };
 }
 
@@ -53,7 +66,7 @@ pub fn run_post_event_script(
             entity,
         },
     );
-    scope.push_constant("WORLD", world);
+    scope.push_constant("WORLD", world.clone());
     scope.push_constant("EVENT", event.clone());
 
     match engine
@@ -62,7 +75,20 @@ pub fn run_post_event_script(
         .consume_ast_with_scope(&mut scope, &ast)
     {
         Ok(_) => (),
-        Err(e) => tracing::warn!("Post-event script {} execution error: {}", script, e),
+        Err(error) => {
+            tracing::warn!("Post-event script {} execution error: {}", script, error);
+
+            let mut world = world.write().unwrap();
+
+            if let Some(mut errors) = world.get_mut::<ExecutionErrors>(entity) {
+                errors.insert(script, error)
+            } else {
+                world
+                    .get_entity_mut(entity)
+                    .unwrap()
+                    .insert(ExecutionErrors::new_with_error(script, error));
+            }
+        }
     };
 }
 
@@ -85,7 +111,7 @@ pub fn run_pre_event_script(
             entity,
         },
     );
-    scope.push_constant("WORLD", world);
+    scope.push_constant("WORLD", world.clone());
     scope.push_constant("EVENT", event.clone());
     scope.push_dynamic("allow_action", Dynamic::from(true));
 
@@ -95,7 +121,20 @@ pub fn run_pre_event_script(
         .consume_ast_with_scope(&mut scope, &ast)
     {
         Ok(_) => (),
-        Err(e) => tracing::warn!("Pre-event script {} execution error: {}", script, e),
+        Err(error) => {
+            tracing::warn!("Pre-event script {} execution error: {}", script, error);
+
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
+                errors.insert(script, error)
+            } else {
+                world
+                    .write()
+                    .unwrap()
+                    .get_entity_mut(entity)
+                    .unwrap()
+                    .insert(ExecutionErrors::new_with_error(script, error));
+            }
+        }
     }
 
     scope.get_value("allow_action").unwrap()
@@ -115,7 +154,7 @@ pub fn run_timed_script(world: Arc<RwLock<World>>, entity: Entity, script: Scrip
             entity,
         },
     );
-    scope.push_constant("WORLD", world);
+    scope.push_constant("WORLD", world.clone());
 
     match engine
         .read()
@@ -123,7 +162,19 @@ pub fn run_timed_script(world: Arc<RwLock<World>>, entity: Entity, script: Scrip
         .consume_ast_with_scope(&mut scope, &ast)
     {
         Ok(_) => (),
-        Err(e) => tracing::warn!("Timed script {} execution error: {}", script, e),
+        Err(error) => {
+            tracing::warn!("Timed script {} execution error: {}", script, error);
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
+                errors.insert(script, error)
+            } else {
+                world
+                    .write()
+                    .unwrap()
+                    .get_entity_mut(entity)
+                    .unwrap()
+                    .insert(ExecutionErrors::new_with_error(script, error));
+            }
+        }
     };
 }
 

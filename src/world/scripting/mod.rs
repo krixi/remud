@@ -74,6 +74,10 @@ impl Script {
         self.trigger
     }
 
+    pub fn code(&self) -> String {
+        self.code.clone()
+    }
+
     pub fn into_parts(self) -> (ScriptName, TriggerEvent, String) {
         (self.name, self.trigger, self.code)
     }
@@ -202,6 +206,31 @@ pub struct ScriptRun {
 impl ScriptRun {
     pub fn new(entity: Entity, script: ScriptName) -> Self {
         ScriptRun { entity, script }
+    }
+}
+
+#[derive(Default)]
+pub struct ExecutionErrors {
+    errors: HashMap<ScriptName, Box<EvalAltResult>>,
+}
+
+impl ExecutionErrors {
+    pub fn new_with_error(script: ScriptName, error: Box<EvalAltResult>) -> Self {
+        let mut errors = ExecutionErrors::default();
+        errors.insert(script, error);
+        errors
+    }
+
+    pub fn has_error(&self, script: &ScriptName) -> bool {
+        self.errors.contains_key(script)
+    }
+
+    pub fn get(&self, script: &ScriptName) -> Option<&EvalAltResult> {
+        self.errors.get(script).map(|e| e.as_ref())
+    }
+
+    pub fn insert(&mut self, script: ScriptName, error: Box<EvalAltResult>) {
+        self.errors.insert(script, error);
     }
 }
 
@@ -385,6 +414,7 @@ impl TriggerEvent {
             Action::ScriptAttach(_) => None,
             Action::ScriptDetach(_) => None,
             Action::Send(_) => Some(TriggerEvent::Send),
+            Action::ShowError(_) => None,
             Action::Shutdown(_) => None,
             Action::Stats(_) => None,
             Action::Teleport(_) => None,
