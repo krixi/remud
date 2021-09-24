@@ -10,35 +10,33 @@ async fn main() -> anyhow::Result<()> {
 
     let matches = App::new("ReMUD")
         .version("0.1")
-        .author("Shaen & krixi")
-        .about("A MUD in Rust")
+        .author("Shaen & krixi - https://github.com/siler/remud")
+        .about("A MUD in Rust.")
         .arg(
-            Arg::with_name("telnet")
-                .short("t")
+            Arg::new("telnet")
+                .short('t')
                 .long("telnet")
                 .default_value("2004")
-                .help("Sets the telnet port")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("web")
-                .short("w")
-                .long("web")
-                .default_value("2080")
-                .help("Sets the web API port")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("db")
-                .short("d")
-                .long("db")
-                .default_value("./world.db")
-                .help("Sets the database file path")
+                .about("Sets the telnet port")
                 .takes_value(true),
         ).arg(
-            Arg::with_name("in-memory")
+            Arg::new("web")
+                .short('w')
+                .long("web")
+                .default_value("2080")
+                .about("Sets the web API port")
+                .takes_value(true),
+        ).arg(
+            Arg::new("db")
+                .short('d')
+                .long("db")
+                .default_value("./world.db")
+                .about("Sets the database file path")
+                .takes_value(true),
+        ).arg(
+            Arg::new("in-memory")
                 .long("in-memory")
-                .help("Runs ReMUD with an in-memory SQLite database - all data will be lost when the program is closed")
+                .about("Runs ReMUD with an in-memory SQLite database - all data will be lost when the program is closed")
         ).get_matches();
 
     let db = if matches.is_present("in-memory") {

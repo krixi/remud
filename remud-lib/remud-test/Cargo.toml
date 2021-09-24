@@ -11,6 +11,5 @@ remud-lib = { path = "..", version = "0.1"}
 telnet = "0.1"
 tokio = { version = "1.10", features = ["macros", "net", "rt-multi-thread", "time", "sync"] }
 tracing = "0.1"
-tracing-bunyan-formatter = "0.2"
 tracing-log = "0.1"
 tracing-subscriber = "0.2"

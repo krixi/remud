@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-clap = "2.33.3"
+clap = "3.0.0-beta.4"
 remud-lib = { path = "../remud-lib", version = "0.1"}
 tokio = { version = "1.10", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
