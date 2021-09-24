@@ -1,1 +1,0 @@
-ALTER TABLE "objects" ADD COLUMN "inherit_scripts" NOT NULL DEFAULT true;
