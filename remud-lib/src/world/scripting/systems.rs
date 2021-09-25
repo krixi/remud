@@ -27,7 +27,7 @@ pub fn timed_script_runs_system(
     mut script_runs: ResMut<ScriptRuns>,
 ) {
     for (entity, mut timers, hooks) in timers_query.iter_mut() {
-        for name in timers.finished() {
+        for name in timers.list_finished() {
             for script in hooks.by_trigger(ScriptTrigger::Timer(name)) {
                 script_runs.timed_runs.push(ScriptRun { entity, script })
             }

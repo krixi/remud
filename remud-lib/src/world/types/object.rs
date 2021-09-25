@@ -184,8 +184,8 @@ pub enum InheritableFields {
     Description,
     #[strum(serialize = "keywords")]
     Keywords,
-    #[strum(serialize = "hooks")]
-    Hooks,
+    #[strum(serialize = "scripts")]
+    Scripts,
 }
 
 bitflags! {
@@ -355,10 +355,6 @@ impl Prototypes {
 
     pub fn insert(&mut self, id: PrototypeId, entity: Entity) {
         self.by_id.insert(id, entity);
-    }
-
-    pub fn remove(&mut self, id: PrototypeId) {
-        self.by_id.remove(&id);
     }
 
     pub fn by_id(&self, id: PrototypeId) -> Option<Entity> {

@@ -6,6 +6,11 @@ use bevy_core::Time;
 use bevy_ecs::{prelude::*, schedule::SystemDescriptor};
 use tokio::sync::RwLock;
 
+use crate::world::{
+    scripting::time::Timers,
+    types::{object::Container, room::Room, Location},
+};
+
 pub type SharedWorld = Arc<RwLock<World>>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -127,4 +132,41 @@ impl Plugin for CorePlugin {
 
 fn time_system(mut time: ResMut<Time>) {
     time.update()
+}
+
+pub trait WorldExt {
+    fn with_timers<F: FnMut(&mut Timers)>(&mut self, entity: Entity, f: F);
+    fn location_of(&self, entity: Entity) -> Entity;
+}
+
+impl WorldExt for World {
+    fn with_timers<F: FnMut(&mut Timers)>(&mut self, entity: Entity, mut f: F) {
+        if let Some(mut timers) = self.get_mut::<Timers>(entity) {
+            f(&mut *timers);
+        } else {
+            let mut timers = Timers::default();
+            f(&mut timers);
+            self.entity_mut(entity).insert(timers);
+        }
+    }
+
+    fn location_of(&self, entity: Entity) -> Entity {
+        if let Some(location) = self.get::<Location>(entity) {
+            location.room()
+        } else if self.entity(entity).contains::<Room>() {
+            entity
+        } else {
+            let mut contained = entity;
+
+            while let Some(next_container) = self.get::<Container>(contained) {
+                contained = next_container.entity();
+            }
+
+            if let Some(location) = self.get::<Location>(contained) {
+                location.room()
+            } else {
+                panic!("target entity {:?} not located within a room", entity)
+            }
+        }
+    }
 }

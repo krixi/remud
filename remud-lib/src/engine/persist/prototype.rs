@@ -147,25 +147,3 @@ impl Persist for Name {
         Ok(())
     }
 }
-
-pub struct Remove {
-    prototype_id: PrototypeId,
-}
-
-impl Remove {
-    pub fn new(prototype_id: PrototypeId) -> Box<Self> {
-        Box::new(Remove { prototype_id })
-    }
-}
-
-#[async_trait]
-impl Persist for Remove {
-    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM prototypes WHERE id = ?")
-            .bind(self.prototype_id)
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-}

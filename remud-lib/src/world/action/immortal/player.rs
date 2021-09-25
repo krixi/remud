@@ -30,7 +30,7 @@ pub fn parse_player(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
     if let Some(name) = tokenizer.next() {
         if let Some(token) = tokenizer.next() {
             match token {
-                "error" => {
+                "errors" => {
                     if tokenizer.rest().is_empty() {
                         Err("Enter a script to look for its errors.".to_string())
                     } else {

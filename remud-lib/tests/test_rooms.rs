@@ -1,4 +1,4 @@
-use remud_test::{start_server, TelnetClient};
+use remud_test::{Server, TelnetClient};
 
 // Validate a room connection
 fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32, &str)) {
@@ -39,10 +39,10 @@ fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32
 }
 
 // Tests the room immortal commands
-#[tokio::test(flavor = "multi_thread")]
-async fn test_room_new() {
-    let (telnet_port, _web_port) = start_server().await;
-    let mut t = TelnetClient::new(telnet_port);
+#[test]
+fn test_room_new() {
+    let server = Server::new();
+    let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
 
@@ -63,10 +63,10 @@ async fn test_room_new() {
     assert_there_and_back_again(&mut t, (1, "down"), (7, "up")); // to the down
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_room_name() {
-    let (telnet_port, _web_port) = start_server().await;
-    let mut t = TelnetClient::new(telnet_port);
+#[test]
+fn test_room_name() {
+    let server = Server::new();
+    let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
     t.test(
@@ -91,10 +91,10 @@ async fn test_room_name() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_room_desc() {
-    let (telnet_port, _web_port) = start_server().await;
-    let mut t = TelnetClient::new(telnet_port);
+#[test]
+fn test_room_desc() {
+    let server = Server::new();
+    let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
     t.test(
@@ -176,10 +176,10 @@ fn assert_link_and_unlink(t: &mut TelnetClient, there: &str, back: &str) {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_room_link_and_unlink() {
-    let (telnet_port, _web_port) = start_server().await;
-    let mut t = TelnetClient::new(telnet_port);
+#[test]
+fn test_room_link_and_unlink() {
+    let server = Server::new();
+    let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
     t.test("create a new room", "room new", vec!["Created room 1"]);
@@ -188,10 +188,10 @@ async fn test_room_link_and_unlink() {
     assert_link_and_unlink(&mut t, "up", "down");
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_room_region() {
-    let (telnet_port, _web_port) = start_server().await;
-    let mut t = TelnetClient::new(telnet_port);
+#[test]
+fn test_room_region() {
+    let server = Server::new();
+    let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
     t.test(
@@ -218,4 +218,4 @@ async fn test_room_region() {
 }
 
 // #[tokio::test(flavor = "multi_thread")]
-async fn test_room_remove() {}
+fn test_room_remove() {}

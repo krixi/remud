@@ -59,7 +59,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                 }))
                             }
                         }
-                        "error" => {
+                        "errors" => {
                             if tokenizer.rest().is_empty() {
                                 Err("Enter a script to look for its errors.".to_string())
                             } else {
@@ -91,7 +91,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                         fields,
                                     })),
                                     Err(_) => Err("Enter valid inheritable fields: desc, flags, \
-                                                   hooks, keywords, and name"
+                                                   keywords, name, and scripts"
                                         .to_string()),
                                 }
                             }
@@ -504,7 +504,7 @@ pub fn object_inherit_fields_system(
                     InheritableFields::Keywords => {
                         commands.entity(object_entity).insert(keywords.clone());
                     }
-                    InheritableFields::Hooks => {
+                    InheritableFields::Scripts => {
                         object.set_inherit_scripts(true);
                         if let Some(hooks) = hooks {
                             commands.entity(object_entity).insert(hooks.clone());

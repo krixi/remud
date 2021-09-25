@@ -1,70 +1,148 @@
-use crate::world::{
-    action::{communicate::Say, movement::Move, Action},
-    fsm::{State, StateId, Transition},
-    scripting::QueuedAction,
-    types::{
-        room::{Direction, Room},
-        Location, Named,
+use crate::{
+    ecs::WorldExt,
+    world::{
+        action::{communicate::Say, movement::Move, Action},
+        fsm::{State, StateId, Transition},
+        scripting::QueuedAction,
+        types::{
+            room::{Direction, Room},
+            Named,
+        },
     },
 };
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
+use itertools::Itertools;
 use rand::{prelude::*, thread_rng};
-use std::collections::HashMap;
-use std::fmt::Debug;
+use rhai::{Array, ImmutableString};
+use std::{collections::HashMap, time::Duration};
+use std::{convert::TryInto, fmt::Debug};
 
 /// Wander around and look for the player
 #[derive(Debug, Default)]
 pub struct WanderState {
-    tick_timer: u32,
+    find_player: bool,
+    min_stay: u64,
+    max_stay: u64,
+    endless: bool,
+    min_wanders: u64,
+    max_wanders: u64,
     tx: HashMap<Transition, StateId>,
+
+    current_wanders: u64,
+    current_max_wanders: u64,
 }
 
 impl WanderState {
-    pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
+    const TIMER_NAME: &'static str = "wander_state_timer";
+
+    pub fn new(params: rhai::Map, tx: rhai::Array) -> Self {
+        let find_player = params
+            .get("find_player")
+            .and_then(|p| p.as_bool().ok())
+            .unwrap_or(false);
+
+        let min_stay = params
+            .get("min_stay")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .unwrap_or(10 * 1000);
+
+        let max_stay = params
+            .get("max_stay")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .map(|p| if p < min_stay { min_stay } else { p })
+            .unwrap_or(60 * 1000);
+
+        let endless = !params.contains_key("min_wanders") && !params.contains_key("max_wanders");
+
+        let min_wanders = params
+            .get("min_wanders")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .unwrap_or(2);
+
+        let max_wanders = params
+            .get("max_wanders")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .map(|p| if p < min_wanders { min_wanders } else { p })
+            .unwrap_or(5);
+
         WanderState {
+            find_player,
+            min_stay,
+            max_stay,
+            endless,
+            min_wanders,
+            max_wanders,
+            current_wanders: 0,
+            current_max_wanders: 0,
             tx: build_tx_map(tx),
-            ..Default::default()
         }
+    }
+
+    fn set_timer(&self, entity: Entity, world: &mut World) {
+        world.with_timers(entity, |timers| {
+            timers.add(
+                Self::TIMER_NAME.to_string(),
+                Duration::from_millis(thread_rng().gen_range(self.min_stay..=self.max_stay)),
+            );
+        })
     }
 }
 
 impl State for WanderState {
-    fn on_enter(&mut self, _: Entity, _: &mut World) {
-        self.tick_timer = 0;
+    fn on_enter(&mut self, entity: Entity, world: &mut World) {
+        self.set_timer(entity, world);
+        self.current_wanders = 0;
+        self.current_max_wanders = thread_rng().gen_range(self.min_wanders..=self.max_wanders);
     }
 
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
-        // Check to see if a player has come within range (in the same room) for long enough (requires timer).
+        // If looking for players, check any they have entered the room.
+        if self.find_player {
+            // If there is no location, the actor cannot see them as they are not in a room.
+            let room = world.location_of(entity);
+            let players = world.get::<Room>(room).unwrap().players();
 
-        // get the current room from the entity
-        let room = world.get::<Location>(entity).unwrap().room();
-
-        // get the players in the room
-        let players = &world.get::<Room>(room).unwrap().players();
-
-        if !players.is_empty() {
-            Some(Transition::SawPlayer)
-        } else {
-            None
+            if !players.is_empty() {
+                return Some(Transition::SawTarget);
+            }
         }
+
+        if !self.endless && self.current_wanders >= self.current_max_wanders {
+            return Some(Transition::Done);
+        }
+
+        None
     }
 
     fn act(&mut self, entity: Entity, world: &mut World) {
-        // no player seen. Pick an exit and go through it.
-        let room = world.get::<Location>(entity).unwrap().room();
+        // Check to see if wander time has elapsed
+        let mut done_waiting = false;
+        world.with_timers(entity, |timers| {
+            done_waiting = timers.finished(Self::TIMER_NAME)
+        });
+
+        if !done_waiting {
+            return;
+        }
+
+        // Reset our timer and do bookkeeping
+        self.set_timer(entity, world);
+        self.current_wanders += 1;
+
+        // Pick an exit and go through it.
+        let room = world.location_of(entity);
         let exits = &world.get::<Room>(room).unwrap().exits();
 
-        self.tick_timer += 1;
+        if !exits.is_empty() {
+            // Choose a random direction.
+            let exit = exits.keys().choose(&mut thread_rng());
 
-        if !exits.is_empty() && self.tick_timer > 120 {
-            self.tick_timer = 0;
-
-            // pick a random direction to go
-            let mut rng = thread_rng();
-            let exit = exits.keys().choose(&mut rng);
-
-            // if we found one, post the event that will move us there.
+            // If a suitable exit was found, queue a move action.
             if let Some(exit) = exit.copied() {
                 let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
                 events.send(QueuedAction {
@@ -82,53 +160,105 @@ impl State for WanderState {
     }
 }
 
-/// Chase after the player until you lose sight of them
+// Follow a player until the actor loses sight of them
 #[derive(Debug, Default)]
-pub struct ChaseState {
-    chasing: Option<Entity>,
-    move_direction: Option<Direction>,
-    tick_timer: u32,
+pub struct FollowState {
+    target: Option<Entity>,
+    acquisition_messages: Option<Vec<String>>,
+    min_wait: u64,
+    max_wait: u64,
     tx: HashMap<Transition, StateId>,
+
+    move_direction: Option<Direction>,
 }
-impl ChaseState {
-    pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
-        ChaseState {
+
+impl FollowState {
+    const TIMER_NAME: &'static str = "follow_state_timer";
+
+    pub fn new(params: rhai::Map, tx: rhai::Array) -> Self {
+        let target = params
+            .get("follow")
+            .cloned()
+            .and_then(|p| p.try_cast::<Entity>());
+
+        let found_say = if let Some(found_say) = params.get("found_say") {
+            if found_say.is::<Array>() {
+                let list = found_say
+                    .clone()
+                    .cast::<Array>()
+                    .iter()
+                    .filter_map(|p| p.clone().as_string().ok())
+                    .collect_vec();
+
+                if list.is_empty() {
+                    None
+                } else {
+                    Some(list)
+                }
+            } else if found_say.is::<ImmutableString>() {
+                Some(vec![found_say.clone().as_string().unwrap()])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let min_wait = params
+            .get("min_wait")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .unwrap_or(1000);
+
+        let max_wait = params
+            .get("max_wait")
+            .and_then(|p| p.as_int().ok())
+            .and_then(|p| p.try_into().ok())
+            .map(|p| if p < min_wait { min_wait } else { p })
+            .unwrap_or(5 * 1000);
+
+        FollowState {
+            target,
+            acquisition_messages: found_say,
+            min_wait,
+            max_wait,
             tx: build_tx_map(tx),
             ..Default::default()
         }
     }
 }
 
-impl State for ChaseState {
+impl State for FollowState {
     fn on_enter(&mut self, entity: Entity, world: &mut World) {
-        self.tick_timer = 0;
+        if self.target.is_none() {
+            // Choose a player in the room to follow.
+            let room = world.location_of(entity);
+            let players = world.get::<Room>(room).unwrap().players();
+            let player = *players.choose(&mut thread_rng()).unwrap();
 
-        // get the players in the room, pick one to chase
-        let room = world.get::<Location>(entity).unwrap().room();
-        let players = &world.get::<Room>(room).unwrap().players();
-        let mut rng = thread_rng();
-        let player = *players.choose(&mut rng).unwrap();
-        let player_name = world.get::<Named>(player).unwrap().to_string();
-        self.chasing = Some(player);
+            self.target = Some(player);
 
-        // say "i'm gonna get you"
-        let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
-        events.send(QueuedAction {
-            action: Action::Say(Say {
-                actor: entity,
-                message: format!("I'm gonna get you, {}!", player_name),
-            }),
-        })
+            // Say a message on target acquisition if configured
+            if let Some(messages) = &self.acquisition_messages {
+                let player_name = world.get::<Named>(player).unwrap().to_string();
+
+                let message = messages.choose(&mut thread_rng()).unwrap();
+
+                let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
+                events.send(QueuedAction {
+                    action: Action::Say(Say {
+                        actor: entity,
+                        message: message.replace("${name}", player_name.as_str()),
+                    }),
+                })
+            }
+        }
     }
 
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
-        // Check current an all surrounding rooms for the player we are chasing.
-        let room = match world.get::<Location>(entity) {
-            Some(location) => location.room(),
-            None => return None,
-        };
-
-        // get the list of rooms attached to the current room
+        // Check current and surrounding rooms for the player we are following.
+        // Initialize our move list with the current room and movement direction of None.
+        let room = world.location_of(entity);
         let mut rooms = vec![(None, room)];
         world
             .get::<Room>(room)
@@ -137,50 +267,65 @@ impl State for ChaseState {
             .iter()
             .for_each(|(d, r)| rooms.push((Some(*d), *r)));
 
-        // determine the room the player is in and its direction.
-        let mut player_room = None;
+        // Check each room to determine if it contains the target, extracting the movement direction.
+        let mut target_found = false;
         for (dir, room) in rooms {
             if world
                 .get::<Room>(room)
                 .unwrap()
                 .players()
                 .iter()
-                .any(|p| *p == self.chasing.unwrap())
+                .any(|p| *p == self.target.unwrap())
             {
-                player_room = Some(room);
+                target_found = true;
                 self.move_direction = dir;
+
+                // If we need to move, start a timer to determine how long to wait.
+                if self.move_direction.is_some() {
+                    world.with_timers(entity, |t| {
+                        t.add(
+                            Self::TIMER_NAME.to_string(),
+                            Duration::from_millis(
+                                thread_rng().gen_range(self.min_wait..=self.max_wait),
+                            ),
+                        )
+                    });
+                }
+
                 break;
             }
         }
 
-        if player_room.is_none() {
-            Some(Transition::LostPlayer)
-        } else {
+        // Transition away if we've lost the target
+        if target_found {
             None
+        } else {
+            Some(Transition::Done)
         }
     }
 
     fn act(&mut self, entity: Entity, world: &mut World) {
-        self.tick_timer += 1;
+        // We know where the target is, follow them.
+        if let Some(direction) = self.move_direction {
+            let mut done_waiting = false;
+            world.with_timers(entity, |t| done_waiting = t.finished(Self::TIMER_NAME));
 
-        // player is still around, follow them if necessary.
-        if self.tick_timer > 120 && self.move_direction.is_some() {
-            let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
-            events.send(QueuedAction {
-                action: Action::Move(Move {
-                    actor: entity,
-                    direction: self.move_direction.unwrap(),
-                }),
-            });
+            if done_waiting {
+                let mut events = world.get_resource_mut::<Events<QueuedAction>>().unwrap();
+                events.send(QueuedAction {
+                    action: Action::Move(Move {
+                        actor: entity,
+                        direction,
+                    }),
+                });
 
-            // gotta reset these to prevent badness and sadness
-            self.tick_timer = 0;
-            self.move_direction = None;
+                self.move_direction = None;
+            }
         }
     }
 
     fn on_exit(&mut self, _: Entity, _: &mut World) {
-        self.chasing = None;
+        self.target = None;
         self.move_direction = None;
     }
 

@@ -9,7 +9,7 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
     ecs::{Ecs, Phase, Plugin, Step},
     world::fsm::{
-        states::{ChaseState, WanderState},
+        states::{FollowState, WanderState},
         system::run_state_machines,
     },
 };
@@ -73,8 +73,8 @@ pub enum StateId {
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Transition {
-    SawPlayer,
-    LostPlayer,
+    SawTarget,
+    Done,
 }
 
 #[derive(Debug)]
@@ -143,6 +143,6 @@ impl StateMachineBuilder {
 pub fn to_state(id: StateId, params: rhai::Map, tx: rhai::Array) -> Box<dyn State> {
     match id {
         StateId::Wander => Box::new(WanderState::new(params, tx)),
-        StateId::Chase => Box::new(ChaseState::new(params, tx)),
+        StateId::Chase => Box::new(FollowState::new(params, tx)),
     }
 }

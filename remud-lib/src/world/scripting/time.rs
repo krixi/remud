@@ -33,7 +33,11 @@ impl Timers {
         self.map.insert(name, Timer::new(duration, true));
     }
 
-    pub fn finished(&mut self) -> Vec<String> {
+    pub fn finished(&mut self, name: &str) -> bool {
+        self.map.get(name).map(|t| t.finished()).unwrap_or(true)
+    }
+
+    pub fn list_finished(&mut self) -> Vec<String> {
         let mut elapsed = Vec::new();
 
         for (name, timer) in self.map.iter() {

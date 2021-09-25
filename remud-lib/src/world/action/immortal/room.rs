@@ -43,7 +43,7 @@ pub const DEFAULT_ROOM_DESCRIPTION: &str = "An empty room.";
 pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {
     if let Some(subcommand) = tokenizer.next() {
         match subcommand.to_lowercase().as_str() {
-            "error" => {
+            "errors" => {
                 if tokenizer.rest().is_empty() {
                     Err("Enter a script to look for its errors.".to_string())
                 } else {

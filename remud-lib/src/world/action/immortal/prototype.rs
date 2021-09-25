@@ -18,11 +18,11 @@ use crate::{
         scripting::{ScriptHook, ScriptHooks},
         types::{
             object::{
-                Container, Keywords, Object, ObjectFlags, ObjectOrPrototype, Prototype,
-                PrototypeBundle, PrototypeId, Prototypes,
+                Keywords, ObjectFlags, ObjectOrPrototype, Prototype, PrototypeBundle, PrototypeId,
+                Prototypes,
             },
             player::Messages,
-            ActionTarget, Contents, Description, Location, Named,
+            ActionTarget, Description, Named,
         },
     },
 };
@@ -72,7 +72,6 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                                 }))
                             }
                         }
-                        "remove" => Ok(Action::from(PrototypeRemove { actor: player, id })),
                         "set" => {
                             if tokenizer.rest().is_empty() {
                                 Err(
@@ -127,12 +126,12 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                             }
                         }
                         _ => Err("Enter a valid prototype subcommand: desc, info, keywords, \
-                                  name, remove, set, or unset."
+                                  name, set, or unset."
                             .to_string()),
                     }
                 } else {
                     Err(
-                        "Enter a prototype subcommand: desc, info, keywords, name, remove, set, \
+                        "Enter a prototype subcommand: desc, info, keywords, name, set, \
                          or unset."
                             .to_string(),
                     )
@@ -250,74 +249,6 @@ pub fn prototype_info_system(
                 }
             } else {
                 message.push_str(" none");
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct PrototypeRemove {
-    pub actor: Entity,
-    pub id: PrototypeId,
-}
-
-into_action!(PrototypeRemove);
-
-pub fn prototype_remove_system(
-    mut commands: Commands,
-    mut action_reader: EventReader<Action>,
-    mut prototypes: ResMut<Prototypes>,
-    mut updates: ResMut<Updates>,
-    container_query: Query<&Container>,
-    location_query: Query<&Location>,
-    object_query: Query<(Entity, &Object)>,
-    mut contents_query: Query<&mut Contents>,
-    mut messages_query: Query<&mut Messages>,
-) {
-    for action in action_reader.iter() {
-        if let Action::PrototypeRemove(PrototypeRemove { actor, id }) = action {
-            let prototype_entity = if let Some(prototype) = prototypes.by_id(*id) {
-                prototype
-            } else {
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(format!("Prototype {} not found.", id));
-                }
-                continue;
-            };
-
-            let container = if let Ok(container) = container_query.get(prototype_entity) {
-                container.entity()
-            } else if let Ok(location) = location_query.get(prototype_entity) {
-                location.room()
-            } else {
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(format!("Prototype {} not in a location or container.", id));
-                }
-                continue;
-            };
-
-            prototypes.remove(*id);
-            commands.entity(prototype_entity).despawn();
-            contents_query
-                .get_mut(container)
-                .unwrap()
-                .remove(prototype_entity);
-
-            let objects = object_query
-                .iter()
-                .filter(|(_, object)| object.prototype() == prototype_entity)
-                .map(|(object_entity, object)| (object_entity, object.id()))
-                .collect_vec();
-
-            for (entity, id) in objects {
-                commands.entity(entity).despawn();
-                updates.persist(persist::object::Remove::new(id));
-            }
-
-            updates.persist(persist::prototype::Remove::new(*id));
-
-            if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Prototype {} removed.", id));
             }
         }
     }

@@ -1,6 +1,9 @@
 use std::{
     io::{self},
-    sync::atomic::{AtomicU16, Ordering},
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -13,56 +16,94 @@ use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
 static TRACING: Lazy<()> = Lazy::new(|| {
-    let default_filter_level = "remud_lib=trace".to_string();
+    let default_filter_level = "remud_test=info,remud_lib=debug".to_string();
 
     init_subscriber(default_filter_level, TestWriter::default());
 });
 
-/// spawn the server and wait for it to start
-pub async fn start_server() -> (u16, u16) {
-    Lazy::force(&TRACING);
+pub struct Server {
+    telnet: u16,
+    web: u16,
+    #[allow(dead_code)]
+    runtime: tokio::runtime::Runtime,
+}
 
-    #[allow(unused_assignments)]
-    let mut telnet_port = 0;
-    #[allow(unused_assignments)]
-    let mut web_port = 0;
+impl Server {
+    pub fn new() -> Self {
+        Lazy::force(&TRACING);
 
-    'connect_loop: loop {
-        let (tx, rx) = oneshot::channel();
-        telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let telnet_addr = format!("127.0.0.1:{}", telnet_port);
-        web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let web_addr = format!("127.0.0.1:{}", web_port);
-        let spawn = tokio::spawn(async move {
-            let telnet_addr = telnet_addr;
-            run_remud(&telnet_addr, &web_addr, None, Some(tx)).await
-        });
+        let (tx, rx) = mpsc::channel();
 
-        tokio::select! {
-            join_result = spawn => {
-                match join_result {
-                    Ok(remud_result) => {
-                        match remud_result {
-                            // ReMUD did not stop to listen for requests and the run function returned early.
-                            Ok(_) => panic!("ReMUD exited early"),
-                            Err(e) => match e {
-                                RemudError::BindError(_) => {
-                                    tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
-                                },
-                                RemudError::EngineError(e) => panic!("ReMUD failed to start: {}", e)
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .build()
+            .unwrap();
+
+        runtime.spawn(async move {
+            let external_tx = tx;
+            let mut telnet_port ;
+            let mut web_port ;
+
+            'connect_loop: loop {
+                telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
+                let telnet_addr = format!("127.0.0.1:{}", telnet_port);
+                web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
+                let web_addr = format!("127.0.0.1:{}", web_port);
+
+                let (tx, rx) = oneshot::channel();
+
+                let spawn = tokio::spawn(async move {
+                    run_remud(&telnet_addr, &web_addr, None, Some(tx)).await
+                });
+
+                tokio::select! {
+                    join_result = spawn => {
+                        match join_result {
+                            Ok(remud_result) => {
+                                match remud_result {
+                                    // ReMUD did not stop to listen for requests and the run function returned early.
+                                    Ok(_) => panic!("ReMUD exited early"),
+                                    Err(e) => match e {
+                                        RemudError::BindError(_) => {
+                                            tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
+                                        },
+                                        RemudError::EngineError(e) => panic!("ReMUD failed to start: {}", e)
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                panic!("Failed to join ReMUD task")
                             }
                         }
                     }
-                    Err(_) => {
-                        panic!("Failed to join ReMUD task")
+                    _ = rx => {
+                        break 'connect_loop
                     }
                 }
             }
-            _ = rx => { break 'connect_loop }
+
+            external_tx.send((telnet_port, web_port)).unwrap_or_else(|e| panic!("failed to start server: {}", e));
+        });
+
+        let (telnet, web) = rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap_or_else(|e| panic!("failed to receive server init message: {}", e));
+
+        Server {
+            telnet,
+            web,
+            runtime,
         }
     }
 
-    (telnet_port, web_port)
+    pub fn telnet(&self) -> u16 {
+        self.telnet
+    }
+
+    pub fn web(&self) -> u16 {
+        self.web
+    }
 }
 
 pub struct TelnetClient {

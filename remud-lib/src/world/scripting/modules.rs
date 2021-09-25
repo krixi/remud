@@ -444,8 +444,8 @@ pub mod states_api {
 pub mod transitions_api {
     use crate::world::fsm::Transition;
 
-    pub const SAW_PLAYER: &Transition = &Transition::SawPlayer;
-    pub const LOST_PLAYER: &Transition = &Transition::LostPlayer;
+    pub const SAW_TARGET: Transition = Transition::SawTarget;
+    pub const DONE: Transition = Transition::Done;
 
     #[rhai_fn(pure, name = "!=")]
     pub fn tx_ne(a: &mut Transition, b: Transition) -> bool {

@@ -118,7 +118,7 @@ impl Persist for Inherit {
                         .execute(pool)
                         .await?;
                 }
-                InheritableFields::Hooks => {
+                InheritableFields::Scripts => {
                     sqlx::query("UPDATE objects SET inherit_scripts = true WHERE id = ?")
                         .bind(self.id)
                         .execute(pool)

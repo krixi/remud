@@ -374,6 +374,14 @@ fn default_commands() -> Vec<Command> {
                 .with_example("object 2 desc An adorable teddy bear. It looks well loved."),
             )
             .with_subhelp(
+                "errors",
+                Help::new(
+                    "object <id> errors <script name>",
+                    "Retrieves information on the latest error that occurred for the provided script name on the object, if any.",
+                )
+                .with_example("object 2 errors robo_dog_init"),
+            )
+            .with_subhelp(
                 "flags",
                 Help::new_simple(
                     "Flags are used to set binary properties on objects.\r\n  |white|fixed|-|: \
@@ -390,16 +398,16 @@ fn default_commands() -> Vec<Command> {
             .with_subhelp(
                 "inherit",
                 Help::new(
-                    "object <id> inherit [name] [desc] [flags] [keywords] [hooks]",
+                    "object <id> inherit [name] [desc] [flags] [keywords] [scripts]",
                     "Resumes inheriting the specified fields from the prototype object.",
                 )
-                .with_example("object 2 inherit name hooks"),
+                .with_example("object 2 inherit name scripts"),
             )
             .with_subhelp(
                 "init",
                 Help::new(
                     "object <id> init",
-                    "Runs all init scripts attached to this object.",
+                "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
                 )
                 .with_example("object 4 init"),
             )
@@ -470,6 +478,14 @@ fn default_commands() -> Vec<Command> {
                 "Commands for managing players in the game world.",
             )
             .with_subhelp(
+                "errors",
+                Help::new(
+                    "player <id> errors <script name>",
+                    "Retrieves information on the latest error that occurred for the provided script name on the player, if any.",
+                )
+                .with_example("player 2 errors ted_super_power"),
+            )
+            .with_subhelp(
                 "flags",
                 Help::new_simple(
                     "Flags are used to set binary properties on players.\r\n  |white|immortal|-|: \
@@ -485,7 +501,7 @@ fn default_commands() -> Vec<Command> {
                 "init",
                 Help::new(
                     "player <name> init",
-                    "Runs all init scripts attached to this player.",
+                    "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
                 )
                 .with_example("player Ted init"),
             )
@@ -559,15 +575,6 @@ fn default_commands() -> Vec<Command> {
                 Help::new("prototype new", "Creates a new prototype."),
             )
             .with_subhelp(
-                "remove",
-                Help::new(
-                    "prototype <id> remove",
-                    "Removes the prototype from the game world. This will remove all instances of \
-                     the prototype from rooms, players, and other containers.",
-                )
-                .with_example("prototype 2 remove"),
-            )
-            .with_subhelp(
                 "set",
                 Help::new(
                     "prototype <id> set <flag> [<flag>..]",
@@ -611,6 +618,14 @@ fn default_commands() -> Vec<Command> {
                 ),
             )
             .with_subhelp(
+                "errors",
+                Help::new(
+                    "room <id> errors <script name>",
+                    "Retrieves information on the latest error that occurred for the provided script name on the room, if any.",
+                )
+                .with_example("room 2 errors poisonous_gas"),
+            )
+            .with_subhelp(
                 "info",
                 Help::new("help info", "Displays information about the current room."),
             )
@@ -618,7 +633,7 @@ fn default_commands() -> Vec<Command> {
                 "init",
                 Help::new(
                     "room <id> init",
-                    "Runs all init scripts attached to this room.",
+                    "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
                 )
                 .with_example("room 4 init"),
             )
@@ -708,7 +723,8 @@ fn default_commands() -> Vec<Command> {
                      init script. These run once on target load and can initialize the target. \
                      Objects, prototypes, and rooms are indicated by their ID and players by \
                      their name.",
-                ),
+                )
+                .with_example("script robo_dog_init init object 5"),
             )
             .with_subhelp(
                 "attach-post",
@@ -721,7 +737,6 @@ fn default_commands() -> Vec<Command> {
                 )
                 .with_example("script greet_player attach-post object 2"),
             )
-            .with_example("script robo_dog_init init object 5")
             .with_subhelp(
                 "attach-pre",
                 Help::new(
