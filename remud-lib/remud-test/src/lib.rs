@@ -87,31 +87,43 @@ impl TelnetClient {
         TelnetClient { connection }
     }
 
-    pub fn recv_contains(&mut self, text: &str) {
+    pub fn recv(&mut self) -> String {
         let event = self
             .connection
             .read_timeout(Duration::from_secs(1))
-            .unwrap_or_else(|_| {
-                panic!(
-                    "failed to read from telnet connection while looking for '{}'",
-                    text,
-                )
-            });
+            .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
 
+        //let mut message = "".to_string();
         if let TelnetEvent::Data(data) = event {
-            let message =
-                String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string");
+            // return this data as a string
+            String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string")
+        } else {
+            panic!(
+                "did not receive expected DATA event, got this instead: {:?}",
+                event
+            );
+        }
+    }
+
+    pub fn recv_contains(&mut self, text: &str) {
+        let message = self.recv();
+        assert!(
+            message.contains(text),
+            "did not find '{}' in message {:?}",
+            text,
+            message,
+        )
+    }
+
+    pub fn recv_contains_all(&mut self, msgs: Vec<&str>) {
+        let message = self.recv();
+        for text in msgs.iter() {
             assert!(
                 message.contains(text),
                 "did not find '{}' in message {:?}",
                 text,
                 message,
             )
-        } else {
-            panic!(
-                "did not receive expected DATA event containing '{}': {:?}",
-                text, event
-            );
         }
     }
 
@@ -126,12 +138,17 @@ impl TelnetClient {
     }
 
     pub fn create_user(&mut self, name: &str, password: &str) {
+        tracing::info!("-------- create user -------");
         self.recv_contains("Name?");
         self.send(name);
         self.recv_contains("Password?");
         self.send(password);
         self.recv_contains("Verify?");
         self.send(password);
+    }
+
+    pub fn info(&mut self, text: &str) {
+        tracing::info!("---------- {} ----------", text);
     }
 }
 
