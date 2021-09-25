@@ -1,6 +1,6 @@
 use remud_test::{start_server, TelnetClient};
 
-/// Validate a room connection
+// Validate a room connection
 fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32, &str)) {
     let (from_id, there) = from;
     let (to_id, back) = to;
@@ -38,11 +38,10 @@ fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32
     t.test("", "exits", vec![there]);
 }
 
-/// Tests the room immortal commands
+// Tests the room immortal commands
 #[tokio::test(flavor = "multi_thread")]
 async fn test_room_new() {
     let (telnet_port, _web_port) = start_server().await;
-
     let mut t = TelnetClient::new(telnet_port);
 
     t.create_user("krixi", "password");
@@ -120,7 +119,103 @@ async fn test_room_desc() {
     );
 }
 
-// TODO:
-async fn test_room_link_and_unlink() {}
-async fn test_room_region() {}
+fn assert_link_and_unlink(t: &mut TelnetClient, there: &str, back: &str) {
+    // assume room 0 (void room) and room 1 (new room).
+
+    // Test links and movement thru them
+    t.test("ensure we are in void room", "teleport 0", vec!["The Void"]);
+
+    t.test(
+        "no exits to begin with",
+        "exits",
+        vec!["This room has no obvious exits."],
+    );
+    t.test(
+        "link from void -> new in a direction",
+        format!("room link {} 1", there),
+        vec!["Linked", there, "room 1"],
+    );
+    t.test(format!("exits now has {}", there), "exits", vec![there]);
+    t.test(format!("move {}", there), there, vec!["An empty room"]);
+    t.test("should be in new room", "room info", vec!["Room 1"]);
+    t.test(
+        "new room has no exits",
+        "exits",
+        vec!["This room has no obvious exits."],
+    );
+    t.test(
+        format!("link from new room -> void via {}", back),
+        format!("room link {} 0", back),
+        vec!["Linked", back, "room 0"],
+    );
+    t.test(format!("new room has exit {}", back), "exits", vec![back]);
+    t.test(format!("move {}", back), back, vec!["The Void"]);
+
+    // Test unlinks
+    t.test(
+        "unlink exit in void room",
+        format!("room unlink {}", there),
+        vec!["Removed exit", there],
+    );
+    t.test(
+        "void room has 0 exits again",
+        "exits",
+        vec!["This room has no obvious exits."],
+    );
+    t.test("teleport to new room", "teleport 1", vec!["An empty room"]);
+    t.test("verify it still has an exit", "exits", vec![back]);
+    t.test(
+        "unlink exit in new room",
+        format!("room unlink {}", back),
+        vec!["Removed exit", back],
+    );
+    t.test(
+        "verify no exits",
+        "exits",
+        vec!["This room has no obvious exits."],
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_room_link_and_unlink() {
+    let (telnet_port, _web_port) = start_server().await;
+    let mut t = TelnetClient::new(telnet_port);
+
+    t.create_user("krixi", "password");
+    t.test("create a new room", "room new", vec!["Created room 1"]);
+    assert_link_and_unlink(&mut t, "north", "south");
+    assert_link_and_unlink(&mut t, "east", "west");
+    assert_link_and_unlink(&mut t, "up", "down");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_room_region() {
+    let (telnet_port, _web_port) = start_server().await;
+    let mut t = TelnetClient::new(telnet_port);
+
+    t.create_user("krixi", "password");
+    t.test(
+        "adding one region",
+        "room regions add space",
+        vec!["Updated room 0 regions."],
+    );
+    t.test(
+        "new region appears in room info",
+        "room info",
+        vec!["regions: space"],
+    );
+    t.test(
+        "adding multiple regions",
+        "room regions add space void",
+        vec!["Updated room 0 regions."],
+    );
+    t.test(
+        "multiple regions appear in room info",
+        "room info",
+        vec!["regions: space and void"],
+    );
+    //TODO: remove regions
+}
+
+// #[tokio::test(flavor = "multi_thread")]
 async fn test_room_remove() {}

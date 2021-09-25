@@ -84,16 +84,20 @@ impl Regions {
         Regions { list }
     }
 
+    pub fn add(&mut self, region: String) {
+        self.list.push(region);
+    }
+
+    pub fn contains(&self, region: &String) -> bool {
+        self.list.contains(region)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.list.is_empty()
     }
 
     pub fn get_list(&self) -> Vec<String> {
         self.list.clone()
-    }
-
-    pub fn extend<T: IntoIterator<Item = String>>(&mut self, iter: T) {
-        self.list.extend(iter)
     }
 
     pub fn remove(&mut self, region: &str) {

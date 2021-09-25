@@ -711,7 +711,11 @@ pub fn room_update_regions_system(
                     room_regions.remove(region.as_str())
                 }
             } else {
-                room_regions.extend(regions.iter().cloned())
+                for region in regions.iter() {
+                    if !room_regions.contains(region) {
+                        room_regions.add(region.to_string());
+                    }
+                }
             }
 
             if *remove {

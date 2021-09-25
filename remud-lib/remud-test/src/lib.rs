@@ -127,6 +127,17 @@ impl TelnetClient {
             )
         }
     }
+    pub fn recv_contains_none(&mut self, msgs: Vec<&str>) {
+        let message = self.recv();
+        for text in msgs.iter() {
+            assert!(
+                !message.contains(text),
+                "found unwanted '{}' in message {:?}",
+                text,
+                message,
+            )
+        }
+    }
 
     pub fn send(&mut self, line: &str) {
         self.connection
@@ -163,15 +174,45 @@ impl TelnetClient {
         command: S2,
         response_contains: Vec<S3>,
     ) {
+        self.validate(scenario, command, Validate::Includes(response_contains));
+    }
+
+    pub fn test_exclude<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        response_excludes: Vec<S3>,
+    ) {
+        self.validate(scenario, command, Validate::Excludes(response_excludes));
+    }
+
+    fn validate<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        validate: Validate<S3>,
+    ) {
         self.info(scenario.to_string().as_str());
         self.send(command.to_string().as_str());
-        let contains = response_contains
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect_vec();
-        self.recv_contains_all(contains.iter().map(|s| s.as_str()).collect_vec());
+
+        let (is_include, items) = match validate {
+            Validate::Includes(items) => (true, items),
+            Validate::Excludes(items) => (false, items),
+        };
+
+        let owned = items.into_iter().map(|s| s.to_string()).collect_vec();
+        if is_include {
+            self.recv_contains_all(owned.iter().map(|s| s.as_str()).collect_vec());
+        } else {
+            self.recv_contains_none(owned.iter().map(|s| s.as_str()).collect_vec());
+        }
         self.recv_prompt();
     }
+}
+
+enum Validate<S: ToString> {
+    Includes(Vec<S>),
+    Excludes(Vec<S>),
 }
 
 #[derive(Default)]
