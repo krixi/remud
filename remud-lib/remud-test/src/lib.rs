@@ -4,8 +4,10 @@ use std::{
     time::Duration,
 };
 
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError};
+use std::borrow::Cow;
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
 use tokio::sync::oneshot;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
@@ -138,7 +140,7 @@ impl TelnetClient {
     }
 
     pub fn create_user(&mut self, name: &str, password: &str) {
-        tracing::info!("-------- create user -------");
+        self.info("-------- create user -------");
         self.recv_contains("Name?");
         self.send(name);
         self.recv_contains("Password?");
@@ -148,7 +150,25 @@ impl TelnetClient {
     }
 
     pub fn info(&mut self, text: &str) {
-        tracing::info!("---------- {} ----------", text);
+        if !text.is_empty() {
+            tracing::info!("---------- {} ----------", text);
+        }
+    }
+
+    pub fn test<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        response_contains: Vec<S3>,
+    ) {
+        self.info(scenario.to_string().as_str());
+        self.send(command.to_string().as_str());
+        let contains = response_contains
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect_vec();
+        self.recv_contains_all(contains.iter().map(|s| s.as_str()).collect_vec());
+        self.recv_prompt();
     }
 }
 
