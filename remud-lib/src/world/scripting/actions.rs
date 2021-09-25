@@ -8,9 +8,13 @@ use crate::{
 };
 
 use bevy_ecs::prelude::*;
+use either::Either;
 use rhai::ParseError;
 
-pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
+pub async fn create_script(
+    world: &mut World,
+    script: Script,
+) -> Result<Option<ParseError>, web::Error> {
     tracing::debug!("Creating {:?}.", script.name);
 
     if world
@@ -23,7 +27,7 @@ pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseEr
     }
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
-    let (id, error) = match engine.read().unwrap().compile(script.code.as_str()) {
+    let (id, error) = match engine.read().await.compile(script.code.as_str()) {
         Ok(ast) => {
             let id = world
                 .spawn()
@@ -101,7 +105,10 @@ pub fn read_all_scripts(world: &mut World) -> Vec<(Script, Option<ParseError>)> 
     scripts
 }
 
-pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseError>, web::Error> {
+pub async fn update_script(
+    world: &mut World,
+    script: Script,
+) -> Result<Option<ParseError>, web::Error> {
     tracing::debug!("Updating {:?}.", script.name);
 
     let script_entity = if let Some(entity) = world
@@ -115,7 +122,7 @@ pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseEr
     };
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
-    let error = match engine.read().unwrap().compile(script.code.as_str()) {
+    let error = match engine.read().await.compile(script.code.as_str()) {
         Ok(ast) => {
             world
                 .entity_mut(script_entity)
@@ -172,4 +179,32 @@ pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), web::Err
         .persist(persist::script::Remove::new(name.to_string()));
 
     Ok(())
+}
+
+pub async fn compile_scripts(world: &mut World) {
+    let engine = world.get_resource::<ScriptEngine>().unwrap().get();
+    let engine = engine.read().await;
+    let mut results = Vec::new();
+    for (entity, script) in world
+        .query_filtered::<(Entity, &Script), (Without<ScriptAst>, Without<CompilationError>)>()
+        .iter(world)
+    {
+        match engine.compile(script.as_str()) {
+            Ok(ast) => results.push((entity, Either::Left(ast))),
+            Err(error) => results.push((entity, Either::Right(error))),
+        }
+    }
+
+    for (entity, result) in results {
+        match result {
+            Either::Left(ast) => {
+                world.entity_mut(entity).insert(ScriptAst::from(ast));
+            }
+            Either::Right(error) => {
+                world
+                    .entity_mut(entity)
+                    .insert(CompilationError::from(error));
+            }
+        }
+    }
 }

@@ -24,19 +24,18 @@ use crate::{
     },
 };
 
-pub async fn load_world(pool: &SqlitePool) -> Result<World, DbError> {
-    let mut world = World::new();
-    load_configuration(pool, &mut world).await?;
-    load_rooms(pool, &mut world).await?;
-    load_exits(pool, &mut world).await?;
-    load_prototypes(pool, &mut world).await?;
-    load_room_objects(pool, &mut world).await?;
-    load_scripts(pool, &mut world).await?;
-    load_room_scripts(pool, &mut world).await?;
-    load_prototype_scripts(pool, &mut world).await?;
-    load_object_scripts(pool, &mut world).await?;
+pub async fn load_world(pool: &SqlitePool, world: &mut World) -> Result<(), DbError> {
+    load_configuration(pool, world).await?;
+    load_rooms(pool, world).await?;
+    load_exits(pool, world).await?;
+    load_prototypes(pool, world).await?;
+    load_room_objects(pool, world).await?;
+    load_scripts(pool, world).await?;
+    load_room_scripts(pool, world).await?;
+    load_prototype_scripts(pool, world).await?;
+    load_object_scripts(pool, world).await?;
 
-    Ok(world)
+    Ok(())
 }
 
 async fn load_configuration(pool: &SqlitePool, world: &mut World) -> DbResult<()> {

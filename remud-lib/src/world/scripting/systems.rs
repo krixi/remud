@@ -4,28 +4,11 @@ use bevy_ecs::prelude::*;
 use crate::world::{
     action::Action,
     scripting::{
-        time::Timers, CompilationError, QueuedAction, RunInitScript, Script, ScriptAst,
-        ScriptEngine, ScriptHooks, ScriptRun, ScriptRuns, ScriptTrigger, TriggerEvent,
+        time::Timers, QueuedAction, RunInitScript, ScriptHooks, ScriptRun, ScriptRuns,
+        ScriptTrigger, TriggerEvent,
     },
     types::{object::Container, room::Room, Contents, Location},
 };
-
-pub fn script_compiler_system(
-    mut commands: Commands,
-    engine: Res<ScriptEngine>,
-    uncompiled_scripts: Query<(Entity, &Script), (Without<ScriptAst>, Without<CompilationError>)>,
-) {
-    for (entity, script) in uncompiled_scripts.iter() {
-        match engine.compile(script.code.as_str()) {
-            Ok(ast) => {
-                commands.entity(entity).insert(ScriptAst { ast });
-            }
-            Err(error) => {
-                commands.entity(entity).insert(CompilationError { error });
-            }
-        }
-    }
-}
 
 pub fn init_script_runs_system(
     mut init_reader: EventReader<RunInitScript>,

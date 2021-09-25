@@ -1,16 +1,18 @@
 pub mod states;
 pub mod system;
 
-use crate::world::{
-    ecs::{Ecs, Phase, Plugin, Step},
-    fsm::{
-        states::{ChaseState, WanderState},
-        system::state_machine_system,
-    },
-};
 use anyhow::{self, bail};
+use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use std::{collections::HashMap, fmt::Debug};
+
+use crate::{
+    ecs::{Ecs, Phase, Plugin, Step},
+    world::fsm::{
+        states::{ChaseState, WanderState},
+        system::run_state_machines,
+    },
+};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
 pub enum FsmSystem {
@@ -20,12 +22,13 @@ pub enum FsmSystem {
 #[derive(Default)]
 pub struct FsmPlugin {}
 
+#[async_trait]
 impl Plugin for FsmPlugin {
-    fn build(&self, ecs: &mut Ecs) {
+    async fn build(&self, ecs: &mut Ecs) {
         ecs.add_system(
             Step::Main,
             Phase::Update,
-            state_machine_system
+            run_state_machines
                 .exclusive_system()
                 .label(FsmSystem::RunStateMachines)
                 .at_end(),

@@ -4,39 +4,119 @@ mod modules;
 mod systems;
 pub mod time;
 
-use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    fmt,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
+use async_trait::async_trait;
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rhai::{plugin::*, ParseError, AST};
 use strum::EnumString;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
-use crate::world::{
-    action::Action,
+use crate::{
     ecs::{CoreSystem, Ecs, Phase, Plugin, SharedWorld, Step},
-    fsm::{StateId, StateMachineBuilder, Transition},
-    scripting::{
-        execution::{
-            run_init_script, run_post_event_script, run_pre_event_script, run_timed_script,
+    world::{
+        action::Action,
+        fsm::{StateId, StateMachineBuilder, Transition},
+        scripting::{
+            execution::{
+                run_init_script, run_post_event_script, run_pre_event_script, run_timed_script,
+                SharedEngine,
+            },
+            modules::{
+                event_api, rand_api, self_api, states_api, time_api, transitions_api, world_api,
+            },
+            systems::{
+                init_script_runs_system, post_action_script_runs_system,
+                pre_event_script_runs_system, timed_script_runs_system,
+            },
+            time::{tick_timers_system, timed_actions_system, timer_cleanup_system, TimedActions},
         },
-        modules::{
-            event_api, rand_api, self_api, states_api, time_api, transitions_api, world_api,
-        },
-        systems::{
-            init_script_runs_system, post_action_script_runs_system, pre_event_script_runs_system,
-            script_compiler_system, timed_script_runs_system,
-        },
-        time::{tick_timers_system, timed_actions_system, timer_cleanup_system, TimedActions},
     },
 };
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
+pub enum ScriptSystem {
+    InitScriptRuns,
+    PostActionScriptRuns,
+    PreEventScriptRuns,
+    TickTimers,
+    TimedActions,
+    TimerCleanup,
+    TimedScriptRuns,
+}
+
+#[derive(Default)]
+pub struct ScriptPlugin {}
+
+#[async_trait]
+impl Plugin for ScriptPlugin {
+    async fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<ScriptRuns>()
+            .await
+            .init_resource::<TimedActions>()
+            .await
+            .init_resource::<ScriptEngine>()
+            .await
+            .add_event::<RunInitScript>()
+            .await
+            .add_system(
+                Step::PreEvent,
+                Phase::First,
+                timer_cleanup_system
+                    .system()
+                    .label(ScriptSystem::TimerCleanup)
+                    .before(ScriptSystem::TickTimers),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::First,
+                tick_timers_system
+                    .system()
+                    .label(ScriptSystem::TickTimers)
+                    .after(CoreSystem::Time),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                timed_actions_system
+                    .system()
+                    .label(ScriptSystem::TimedActions)
+                    .before(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                timed_script_runs_system
+                    .system()
+                    .label(ScriptSystem::TimedScriptRuns)
+                    .before(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                init_script_runs_system
+                    .system()
+                    .label(ScriptSystem::InitScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                pre_event_script_runs_system
+                    .system()
+                    .label(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PostEvent,
+                Phase::Update,
+                post_action_script_runs_system
+                    .system()
+                    .label(ScriptSystem::PostActionScriptRuns),
+            );
+    }
+}
 
 #[derive(Bundle)]
 pub struct CompiledScript {
@@ -78,6 +158,10 @@ impl Script {
         self.code.clone()
     }
 
+    pub fn as_str(&self) -> &str {
+        self.code.as_str()
+    }
+
     pub fn into_parts(self) -> (ScriptName, TriggerEvent, String) {
         (self.name, self.trigger, self.code)
     }
@@ -88,21 +172,29 @@ pub struct ScriptAst {
     ast: AST,
 }
 
+impl From<AST> for ScriptAst {
+    fn from(ast: AST) -> Self {
+        ScriptAst { ast }
+    }
+}
+
 #[derive(Debug)]
 pub struct CompilationError {
     error: ParseError,
 }
 
+impl From<ParseError> for CompilationError {
+    fn from(error: ParseError) -> Self {
+        CompilationError { error }
+    }
+}
+
 pub struct ScriptEngine {
-    engine: Arc<RwLock<rhai::Engine>>,
+    engine: SharedEngine,
 }
 
 impl ScriptEngine {
-    pub fn compile(&self, script: &str) -> Result<rhai::AST, rhai::ParseError> {
-        self.engine.read().unwrap().compile(script)
-    }
-
-    pub fn get(&self) -> Arc<RwLock<rhai::Engine>> {
+    pub fn get(&self) -> SharedEngine {
         self.engine.clone()
     }
 }
@@ -467,169 +559,86 @@ impl RunInitScript {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
-pub enum ScriptSystem {
-    InitScriptRuns,
-    PostActionScriptRuns,
-    PreEventScriptRuns,
-    ScriptCompiler,
-    TickTimers,
-    TimedActions,
-    TimerCleanup,
-    TimedScriptRuns,
-}
-
-#[derive(Default)]
-pub struct ScriptPlugin {}
-
-impl Plugin for ScriptPlugin {
-    fn build(&self, ecs: &mut Ecs) {
-        ecs.init_resource::<ScriptRuns>()
-            .init_resource::<TimedActions>()
-            .init_resource::<ScriptEngine>()
-            .add_event::<RunInitScript>()
-            .add_system(
-                Step::PreEvent,
-                Phase::First,
-                timer_cleanup_system
-                    .system()
-                    .label(ScriptSystem::TimerCleanup)
-                    .before(ScriptSystem::TickTimers),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::First,
-                tick_timers_system
-                    .system()
-                    .label(ScriptSystem::TickTimers)
-                    .after(CoreSystem::Time),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::Update,
-                timed_actions_system
-                    .system()
-                    .label(ScriptSystem::TimedActions)
-                    .before(ScriptSystem::PreEventScriptRuns),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::Update,
-                timed_script_runs_system
-                    .system()
-                    .label(ScriptSystem::TimedScriptRuns)
-                    .before(ScriptSystem::PreEventScriptRuns),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::Update,
-                init_script_runs_system
-                    .system()
-                    .label(ScriptSystem::InitScriptRuns),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::Update,
-                pre_event_script_runs_system
-                    .system()
-                    .label(ScriptSystem::PreEventScriptRuns),
-            )
-            .add_system(
-                Step::PreEvent,
-                Phase::Update,
-                script_compiler_system
-                    .system()
-                    .label(ScriptSystem::ScriptCompiler),
-            )
-            .add_system(
-                Step::PostEvent,
-                Phase::Update,
-                post_action_script_runs_system
-                    .system()
-                    .label(ScriptSystem::PostActionScriptRuns),
-            );
-    }
-}
-
-pub fn run_init_scripts(world: SharedWorld) {
+pub async fn run_init_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .unwrap()
+            .await
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .init_runs,
     );
 
-    runs.into_par_iter()
-        .for_each(|ScriptRun { entity, script }| run_init_script(world.clone(), entity, script));
+    for ScriptRun { entity, script } in runs {
+        run_init_script(world.clone(), entity, script).await
+    }
 }
 
-pub fn run_pre_action_scripts(world: SharedWorld) {
+pub async fn run_pre_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .unwrap()
+            .await
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .runs,
     );
 
-    runs.into_par_iter().for_each(|(event, runs)| {
-        let allowed: Vec<bool> = runs
-            .into_par_iter()
-            .map(|ScriptRun { entity, script }| {
-                run_pre_event_script(world.clone(), &event, entity, script)
-            })
-            .collect();
+    for (action, runs) in runs {
+        let mut allowed = true;
+        for ScriptRun { entity, script } in runs {
+            if !run_pre_event_script(world.clone(), &action, entity, script).await {
+                allowed = false;
+            }
+        }
 
-        if allowed.into_iter().all(|b| b) {
+        if allowed {
             world
                 .write()
-                .unwrap()
+                .await
                 .get_resource_mut::<Events<Action>>()
                 .unwrap()
-                .send(event);
+                .send(action);
         }
-    });
+    }
 }
 
-pub fn run_post_action_scripts(world: SharedWorld) {
+pub async fn run_post_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .unwrap()
+            .await
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .runs,
     );
 
-    runs.into_par_iter().for_each(|(event, runs)| {
-        runs.into_par_iter()
-            .for_each(|ScriptRun { entity, script }| {
-                run_post_event_script(world.clone(), &event, entity, script)
-            });
-    });
+    for (action, runs) in runs {
+        for ScriptRun { entity, script } in runs {
+            run_post_event_script(world.clone(), &action, entity, script).await
+        }
+    }
 }
 
-pub fn run_timed_scripts(world: SharedWorld) {
+pub async fn run_timed_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .unwrap()
+            .await
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .timed_runs,
     );
 
-    runs.into_par_iter()
-        .for_each(|ScriptRun { entity, script }| run_timed_script(world.clone(), entity, script));
+    for ScriptRun { entity, script } in runs {
+        run_timed_script(world.clone(), entity, script).await
+    }
 }

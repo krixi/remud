@@ -9,17 +9,22 @@ use itertools::Itertools;
 use sqlx::{migrate::MigrateError, sqlite::SqliteConnectOptions, Row, SqlitePool};
 use thiserror::Error;
 
-use crate::world::{
+use crate::{
     ecs::SharedWorld,
-    scripting::{ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind},
-    types::{
-        self,
-        object::{
-            Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes,
+    world::{
+        scripting::{
+            ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
         },
-        player::Player,
-        room::RoomId,
-        Contents, Description, Id, Named,
+        types::{
+            self,
+            object::{
+                Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId,
+                Prototypes,
+            },
+            player::Player,
+            room::RoomId,
+            Contents, Description, Id, Named,
+        },
     },
 };
 
@@ -135,8 +140,8 @@ impl Db {
         Ok(results.get("password"))
     }
 
-    pub async fn load_world(&self) -> DbResult<World> {
-        world::load_world(&self.pool).await
+    pub async fn load_world(&self, world: &mut World) -> DbResult<()> {
+        world::load_world(&self.pool, world).await
     }
 
     pub async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity> {
@@ -161,8 +166,8 @@ impl Db {
         .fetch(&self.pool);
 
         let prototype = world
-            .read()
-            .unwrap()
+            .write()
+            .await
             .get_resource::<Prototypes>()
             .unwrap()
             .by_id(prototype_id)
@@ -173,8 +178,8 @@ impl Db {
 
             let object_id = ObjectId::try_from(object_row.id)?;
             let object = world
-                .read()
-                .unwrap()
+                .write()
+                .await
                 .get_resource::<Objects>()
                 .unwrap()
                 .by_id(object_id)
@@ -182,11 +187,7 @@ impl Db {
 
             let bundle = object_row.into_object_bundle(prototype)?;
 
-            world
-                .write()
-                .unwrap()
-                .entity_mut(object)
-                .insert_bundle(bundle);
+            world.write().await.entity_mut(object).insert_bundle(bundle);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -198,12 +199,12 @@ impl Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.write().unwrap().get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.write().await.get_mut::<ScriptHooks>(object) {
                         hooks.insert(hook);
                     } else {
                         world
                             .write()
-                            .unwrap()
+                            .await
                             .entity_mut(object)
                             .insert(ScriptHooks::new(hook));
                     }
@@ -212,7 +213,7 @@ impl Db {
         }
 
         let player_objects = {
-            let mut world = world.write().unwrap();
+            let mut world = world.write().await;
             world
                 .query_filtered::<&Contents, With<Player>>()
                 .iter(&*world)
@@ -222,7 +223,7 @@ impl Db {
         };
 
         for object in player_objects {
-            let id = world.read().unwrap().get::<Object>(object).unwrap().id();
+            let id = world.read().await.get::<Object>(object).unwrap().id();
             let object_row = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
                         COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
@@ -238,8 +239,8 @@ impl Db {
 
             let prototype_id = object_row.prototype_id;
             let prototype = world
-                .read()
-                .unwrap()
+                .write()
+                .await
                 .get_resource::<Prototypes>()
                 .unwrap()
                 .by_id(PrototypeId::try_from(object_row.prototype_id)?)
@@ -247,11 +248,7 @@ impl Db {
 
             let bundle = object_row.into_object_bundle(prototype)?;
 
-            world
-                .write()
-                .unwrap()
-                .entity_mut(object)
-                .insert_bundle(bundle);
+            world.write().await.entity_mut(object).insert_bundle(bundle);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -263,12 +260,12 @@ impl Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.write().unwrap().get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.write().await.get_mut::<ScriptHooks>(object) {
                         hooks.insert(hook)
                     } else {
                         world
                             .write()
-                            .unwrap()
+                            .await
                             .entity_mut(object)
                             .insert(ScriptHooks::new(hook));
                     }

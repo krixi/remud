@@ -7,9 +7,9 @@ use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
 use crate::{
+    ecs::SharedWorld,
     engine::db::HookRow,
     world::{
-        ecs::SharedWorld,
         scripting::{RunInitScript, ScriptHook, ScriptHooks, TriggerKind},
         types::{
             object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
@@ -38,7 +38,7 @@ pub async fn load_player(
         .fetch_one(pool)
         .await?;
 
-        let mut world = world.write().unwrap();
+        let mut world = world.write().await;
 
         let id = PlayerId::try_from(player_row.id)?;
 
@@ -112,7 +112,7 @@ async fn load_player_inventory(
         let prototype_id = object_row.prototype_id;
 
         let object = {
-            let mut world = world.write().unwrap();
+            let mut world = world.write().await;
 
             let prototype = match world
                 .get_resource::<Prototypes>()
@@ -157,7 +157,7 @@ async fn load_player_inventory(
         };
 
         while let Some(hook_row) = results.try_next().await? {
-            let mut world = world.write().unwrap();
+            let mut world = world.write().await;
             let hook = ScriptHook::try_from(hook_row)?;
 
             if hook.trigger.kind() == TriggerKind::Init {
@@ -191,7 +191,7 @@ async fn load_player_scripts(
     .fetch(pool);
 
     while let Some(hook_row) = results.try_next().await? {
-        let mut world = world.write().unwrap();
+        let mut world = world.write().await;
 
         let hook = ScriptHook::try_from(hook_row)?;
 

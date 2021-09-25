@@ -30,7 +30,7 @@ impl ColorSupport {
         }
     }
 
-    fn supported_from_true(&self, color: TrueColor) -> Option<Color> {
+    fn supported_from_true(&self, color: ColorTrue) -> Option<Color> {
         match self {
             ColorSupport::None => None,
             ColorSupport::Colors16 => Some(Color16::from(Color256::from(color)).into()),
@@ -89,7 +89,7 @@ impl<'a> Replacer for ColorReplacer<'a> {
                 tracing::warn!("Failed to capture matched 256 color: {}", m.as_str());
             }
         } else if let Some(m) = caps.name("true") {
-            if let Ok(color) = TrueColor::from_str(m.as_str()) {
+            if let Ok(color) = ColorTrue::from_str(m.as_str()) {
                 if let Some(color) = self.color_support.supported_from_true(color) {
                     self.stack.push(color);
                     dst.push_str(color.to_string().as_str());
@@ -127,16 +127,17 @@ impl<'a> Replacer for ColorReplacer<'a> {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
 pub enum Color {
-    TrueColor(TrueColor),
+    ColorTrue(ColorTrue),
     Color256(Color256),
     Color16(Color16),
 }
 
-impl From<TrueColor> for Color {
-    fn from(value: TrueColor) -> Self {
-        Color::TrueColor(value)
+impl From<ColorTrue> for Color {
+    fn from(value: ColorTrue) -> Self {
+        Color::ColorTrue(value)
     }
 }
 
@@ -155,7 +156,7 @@ impl From<Color16> for Color {
 impl ToString for Color {
     fn to_string(&self) -> String {
         match self {
-            Color::TrueColor(c) => c.to_string(),
+            Color::ColorTrue(c) => c.to_string(),
             Color::Color256(c) => c.to_string(),
             Color::Color16(c) => c.to_string(),
         }
@@ -163,25 +164,25 @@ impl ToString for Color {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct TrueColor {
+pub struct ColorTrue {
     r: u8,
     g: u8,
     b: u8,
 }
 
-impl TrueColor {
+impl ColorTrue {
     fn new(r: u8, g: u8, b: u8) -> Self {
-        TrueColor { r, g, b }
+        ColorTrue { r, g, b }
     }
 
     /// Create a new gray using a single color
     fn new_gray(v: u8) -> Self {
-        TrueColor::new(v, v, v)
+        ColorTrue::new(v, v, v)
     }
 
     /// Calculate the distance between this color and another by squaring
     /// and adding the component colors.
-    fn distance_squared(&self, color: TrueColor) -> u32 {
+    fn distance_squared(&self, color: ColorTrue) -> u32 {
         ((self.r as i32 - color.r as i32) * (self.r as i32 - color.r as i32)
             + (self.g as i32 - color.g as i32) * (self.g as i32 - color.g as i32)
             + (self.b as i32 - color.b as i32) * (self.b as i32 - color.b as i32)) as u32
@@ -202,15 +203,15 @@ impl TrueColor {
     }
 }
 
-impl From<Color256> for TrueColor {
+impl From<Color256> for ColorTrue {
     fn from(color: Color256) -> Self {
-        TrueColor::from(COLORS_256[color.0 as usize])
+        ColorTrue::from(COLORS_256[color.0 as usize])
     }
 }
 
-impl From<u32> for TrueColor {
+impl From<u32> for ColorTrue {
     fn from(c: u32) -> Self {
-        TrueColor::new(
+        ColorTrue::new(
             ((c >> 16) & 0xff) as u8,
             ((c >> 8) & 0xff) as u8,
             (c & 0xff) as u8,
@@ -218,15 +219,15 @@ impl From<u32> for TrueColor {
     }
 }
 
-impl FromStr for TrueColor {
+impl FromStr for ColorTrue {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(TrueColor::from(u32::from_str_radix(s, 16)?))
+        Ok(ColorTrue::from(u32::from_str_radix(s, 16)?))
     }
 }
 
-impl ToString for TrueColor {
+impl ToString for ColorTrue {
     fn to_string(&self) -> String {
         format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
     }
@@ -255,8 +256,8 @@ impl Color256 {
 //
 // The curve from cube index to color value is defined in
 // CUBE_TO_COLOR_VALUE.
-impl From<TrueColor> for Color256 {
-    fn from(c: TrueColor) -> Self {
+impl From<ColorTrue> for Color256 {
+    fn from(c: ColorTrue) -> Self {
         // Find the closest matching cube color.
         let (qr, qg, qb) = c.six_cube_indices();
         let (cr, cg, cb) = (
@@ -277,10 +278,10 @@ impl From<TrueColor> for Color256 {
         } else {
             (gray_average - 3) / 10
         };
-        let gray = TrueColor::new_gray(8 + (10 * gray_index));
+        let gray = ColorTrue::new_gray(8 + (10 * gray_index));
 
         // Determine if the color is closer to the cube color or the gray.
-        let cube_color = TrueColor::new(cr, cg, cg);
+        let cube_color = ColorTrue::new(cr, cg, cg);
         let color_distance = c.distance_squared(cube_color);
         let gray_distance = c.distance_squared(gray);
         if gray_distance < color_distance {

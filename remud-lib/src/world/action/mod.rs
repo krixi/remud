@@ -7,46 +7,51 @@ pub mod object;
 pub mod observe;
 pub mod system;
 
+use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 
-use crate::world::{
-    action::{
-        attributes::{stats_system, Stats},
-        communicate::{
-            emote_system, message_system, say_system, send_system, Emote, Message, Say, SendMessage,
-        },
-        immortal::{
-            initialize_system,
-            object::{
-                object_create_system, object_info_system, object_inherit_fields_system,
-                object_remove_system, update_keywords_system, update_object_flags, ObjectCreate,
-                ObjectInfo, ObjectInheritFields, ObjectRemove, UpdateKeywords, UpdateObjectFlags,
-            },
-            player::{
-                player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags,
-            },
-            prototype::{
-                prototype_create_system, prototype_info_system, prototype_remove_system,
-                PrototypeCreate, PrototypeInfo, PrototypeRemove,
-            },
-            room::{
-                room_create_system, room_info_system, room_link_system, room_remove_system,
-                room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
-                RoomRemove, RoomUnlink, RoomUpdateRegions,
-            },
-            script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
-            show_error_system, update_description_system, update_name_system, Initialize,
-            ShowError, UpdateDescription, UpdateName,
-        },
-        movement::{move_system, teleport_system, Move, Teleport},
-        object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
-        observe::{
-            exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who,
-        },
-        system::{login_system, shutdown_system, Login, Shutdown},
-    },
+use crate::{
     ecs::{Ecs, Phase, Plugin, Step},
-    scripting::QueuedAction,
+    world::{
+        action::{
+            attributes::{stats_system, Stats},
+            communicate::{
+                emote_system, message_system, say_system, send_system, Emote, Message, Say,
+                SendMessage,
+            },
+            immortal::{
+                initialize_system,
+                object::{
+                    object_create_system, object_info_system, object_inherit_fields_system,
+                    object_remove_system, update_keywords_system, update_object_flags,
+                    ObjectCreate, ObjectInfo, ObjectInheritFields, ObjectRemove, UpdateKeywords,
+                    UpdateObjectFlags,
+                },
+                player::{
+                    player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags,
+                },
+                prototype::{
+                    prototype_create_system, prototype_info_system, prototype_remove_system,
+                    PrototypeCreate, PrototypeInfo, PrototypeRemove,
+                },
+                room::{
+                    room_create_system, room_info_system, room_link_system, room_remove_system,
+                    room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
+                    RoomRemove, RoomUnlink, RoomUpdateRegions,
+                },
+                script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
+                show_error_system, update_description_system, update_name_system, Initialize,
+                ShowError, UpdateDescription, UpdateName,
+            },
+            movement::{move_system, teleport_system, Move, Teleport},
+            object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
+            observe::{
+                exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who,
+            },
+            system::{login_system, shutdown_system, Login, Shutdown},
+        },
+        scripting::QueuedAction,
+    },
 };
 
 macro_rules! into_action {
@@ -196,10 +201,13 @@ pub enum ActionSystem {
 #[derive(Default)]
 pub struct ActionsPlugin {}
 
+#[async_trait]
 impl Plugin for ActionsPlugin {
-    fn build(&self, ecs: &mut Ecs) {
+    async fn build(&self, ecs: &mut Ecs) {
         ecs.add_event::<QueuedAction>()
+            .await
             .add_event::<Action>()
+            .await
             .add_system(
                 Step::Main,
                 Phase::Update,

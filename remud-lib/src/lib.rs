@@ -2,6 +2,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod ecs;
 mod engine;
 mod macros;
 mod telnet;

@@ -1,7 +1,7 @@
 use bevy_ecs::prelude::Entity;
 use rhai::plugin::*;
 
-use crate::world::ecs::SharedWorld;
+use crate::ecs::SharedWorld;
 
 #[derive(Clone)]
 pub struct Me {
@@ -49,9 +49,9 @@ pub mod world_api {
     use bevy_ecs::prelude::Entity;
     use rhai::Dynamic;
 
-    use crate::world::{
+    use crate::{
         ecs::SharedWorld,
-        types::{
+        world::types::{
             object::{Container, Keywords, Object},
             player::Player,
             room::Room,
@@ -61,22 +61,30 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn is_player(world: &mut SharedWorld, entity: Entity) -> bool {
-        world.read().unwrap().entity(entity).contains::<Player>()
+        world
+            .try_read()
+            .unwrap()
+            .entity(entity)
+            .contains::<Player>()
     }
 
     #[rhai_fn(pure)]
     pub fn is_room(world: &mut SharedWorld, entity: Entity) -> bool {
-        world.read().unwrap().entity(entity).contains::<Room>()
+        world.try_read().unwrap().entity(entity).contains::<Room>()
     }
 
     #[rhai_fn(pure)]
     pub fn is_object(world: &mut SharedWorld, entity: Entity) -> bool {
-        world.read().unwrap().entity(entity).contains::<Object>()
+        world
+            .try_read()
+            .unwrap()
+            .entity(entity)
+            .contains::<Object>()
     }
 
     #[rhai_fn(pure)]
     pub fn get_name(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(named) = world.read().unwrap().get::<Named>(entity) {
+        if let Some(named) = world.try_read().unwrap().get::<Named>(entity) {
             Dynamic::from(named.to_string())
         } else {
             Dynamic::UNIT
@@ -85,7 +93,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_description(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(description) = world.read().unwrap().get::<Description>(entity) {
+        if let Some(description) = world.try_read().unwrap().get::<Description>(entity) {
             Dynamic::from(description.to_string())
         } else {
             Dynamic::UNIT
@@ -94,7 +102,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_keywords(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(keywords) = world.read().unwrap().get::<Keywords>(entity) {
+        if let Some(keywords) = world.try_read().unwrap().get::<Keywords>(entity) {
             Dynamic::from(keywords.get_list())
         } else {
             Dynamic::UNIT
@@ -103,7 +111,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(location) = world.read().unwrap().get::<Location>(entity) {
+        if let Some(location) = world.try_read().unwrap().get::<Location>(entity) {
             Dynamic::from(location.room())
         } else {
             Dynamic::UNIT
@@ -112,7 +120,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_container(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(container) = world.read().unwrap().get::<Container>(entity) {
+        if let Some(container) = world.try_read().unwrap().get::<Container>(entity) {
             Dynamic::from(container.entity())
         } else {
             Dynamic::UNIT
@@ -121,7 +129,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_contents(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(contents) = world.read().unwrap().get::<Contents>(entity) {
+        if let Some(contents) = world.try_read().unwrap().get::<Contents>(entity) {
             Dynamic::from(contents.get_objects())
         } else {
             Dynamic::UNIT
@@ -130,7 +138,7 @@ pub mod world_api {
 
     #[rhai_fn(pure)]
     pub fn get_players(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(room) = world.read().unwrap().get::<Room>(entity) {
+        if let Some(room) = world.try_read().unwrap().get::<Room>(entity) {
             Dynamic::from(room.get_players())
         } else {
             Dynamic::UNIT
@@ -176,7 +184,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn emote(me: &mut Me, emote: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
@@ -192,7 +200,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn emote_after(me: &mut Me, duration: Duration, emote: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<TimedActions>()
             .unwrap()
@@ -207,7 +215,7 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn get(me: &mut Me, key: ImmutableString) -> Dynamic {
-        if let Some(data) = me.world.read().unwrap().get::<ScriptData>(me.entity) {
+        if let Some(data) = me.world.try_read().unwrap().get::<ScriptData>(me.entity) {
             data.get(key)
         } else {
             Dynamic::UNIT
@@ -217,7 +225,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn message(me: &mut Me, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
@@ -233,7 +241,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn message_after(me: &mut Me, duration: Duration, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<TimedActions>()
             .unwrap()
@@ -250,7 +258,7 @@ pub mod self_api {
     pub fn pop_fsm(me: &mut Me) {
         if let Some(mut fsms) = me
             .world
-            .write()
+            .try_write()
             .unwrap()
             .get_mut::<StateMachines>(me.entity)
         {
@@ -260,7 +268,7 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn push_fsm(me: &mut Me, builder: StateMachineBuilder) {
-        let mut world = me.world.write().unwrap();
+        let mut world = me.world.try_write().unwrap();
         match builder.build() {
             Ok(fsm) => {
                 if let Some(mut fsms) = world.get_mut::<StateMachines>(me.entity) {
@@ -277,7 +285,12 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn remove(me: &mut Me, key: ImmutableString) -> Dynamic {
-        if let Some(mut data) = me.world.write().unwrap().get_mut::<ScriptData>(me.entity) {
+        if let Some(mut data) = me
+            .world
+            .try_write()
+            .unwrap()
+            .get_mut::<ScriptData>(me.entity)
+        {
             data.remove(key)
         } else {
             tracing::info!("script data not found, returning unit");
@@ -288,7 +301,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn say(me: &mut Me, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
@@ -304,7 +317,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn say_after(me: &mut Me, duration: Duration, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<TimedActions>()
             .unwrap()
@@ -320,7 +333,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn send(me: &mut Me, recipient: String, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
@@ -337,7 +350,7 @@ pub mod self_api {
     #[rhai_fn(pure)]
     pub fn send_after(me: &mut Me, duration: Duration, recipient: String, message: String) {
         me.world
-            .write()
+            .try_write()
             .unwrap()
             .get_resource_mut::<TimedActions>()
             .unwrap()
@@ -353,7 +366,7 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn set(me: &mut Me, key: ImmutableString, value: Dynamic) {
-        let mut world = me.world.write().unwrap();
+        let mut world = me.world.try_write().unwrap();
         if let Some(mut data) = world.get_mut::<ScriptData>(me.entity) {
             data.insert(key, value)
         } else {
@@ -365,7 +378,7 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn timer(me: &mut Me, name: ImmutableString, duration: Duration) {
-        let mut world = me.world.write().unwrap();
+        let mut world = me.world.try_write().unwrap();
         if let Some(mut timers) = world.get_mut::<Timers>(me.entity) {
             timers.add(name.to_string(), duration);
         } else {
@@ -377,7 +390,7 @@ pub mod self_api {
 
     #[rhai_fn(pure)]
     pub fn timer_repeating(me: &mut Me, name: ImmutableString, duration: Duration) {
-        let mut world = me.world.write().unwrap();
+        let mut world = me.world.try_write().unwrap();
         if let Some(mut timers) = world.get_mut::<Timers>(me.entity) {
             timers.add_repeating(name.to_string(), duration);
         } else {
