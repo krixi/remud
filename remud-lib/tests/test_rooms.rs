@@ -46,9 +46,6 @@ async fn test_room_new() {
     let mut t = TelnetClient::new(telnet_port);
 
     t.create_user("krixi", "password");
-    t.recv_contains("Welcome to City Six.");
-    t.recv_contains("The Void");
-    t.recv_prompt();
 
     t.test("create a new room", "room new", vec!["Created room 1"]);
     t.test("teleport to it", "teleport 1", vec!["An empty room"]);
@@ -67,9 +64,63 @@ async fn test_room_new() {
     assert_there_and_back_again(&mut t, (1, "down"), (7, "up")); // to the down
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_room_name() {
+    let (telnet_port, _web_port) = start_server().await;
+    let mut t = TelnetClient::new(telnet_port);
+
+    t.create_user("krixi", "password");
+    t.test(
+        "Check that we are in The Void room before changing",
+        "room info",
+        vec!["The Void"],
+    );
+    t.test(
+        "rename the void room",
+        "room name Super Happy Fun Palace",
+        vec!["Updated name for current room"],
+    );
+    t.test(
+        "Room now has updated name via room info",
+        "room info",
+        vec!["name: Super Happy Fun Palace"],
+    );
+    t.test(
+        "Room now has updated name via look",
+        "look",
+        vec!["Super Happy Fun Palace"],
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_room_desc() {
+    let (telnet_port, _web_port) = start_server().await;
+    let mut t = TelnetClient::new(telnet_port);
+
+    t.create_user("krixi", "password");
+    t.test(
+        "Check that we are in The Void room before changing",
+        "room info",
+        vec!["description: A dark void extends infinitely in all directions"],
+    );
+    t.test(
+        "change the description of the void room",
+        "room desc A waterslide spirals infinitely in every direction.",
+        vec!["Updated description for current room"],
+    );
+    t.test(
+        "Room now has updated desc via room info",
+        "room info",
+        vec!["description: A waterslide spirals infinitely in every direction."],
+    );
+    t.test(
+        "Room now has updated desc via look",
+        "look",
+        vec!["A waterslide spirals infinitely in every direction."],
+    );
+}
+
 // TODO:
-async fn test_room_name() {}
-async fn test_room_desc() {}
 async fn test_room_link_and_unlink() {}
 async fn test_room_region() {}
 async fn test_room_remove() {}

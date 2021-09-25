@@ -7,7 +7,6 @@ use std::{
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError};
-use std::borrow::Cow;
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
 use tokio::sync::oneshot;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
@@ -147,6 +146,9 @@ impl TelnetClient {
         self.send(password);
         self.recv_contains("Verify?");
         self.send(password);
+        self.recv_contains("Welcome to City Six.");
+        self.recv(); // ignore the look that happens when we log in
+        self.recv_prompt();
     }
 
     pub fn info(&mut self, text: &str) {
