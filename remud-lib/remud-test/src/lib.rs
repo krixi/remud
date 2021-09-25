@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError};
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
@@ -87,31 +88,54 @@ impl TelnetClient {
         TelnetClient { connection }
     }
 
-    pub fn recv_contains(&mut self, text: &str) {
+    pub fn recv(&mut self) -> String {
         let event = self
             .connection
             .read_timeout(Duration::from_secs(1))
-            .unwrap_or_else(|_| {
-                panic!(
-                    "failed to read from telnet connection while looking for '{}'",
-                    text,
-                )
-            });
+            .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
 
+        //let mut message = "".to_string();
         if let TelnetEvent::Data(data) = event {
-            let message =
-                String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string");
+            // return this data as a string
+            String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string")
+        } else {
+            panic!(
+                "did not receive expected DATA event, got this instead: {:?}",
+                event
+            );
+        }
+    }
+
+    pub fn recv_contains(&mut self, text: &str) {
+        let message = self.recv();
+        assert!(
+            message.contains(text),
+            "did not find '{}' in message {:?}",
+            text,
+            message,
+        )
+    }
+
+    pub fn recv_contains_all(&mut self, msgs: Vec<&str>) {
+        let message = self.recv();
+        for text in msgs.iter() {
             assert!(
                 message.contains(text),
                 "did not find '{}' in message {:?}",
                 text,
                 message,
             )
-        } else {
-            panic!(
-                "did not receive expected DATA event containing '{}': {:?}",
-                text, event
-            );
+        }
+    }
+    pub fn recv_contains_none(&mut self, msgs: Vec<&str>) {
+        let message = self.recv();
+        for text in msgs.iter() {
+            assert!(
+                !message.contains(text),
+                "found unwanted '{}' in message {:?}",
+                text,
+                message,
+            )
         }
     }
 
@@ -126,13 +150,69 @@ impl TelnetClient {
     }
 
     pub fn create_user(&mut self, name: &str, password: &str) {
+        self.info("-------- create user -------");
         self.recv_contains("Name?");
         self.send(name);
         self.recv_contains("Password?");
         self.send(password);
         self.recv_contains("Verify?");
         self.send(password);
+        self.recv_contains("Welcome to City Six.");
+        self.recv(); // ignore the look that happens when we log in
+        self.recv_prompt();
     }
+
+    pub fn info(&mut self, text: &str) {
+        if !text.is_empty() {
+            tracing::info!("---------- {} ----------", text);
+        }
+    }
+
+    pub fn test<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        response_contains: Vec<S3>,
+    ) {
+        self.validate(scenario, command, Validate::Includes(response_contains));
+    }
+
+    pub fn test_exclude<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        response_excludes: Vec<S3>,
+    ) {
+        self.validate(scenario, command, Validate::Excludes(response_excludes));
+    }
+
+    fn validate<S1: ToString, S2: ToString, S3: ToString>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        validate: Validate<S3>,
+    ) {
+        self.info(scenario.to_string().as_str());
+        self.send(command.to_string().as_str());
+
+        let (is_include, items) = match validate {
+            Validate::Includes(items) => (true, items),
+            Validate::Excludes(items) => (false, items),
+        };
+
+        let owned = items.into_iter().map(|s| s.to_string()).collect_vec();
+        if is_include {
+            self.recv_contains_all(owned.iter().map(|s| s.as_str()).collect_vec());
+        } else {
+            self.recv_contains_none(owned.iter().map(|s| s.as_str()).collect_vec());
+        }
+        self.recv_prompt();
+    }
+}
+
+enum Validate<S: ToString> {
+    Includes(Vec<S>),
+    Excludes(Vec<S>),
 }
 
 #[derive(Default)]
