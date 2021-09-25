@@ -14,7 +14,7 @@ use crate::{
         },
         fsm::StateMachine,
         scripting::{
-            time::Timers, ExecutionErrors, ScriptData, ScriptHook, ScriptHooks, ScriptInit,
+            time::Timers, ExecutionErrors, RunInitScript, ScriptData, ScriptHook, ScriptHooks,
             ScriptName, ScriptTrigger,
         },
         types::{
@@ -202,7 +202,7 @@ into_action!(ObjectCreate);
 pub fn object_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
-    mut init_writer: EventWriter<ScriptInit>,
+    mut init_writer: EventWriter<RunInitScript>,
     prototypes: Res<Prototypes>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
@@ -262,7 +262,7 @@ pub fn object_create_system(
 
             if let Some(hooks) = hooks {
                 for script in hooks.by_trigger(ScriptTrigger::Init) {
-                    init_writer.send(ScriptInit::new(object_entity, script));
+                    init_writer.send(RunInitScript::new(object_entity, script));
                 }
             }
 

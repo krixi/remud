@@ -2,13 +2,14 @@ use std::sync::{Arc, RwLock};
 
 use crate::world::{
     action::Action,
+    ecs::SharedWorld,
     scripting::{modules::Me, ExecutionErrors, ScriptAst, ScriptEngine, ScriptName, Scripts},
 };
 
 use bevy_ecs::prelude::*;
 use rhai::{Dynamic, Engine, Scope, AST};
 
-pub fn run_init_script(world: Arc<RwLock<World>>, entity: Entity, script: ScriptName) {
+pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
@@ -48,7 +49,7 @@ pub fn run_init_script(world: Arc<RwLock<World>>, entity: Entity, script: Script
 }
 
 pub fn run_post_event_script(
-    world: Arc<RwLock<World>>,
+    world: SharedWorld,
     event: &Action,
     entity: Entity,
     script: ScriptName,
@@ -93,7 +94,7 @@ pub fn run_post_event_script(
 }
 
 pub fn run_pre_event_script(
-    world: Arc<RwLock<World>>,
+    world: SharedWorld,
     event: &Action,
     entity: Entity,
     script: ScriptName,
@@ -140,7 +141,7 @@ pub fn run_pre_event_script(
     scope.get_value("allow_action").unwrap()
 }
 
-pub fn run_timed_script(world: Arc<RwLock<World>>, entity: Entity, script: ScriptName) {
+pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) {
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,

@@ -1,10 +1,37 @@
 pub mod states;
 pub mod system;
 
-use crate::world::fsm::states::{ChaseState, WanderState};
+use crate::world::{
+    ecs::{Ecs, Phase, Plugin, Step},
+    fsm::{
+        states::{ChaseState, WanderState},
+        system::state_machine_system,
+    },
+};
 use anyhow::{self, bail};
 use bevy_ecs::prelude::*;
 use std::{collections::HashMap, fmt::Debug};
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
+pub enum FsmSystem {
+    RunStateMachines,
+}
+
+#[derive(Default)]
+pub struct FsmPlugin {}
+
+impl Plugin for FsmPlugin {
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.add_system(
+            Step::Main,
+            Phase::Update,
+            state_machine_system
+                .exclusive_system()
+                .label(FsmSystem::RunStateMachines)
+                .at_end(),
+        );
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct StateMachines {

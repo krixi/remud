@@ -8,38 +8,45 @@ pub mod observe;
 pub mod system;
 
 use bevy_ecs::prelude::*;
-use thiserror::Error;
 
-use crate::world::action::{
-    attributes::{stats_system, Stats},
-    communicate::{
-        emote_system, message_system, say_system, send_system, Emote, Message, Say, SendMessage,
+use crate::world::{
+    action::{
+        attributes::{stats_system, Stats},
+        communicate::{
+            emote_system, message_system, say_system, send_system, Emote, Message, Say, SendMessage,
+        },
+        immortal::{
+            initialize_system,
+            object::{
+                object_create_system, object_info_system, object_inherit_fields_system,
+                object_remove_system, update_keywords_system, update_object_flags, ObjectCreate,
+                ObjectInfo, ObjectInheritFields, ObjectRemove, UpdateKeywords, UpdateObjectFlags,
+            },
+            player::{
+                player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags,
+            },
+            prototype::{
+                prototype_create_system, prototype_info_system, prototype_remove_system,
+                PrototypeCreate, PrototypeInfo, PrototypeRemove,
+            },
+            room::{
+                room_create_system, room_info_system, room_link_system, room_remove_system,
+                room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
+                RoomRemove, RoomUnlink, RoomUpdateRegions,
+            },
+            script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
+            show_error_system, update_description_system, update_name_system, Initialize,
+            ShowError, UpdateDescription, UpdateName,
+        },
+        movement::{move_system, teleport_system, Move, Teleport},
+        object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
+        observe::{
+            exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who,
+        },
+        system::{login_system, shutdown_system, Login, Shutdown},
     },
-    immortal::{
-        initialize_system,
-        object::{
-            object_create_system, object_info_system, object_inherit_fields_system,
-            object_remove_system, update_keywords_system, update_object_flags, ObjectCreate,
-            ObjectInfo, ObjectInheritFields, ObjectRemove, UpdateKeywords, UpdateObjectFlags,
-        },
-        player::{player_info_system, player_update_flags_system, PlayerInfo, PlayerUpdateFlags},
-        prototype::{
-            prototype_create_system, prototype_info_system, prototype_remove_system,
-            PrototypeCreate, PrototypeInfo, PrototypeRemove,
-        },
-        room::{
-            room_create_system, room_info_system, room_link_system, room_remove_system,
-            room_unlink_system, room_update_regions_system, RoomCreate, RoomInfo, RoomLink,
-            RoomRemove, RoomUnlink, RoomUpdateRegions,
-        },
-        script::{script_attach_system, script_detach_system, ScriptAttach, ScriptDetach},
-        show_error_system, update_description_system, update_name_system, Initialize, ShowError,
-        UpdateDescription, UpdateName,
-    },
-    movement::{move_system, teleport_system, Move, Teleport},
-    object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
-    observe::{exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who},
-    system::{login_system, shutdown_system, Login, Shutdown},
+    ecs::{Ecs, Phase, Plugin, Step},
+    scripting::QueuedAction,
 };
 
 macro_rules! into_action {
@@ -143,50 +150,285 @@ impl Action {
     }
 }
 
-pub fn register_action_systems(stage: &mut SystemStage) {
-    stage.add_system(drop_system.system());
-    stage.add_system(emote_system.system().after("look"));
-    stage.add_system(exits_system.system());
-    stage.add_system(get_system.system());
-    stage.add_system(initialize_system.system());
-    stage.add_system(inventory_system.system());
-    stage.add_system(login_system.system());
-    stage.add_system(look_at_system.system());
-    stage.add_system(look_system.system().label("look"));
-    stage.add_system(message_system.system());
-    stage.add_system(move_system.system());
-    stage.add_system(object_create_system.system());
-    stage.add_system(object_info_system.system());
-    stage.add_system(object_inherit_fields_system.system());
-    stage.add_system(object_remove_system.system());
-    stage.add_system(player_info_system.system());
-    stage.add_system(player_update_flags_system.system());
-    stage.add_system(prototype_create_system.system());
-    stage.add_system(prototype_info_system.system());
-    stage.add_system(prototype_remove_system.system());
-    stage.add_system(room_create_system.system());
-    stage.add_system(room_info_system.system());
-    stage.add_system(room_link_system.system());
-    stage.add_system(room_remove_system.system());
-    stage.add_system(room_unlink_system.system());
-    stage.add_system(room_update_regions_system.system());
-    stage.add_system(say_system.system().after("look"));
-    stage.add_system(script_attach_system.system());
-    stage.add_system(script_detach_system.system());
-    stage.add_system(send_system.system().after("look"));
-    stage.add_system(show_error_system.system());
-    stage.add_system(shutdown_system.system());
-    stage.add_system(stats_system.system());
-    stage.add_system(teleport_system.system());
-    stage.add_system(update_description_system.system());
-    stage.add_system(update_keywords_system.system());
-    stage.add_system(update_name_system.system());
-    stage.add_system(update_object_flags.system());
-    stage.add_system(who_system.system());
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
+pub enum ActionSystem {
+    Drop,
+    Emote,
+    Exits,
+    Get,
+    Initialize,
+    Inventory,
+    Login,
+    Look,
+    LookAt,
+    Message,
+    Move,
+    ObjectCreate,
+    ObjectInfo,
+    ObjectInheritFields,
+    ObjectRemove,
+    PlayerInfo,
+    PlayerUpdateFlags,
+    PrototypeCreate,
+    PrototypeInfo,
+    PrototypeRemove,
+    RoomCreate,
+    RoomInfo,
+    RoomLink,
+    RoomRemove,
+    RoomUnlink,
+    RoomUpdateRegions,
+    Say,
+    ScriptAttach,
+    ScriptDetach,
+    Send,
+    ShowError,
+    Shutdown,
+    Stats,
+    Teleport,
+    UpdateDescription,
+    UpdateKeywords,
+    UpdateName,
+    UpdateObjectFlags,
+    Who,
 }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0:?} has no {1}.")]
-    MissingComponent(Entity, &'static str),
+#[derive(Default)]
+pub struct ActionsPlugin {}
+
+impl Plugin for ActionsPlugin {
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.add_event::<QueuedAction>()
+            .add_event::<Action>()
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                drop_system.system().label(ActionSystem::Drop),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                emote_system
+                    .system()
+                    .label(ActionSystem::Emote)
+                    .after(ActionSystem::Look),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                exits_system.system().label(ActionSystem::Exits),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                get_system.system().label(ActionSystem::Get),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                initialize_system.system().label(ActionSystem::Initialize),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                inventory_system.system().label(ActionSystem::Inventory),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                login_system.system().label(ActionSystem::Login),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                look_at_system.system().label(ActionSystem::LookAt),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                look_system.system().label(ActionSystem::Look),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                message_system.system().label(ActionSystem::Message),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                move_system.system().label(ActionSystem::Move),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                object_create_system
+                    .system()
+                    .label(ActionSystem::ObjectCreate),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                object_info_system.system().label(ActionSystem::ObjectInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                object_inherit_fields_system
+                    .system()
+                    .label(ActionSystem::ObjectInheritFields),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                object_remove_system
+                    .system()
+                    .label(ActionSystem::ObjectRemove),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                player_info_system.system().label(ActionSystem::PlayerInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                player_update_flags_system
+                    .system()
+                    .label(ActionSystem::PlayerUpdateFlags),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                prototype_create_system
+                    .system()
+                    .label(ActionSystem::PrototypeCreate),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                prototype_info_system
+                    .system()
+                    .label(ActionSystem::PrototypeInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                prototype_remove_system
+                    .system()
+                    .label(ActionSystem::PrototypeRemove),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_create_system.system().label(ActionSystem::RoomCreate),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_info_system.system().label(ActionSystem::RoomInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_link_system.system().label(ActionSystem::RoomLink),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_remove_system.system().label(ActionSystem::RoomRemove),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_unlink_system.system().label(ActionSystem::RoomUnlink),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                room_update_regions_system
+                    .system()
+                    .label(ActionSystem::RoomUpdateRegions),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                say_system
+                    .system()
+                    .label(ActionSystem::Say)
+                    .after(ActionSystem::Look),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                script_attach_system
+                    .system()
+                    .label(ActionSystem::ScriptAttach),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                script_detach_system
+                    .system()
+                    .label(ActionSystem::ScriptDetach),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                send_system
+                    .system()
+                    .label(ActionSystem::Send)
+                    .after(ActionSystem::Look),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                show_error_system.system().label(ActionSystem::ShowError),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                shutdown_system.system().label(ActionSystem::Shutdown),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                stats_system.system().label(ActionSystem::Stats),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                teleport_system.system().label(ActionSystem::Teleport),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                update_description_system
+                    .system()
+                    .label(ActionSystem::UpdateDescription),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                update_keywords_system
+                    .system()
+                    .label(ActionSystem::UpdateKeywords),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                update_name_system.system().label(ActionSystem::UpdateName),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                update_object_flags
+                    .system()
+                    .label(ActionSystem::UpdateObjectFlags),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                who_system.system().label(ActionSystem::Who),
+            );
+    }
 }

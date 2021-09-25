@@ -128,7 +128,7 @@ impl Messages {
         self.queue.push_back(message);
     }
 
-    pub fn get_queue(&mut self) -> VecDeque<String> {
+    pub fn take_queue(&mut self) -> VecDeque<String> {
         let mut queue = VecDeque::new();
         std::mem::swap(&mut queue, &mut self.queue);
 

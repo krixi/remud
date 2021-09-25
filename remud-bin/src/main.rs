@@ -19,25 +19,28 @@ async fn main() -> anyhow::Result<()> {
                 .default_value("2004")
                 .about("Sets the telnet port")
                 .takes_value(true),
-        ).arg(
+        )
+        .arg(
             Arg::new("web")
                 .short('w')
                 .long("web")
                 .default_value("2080")
                 .about("Sets the web API port")
                 .takes_value(true),
-        ).arg(
+        )
+        .arg(
             Arg::new("db")
                 .short('d')
                 .long("db")
                 .default_value("./world.db")
                 .about("Sets the database file path")
                 .takes_value(true),
-        ).arg(
-            Arg::new("in-memory")
-                .long("in-memory")
-                .about("Runs ReMUD with an in-memory SQLite database - all data will be lost when the program is closed")
-        ).get_matches();
+        )
+        .arg(Arg::new("in-memory").long("in-memory").about(
+            "Runs ReMUD with an in-memory SQLite database - all data will be lost when the \
+             program is closed",
+        ))
+        .get_matches();
 
     let db = if matches.is_present("in-memory") {
         None
@@ -77,10 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let telnet = parse_port(matches.value_of("telnet").unwrap())?;
     let web = parse_port(matches.value_of("web").unwrap())?;
 
-    let db_str = match db {
-        Some(path) => path,
-        None => "in-memory",
-    };
+    let db_str = db.unwrap_or("in-memory");
 
     let telnet_addr = format!("0.0.0.0:{}", telnet);
     let web_addr = format!("0.0.0.0:{}", web);

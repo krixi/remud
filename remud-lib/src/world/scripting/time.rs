@@ -25,36 +25,47 @@ impl Timers {
         self.map.insert(name, Timer::new(duration, false));
     }
 
+    pub fn remove(&mut self, name: &str) {
+        self.map.remove(name);
+    }
+
     pub fn add_repeating(&mut self, name: String, duration: Duration) {
         self.map.insert(name, Timer::new(duration, true));
     }
 
     pub fn finished(&mut self) -> Vec<String> {
         let mut elapsed = Vec::new();
-        let mut to_remove = Vec::new();
 
         for (name, timer) in self.map.iter() {
             if timer.finished() {
                 elapsed.push(name.clone());
-
-                if !timer.repeating() {
-                    to_remove.push(name.clone())
-                }
             }
-        }
-
-        for name in to_remove {
-            self.map.remove(&name);
         }
 
         elapsed
     }
 }
 
-pub fn timer_system(time: Res<Time>, mut timers_query: Query<&mut Timers>) {
+pub fn tick_timers_system(time: Res<Time>, mut timers_query: Query<&mut Timers>) {
     for mut timers in timers_query.iter_mut() {
         for timer in timers.map.values_mut() {
             timer.tick(time.delta());
+        }
+    }
+}
+
+pub fn timer_cleanup_system(mut timers_query: Query<&mut Timers>) {
+    for mut timers in timers_query.iter_mut() {
+        let mut to_remove = Vec::new();
+
+        for (name, timer) in timers.map.iter() {
+            if timer.finished() && !timer.repeating() {
+                to_remove.push(name.clone());
+            }
+        }
+
+        for name in to_remove {
+            timers.remove(name.as_str());
         }
     }
 }

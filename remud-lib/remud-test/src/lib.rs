@@ -14,7 +14,7 @@ static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "remud_lib=trace".to_string();
 
-    init_subscriber(default_filter_level.into(), TestWriter::default());
+    init_subscriber(default_filter_level, TestWriter::default());
 });
 
 /// spawn the server and wait for it to start

@@ -10,7 +10,7 @@ use crate::{
     engine::db::{DbError, DbResult, HookRow, ObjectRow},
     world::{
         scripting::{
-            Script, ScriptHook, ScriptHooks, ScriptInit, ScriptName, Scripts, TriggerEvent,
+            RunInitScript, Script, ScriptHook, ScriptHooks, ScriptName, Scripts, TriggerEvent,
             TriggerKind,
         },
         types::{
@@ -26,9 +26,6 @@ use crate::{
 
 pub async fn load_world(pool: &SqlitePool) -> Result<World, DbError> {
     let mut world = World::new();
-
-    world.insert_resource(Events::<ScriptInit>::default());
-
     load_configuration(pool, &mut world).await?;
     load_rooms(pool, &mut world).await?;
     load_exits(pool, &mut world).await?;
@@ -356,9 +353,9 @@ async fn load_object_scripts(pool: &SqlitePool, world: &mut World) -> DbResult<(
 
             if hook.trigger.kind() == TriggerKind::Init {
                 world
-                    .get_resource_mut::<Events<ScriptInit>>()
+                    .get_resource_mut::<Events<RunInitScript>>()
                     .unwrap()
-                    .send(ScriptInit::new(object, hook.script.clone()));
+                    .send(RunInitScript::new(object, hook.script.clone()));
             }
 
             if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {

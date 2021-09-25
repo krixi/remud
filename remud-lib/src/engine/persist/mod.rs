@@ -9,9 +9,21 @@ use std::mem;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::world::types::object::PrototypeId;
+use crate::world::{
+    ecs::{Ecs, Plugin},
+    types::object::PrototypeId,
+};
 
 pub type DynPersist = Box<dyn Persist + Send + Sync>;
+
+#[derive(Default)]
+pub struct PersistPlugin {}
+
+impl Plugin for PersistPlugin {
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<Updates>();
+    }
+}
 
 #[derive(Default)]
 pub struct Updates {

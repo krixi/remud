@@ -1,116 +1,73 @@
 #![allow(clippy::type_complexity)]
 
 pub mod action;
+pub mod ecs;
 pub mod fsm;
 pub mod scripting;
 pub mod types;
 
-use std::{
-    collections::VecDeque,
-    convert::TryFrom,
-    ops::DerefMut,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{collections::VecDeque, convert::TryFrom, str::FromStr};
 
 use bevy_app::Events;
-use bevy_core::Time;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use rhai::ParseError;
 
 use crate::{
-    engine::persist::{self, DynPersist, Updates},
+    engine::persist::{self, DynPersist, PersistPlugin, Updates},
     web,
     world::{
-        action::{register_action_systems, Action},
-        fsm::system::state_machine_system,
+        action::{Action, ActionsPlugin},
+        ecs::{CorePlugin, Ecs, SharedWorld, Step},
+        fsm::FsmPlugin,
         scripting::{
-            register_scripting, run_init_scripts, run_post_action_scripts, run_pre_action_scripts,
-            run_timed_scripts, QueuedAction, Script, ScriptName, TriggerEvent,
+            run_init_scripts, run_post_action_scripts, run_pre_action_scripts, run_timed_scripts,
+            QueuedAction, Script, ScriptName, ScriptPlugin, TriggerEvent,
         },
         types::{
             object::PrototypeId,
             player::{Messages, Player, Players},
             room::{Regions, Room, RoomBundle, RoomId, Rooms},
-            Configuration, Contents, Description, Id, Location, Named,
+            Configuration, Contents, Description, Id, Location, Named, TypesPlugin,
         },
     },
 };
 
-pub const STAGE_FIRST: &str = "first";
-pub const STAGE_UPDATE: &str = "update";
-
 pub static VOID_ROOM_ID: Lazy<RoomId> = Lazy::new(|| RoomId::try_from(0).unwrap());
 
 pub struct GameWorld {
-    world: Arc<RwLock<World>>,
-    pre_event_schedule: Schedule,
-    update_schedule: Schedule,
-    post_event_schedule: Schedule,
+    ecs: Ecs,
 }
 
 impl GameWorld {
-    pub fn new(mut world: World) -> Self {
-        let (mut pre_event_schedule, mut update_schedule, mut post_event_schedule) =
-            build_schedules();
+    pub fn new(world: World) -> Self {
+        let mut ecs = Ecs::new(world);
 
-        // Add resources
-        world.insert_resource(Time::default());
-        world.insert_resource(Updates::default());
-        world.insert_resource(Players::default());
-
-        // Add events
-        add_event::<QueuedAction>(&mut world, &mut pre_event_schedule);
-        add_event::<Action>(&mut world, &mut pre_event_schedule);
+        ecs.register(CorePlugin::default());
+        ecs.register(TypesPlugin::default());
+        ecs.register(ActionsPlugin::default());
+        ecs.register(ScriptPlugin::default());
+        ecs.register(FsmPlugin::default());
+        ecs.register(PersistPlugin::default());
 
         // Create emergency room
-        add_void_room(&mut world);
+        add_void_room(&mut *ecs.world().write().unwrap());
 
-        // Configure schedule systems
-        let update = update_schedule
-            .get_stage_mut::<SystemStage>(&STAGE_UPDATE)
-            .unwrap();
-        register_action_systems(update);
-
-        register_scripting(
-            &mut world,
-            &mut pre_event_schedule,
-            &mut post_event_schedule,
-        );
-
-        pre_event_schedule.add_system_to_stage(STAGE_FIRST, time_system.exclusive_system());
-        update_schedule.add_system_to_stage(
-            STAGE_UPDATE,
-            state_machine_system.exclusive_system().at_end(),
-        );
-
-        let world = Arc::new(RwLock::new(world));
-
-        GameWorld {
-            world,
-            pre_event_schedule,
-            update_schedule,
-            post_event_schedule,
-        }
+        GameWorld { ecs }
     }
 
     pub fn run(&mut self) {
-        let world = self.world.clone();
+        let world = self.ecs.world();
 
-        self.pre_event_schedule
-            .run(world.write().unwrap().deref_mut());
+        self.ecs.run(Step::PreEvent);
 
         run_init_scripts(world.clone());
 
         run_pre_action_scripts(world.clone());
 
-        self.update_schedule
-            .run_once(world.write().unwrap().deref_mut());
-
-        self.post_event_schedule
-            .run(world.write().unwrap().deref_mut());
+        self.ecs.run(Step::Main);
+        self.ecs.run(Step::PostEvent);
 
         run_timed_scripts(world.clone());
 
@@ -118,7 +75,8 @@ impl GameWorld {
     }
 
     pub fn should_shutdown(&self) -> bool {
-        self.world
+        self.ecs
+            .world()
             .read()
             .unwrap()
             .get_resource::<Configuration>()
@@ -126,14 +84,14 @@ impl GameWorld {
     }
 
     pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        let mut world = self.world.write().unwrap();
+        let world = self.ecs.world();
+        let mut world = world.write().unwrap();
 
         let (name, room) = world
             .query::<(&Named, &Location)>()
             .get(&*world, player)
             .map(|(named, location)| (named.to_string(), location.room()))
-            .ok()
-            .ok_or(action::Error::MissingComponent(player, "Player"))?;
+            .unwrap();
 
         let players = world
             .get::<Room>(room)
@@ -165,16 +123,14 @@ impl GameWorld {
             .get_resource_mut::<Players>()
             .unwrap()
             .remove(name.as_str());
-        world
-            .get_mut::<Room>(room)
-            .ok_or(action::Error::MissingComponent(room, "Room"))?
-            .remove_player(player);
+        world.get_mut::<Room>(room).unwrap().remove_player(player);
 
         Ok(())
     }
 
     pub fn player_action(&mut self, action: Action) {
-        let mut world = self.world.write().unwrap();
+        let world = self.ecs.world();
+        let mut world = world.write().unwrap();
 
         world
             .get_mut::<Messages>(action.actor())
@@ -188,7 +144,8 @@ impl GameWorld {
     }
 
     pub fn player_online(&self, name: &str) -> bool {
-        self.world
+        self.ecs
+            .world()
             .read()
             .unwrap()
             .get_resource::<Players>()
@@ -198,7 +155,8 @@ impl GameWorld {
     }
 
     pub fn spawn_room(&self) -> RoomId {
-        self.world
+        self.ecs
+            .world()
             .read()
             .unwrap()
             .get_resource::<Configuration>()
@@ -207,7 +165,8 @@ impl GameWorld {
     }
 
     pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
-        let mut world = self.world.write().unwrap();
+        let world = self.ecs.world();
+        let mut world = world.write().unwrap();
 
         let players_with_messages = world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
@@ -223,14 +182,15 @@ impl GameWorld {
                 continue;
             }
 
-            outgoing.push((player, messages.get_queue()));
+            outgoing.push((player, messages.take_queue()));
         }
 
         outgoing
     }
 
     pub fn updates(&mut self) -> Vec<DynPersist> {
-        self.world
+        self.ecs
+            .world()
             .write()
             .unwrap()
             .get_resource_mut::<Updates>()
@@ -239,7 +199,8 @@ impl GameWorld {
     }
 
     pub fn prototype_reloads(&mut self) -> Vec<PrototypeId> {
-        self.world
+        self.ecs
+            .world()
             .write()
             .unwrap()
             .get_resource_mut::<Updates>()
@@ -247,8 +208,8 @@ impl GameWorld {
             .take_reloads()
     }
 
-    pub fn get_world(&self) -> Arc<RwLock<World>> {
-        self.world.clone()
+    pub fn get_world(&self) -> SharedWorld {
+        self.ecs.world()
     }
 
     pub fn create_script(
@@ -263,7 +224,7 @@ impl GameWorld {
 
         let script = Script::new(name, trigger, code);
 
-        scripting::actions::create_script(self.world.write().unwrap().deref_mut(), script)
+        scripting::actions::create_script(&mut *self.ecs.world().write().unwrap(), script)
     }
 
     pub fn read_script(
@@ -272,11 +233,11 @@ impl GameWorld {
     ) -> Result<(Script, Option<ParseError>), web::Error> {
         let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
 
-        scripting::actions::read_script(&*self.world.read().unwrap(), name)
+        scripting::actions::read_script(&*self.ecs.world().read().unwrap(), name)
     }
 
     pub fn read_all_scripts(&mut self) -> Vec<(Script, Option<ParseError>)> {
-        scripting::actions::read_all_scripts(self.world.write().unwrap().deref_mut())
+        scripting::actions::read_all_scripts(&mut *self.ecs.world().write().unwrap())
     }
 
     pub fn update_script(
@@ -291,18 +252,14 @@ impl GameWorld {
 
         let script = Script::new(name, trigger, code);
 
-        scripting::actions::update_script(self.world.write().unwrap().deref_mut(), script)
+        scripting::actions::update_script(&mut *self.ecs.world().write().unwrap(), script)
     }
 
     pub fn delete_script(&mut self, name: String) -> Result<(), web::Error> {
         let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
 
-        scripting::actions::delete_script(self.world.write().unwrap().deref_mut(), name)
+        scripting::actions::delete_script(&mut *self.ecs.world().write().unwrap(), name)
     }
-}
-
-fn time_system(mut time: ResMut<Time>) {
-    time.update()
 }
 
 fn add_void_room(world: &mut World) {
@@ -335,24 +292,4 @@ fn add_void_room(world: &mut World) {
 
         tracing::warn!("Void room was created.");
     }
-}
-
-fn build_schedules() -> (Schedule, Schedule, Schedule) {
-    let mut pre_event_schedule = Schedule::default();
-    pre_event_schedule.add_stage(STAGE_FIRST, SystemStage::parallel());
-    pre_event_schedule.add_stage_after(STAGE_FIRST, STAGE_UPDATE, SystemStage::parallel());
-
-    let mut update_schedule = Schedule::default();
-    update_schedule.add_stage(STAGE_FIRST, SystemStage::parallel());
-    update_schedule.add_stage_after(STAGE_FIRST, STAGE_UPDATE, SystemStage::parallel());
-
-    let mut post_event_schedule = Schedule::default();
-    post_event_schedule.add_stage(STAGE_UPDATE, SystemStage::parallel());
-
-    (pre_event_schedule, update_schedule, post_event_schedule)
-}
-
-fn add_event<T: 'static + Send + Sync>(world: &mut World, schedule: &mut Schedule) {
-    world.insert_resource(Events::<T>::default());
-    schedule.add_system_to_stage(STAGE_FIRST, Events::<T>::update_system.system());
 }

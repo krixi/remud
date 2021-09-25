@@ -167,10 +167,10 @@ async fn process(
                             }
                         }
                         EngineMessage::EndOutput => {
-                            if input_buffer.len() > 0 {
-                                if framed.send(Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))).await.is_err() {
-                                    break
-                                }
+                            if !input_buffer.is_empty() && framed.send(
+                                Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))
+                            ).await.is_err() {
+                                break
                             }
                         }
                     }

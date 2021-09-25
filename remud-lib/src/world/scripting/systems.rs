@@ -4,8 +4,8 @@ use bevy_ecs::prelude::*;
 use crate::world::{
     action::Action,
     scripting::{
-        time::Timers, CompilationError, QueuedAction, Script, ScriptAst, ScriptEngine, ScriptHooks,
-        ScriptInit, ScriptRun, ScriptRuns, ScriptTrigger, TriggerEvent,
+        time::Timers, CompilationError, QueuedAction, RunInitScript, Script, ScriptAst,
+        ScriptEngine, ScriptHooks, ScriptRun, ScriptRuns, ScriptTrigger, TriggerEvent,
     },
     types::{object::Container, room::Room, Contents, Location},
 };
@@ -27,11 +27,11 @@ pub fn script_compiler_system(
     }
 }
 
-pub fn init_script_system(
-    mut init_reader: EventReader<ScriptInit>,
+pub fn init_script_runs_system(
+    mut init_reader: EventReader<RunInitScript>,
     mut script_runs: ResMut<ScriptRuns>,
 ) {
-    for ScriptInit { entity, script } in init_reader.iter() {
+    for RunInitScript { entity, script } in init_reader.iter() {
         script_runs.init_runs.push(ScriptRun {
             entity: *entity,
             script: script.clone(),
@@ -39,7 +39,7 @@ pub fn init_script_system(
     }
 }
 
-pub fn timer_script_system(
+pub fn timed_script_runs_system(
     mut timers_query: Query<(Entity, &mut Timers, &ScriptHooks)>,
     mut script_runs: ResMut<ScriptRuns>,
 ) {
@@ -52,7 +52,7 @@ pub fn timer_script_system(
     }
 }
 
-pub fn queued_action_script_system(
+pub fn pre_event_script_runs_system(
     mut queued_action_reader: EventReader<QueuedAction>,
     mut action_writer: EventWriter<Action>,
     mut script_runs: ResMut<ScriptRuns>,
@@ -101,7 +101,7 @@ pub fn queued_action_script_system(
     }
 }
 
-pub fn post_action_script_system(
+pub fn post_action_script_runs_system(
     mut queued_action_reader: EventReader<QueuedAction>,
     mut script_runs: ResMut<ScriptRuns>,
     room_query: Query<&Room>,

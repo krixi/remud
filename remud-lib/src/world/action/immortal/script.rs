@@ -249,8 +249,8 @@ pub fn script_attach_system(
             } else {
                 let trigger_event = &script_query.get(script_entity).unwrap().trigger();
                 match trigger {
-                    TriggerKind::PreEvent => ScriptTrigger::PreEvent(trigger_event.clone()),
-                    TriggerKind::PostEvent => ScriptTrigger::PostEvent(trigger_event.clone()),
+                    TriggerKind::PreEvent => ScriptTrigger::PreEvent(*trigger_event),
+                    TriggerKind::PostEvent => ScriptTrigger::PostEvent(*trigger_event),
                     TriggerKind::Init => unreachable!(),
                     TriggerKind::Timer => ScriptTrigger::Timer(timer.clone().unwrap()),
                 }

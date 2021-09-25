@@ -2,15 +2,27 @@ use std::{fmt, ops::Index};
 
 use bevy_ecs::prelude::Entity;
 
-use crate::world::types::{
-    object::{ObjectId, PrototypeId},
-    player::PlayerId,
-    room::RoomId,
+use crate::world::{
+    ecs::{Ecs, Plugin},
+    types::{
+        object::{ObjectId, PrototypeId},
+        player::{PlayerId, Players},
+        room::RoomId,
+    },
 };
 
 pub mod object;
 pub mod player;
 pub mod room;
+
+#[derive(Default)]
+pub struct TypesPlugin {}
+
+impl Plugin for TypesPlugin {
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<Players>();
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Id {

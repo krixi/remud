@@ -19,41 +19,14 @@ pub struct WanderState {
     tick_timer: u32,
     tx: HashMap<Transition, StateId>,
 }
+
 impl WanderState {
     pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
-        let mut state = WanderState::default();
-        state.tx = build_tx_map(tx);
-        state
-    }
-}
-
-/// tx is an array of rhai objects, each with two keys:
-// - when: Transition
-// - then: StateId.
-// We need to translate this into the tx hashmap.
-fn build_tx_map(txs: rhai::Array) -> HashMap<Transition, StateId> {
-    let mut result = HashMap::new();
-    for ele in txs.iter() {
-        if let Some(tx) = ele.clone().try_cast::<rhai::Map>() {
-            let when = tx
-                .get("when")
-                .and_then(|w| w.clone().try_cast::<&Transition>());
-            let then = tx
-                .get("then")
-                .and_then(|t| t.clone().try_cast::<&StateId>());
-            if let (Some(when), Some(then)) = (when, then) {
-                result.insert(*when, *then);
-            } else {
-                tracing::warn!(
-                    "unable to convert when and then to valid transition -> stateId pair. Got \
-                     {:?} -> {:?}",
-                    when,
-                    then
-                );
-            }
+        WanderState {
+            tx: build_tx_map(tx),
+            ..Default::default()
         }
     }
-    result
 }
 
 impl State for WanderState {
@@ -119,9 +92,10 @@ pub struct ChaseState {
 }
 impl ChaseState {
     pub fn new(_params: rhai::Map, tx: rhai::Array) -> Self {
-        let mut state = ChaseState::default();
-        state.tx = build_tx_map(tx);
-        state
+        ChaseState {
+            tx: build_tx_map(tx),
+            ..Default::default()
+        }
     }
 }
 
@@ -213,4 +187,33 @@ impl State for ChaseState {
     fn output_state(&self, next: Transition) -> Option<StateId> {
         self.tx.get(&next).copied()
     }
+}
+
+/// tx is an array of rhai objects, each with two keys:
+// - when: Transition
+// - then: StateId.
+// We need to translate this into the tx hashmap.
+fn build_tx_map(txs: rhai::Array) -> HashMap<Transition, StateId> {
+    let mut result = HashMap::new();
+    for ele in txs.iter() {
+        if let Some(tx) = ele.clone().try_cast::<rhai::Map>() {
+            let when = tx
+                .get("when")
+                .and_then(|w| w.clone().try_cast::<&Transition>());
+            let then = tx
+                .get("then")
+                .and_then(|t| t.clone().try_cast::<&StateId>());
+            if let (Some(when), Some(then)) = (when, then) {
+                result.insert(*when, *then);
+            } else {
+                tracing::warn!(
+                    "unable to convert when and then to valid transition -> stateId pair. Got \
+                     {:?} -> {:?}",
+                    when,
+                    then
+                );
+            }
+        }
+    }
+    result
 }

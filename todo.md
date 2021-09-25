@@ -18,7 +18,7 @@
 
 - figure out how to factor out Engine.process_input (needed for character creation)
 
-- consider saving timers, or at least not removing them until the end of the tick
+- consider cleaning up timers at the end of a tick
 
 - change states to use timers
 

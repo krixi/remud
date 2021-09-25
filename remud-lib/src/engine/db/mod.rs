@@ -1,12 +1,7 @@
 mod player;
 mod world;
 
-use std::{
-    borrow::Cow,
-    convert::TryFrom,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{borrow::Cow, convert::TryFrom, str::FromStr};
 
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
@@ -15,6 +10,7 @@ use sqlx::{migrate::MigrateError, sqlite::SqliteConnectOptions, Row, SqlitePool}
 use thiserror::Error;
 
 use crate::world::{
+    ecs::SharedWorld,
     scripting::{ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind},
     types::{
         self,
@@ -61,7 +57,7 @@ impl Db {
             },
             Err(e) => {
                 if let sqlx::Error::Database(ref de) = e {
-                    if de.code() == Some(Cow::Borrowed(&DB_NOT_FOUND_CODE)) {
+                    if de.code() == Some(Cow::Borrowed(DB_NOT_FOUND_CODE)) {
                         tracing::warn!("World database {} not found, creating new instance.", uri);
                         let options = SqliteConnectOptions::from_str(&uri)
                             .unwrap()
@@ -105,7 +101,8 @@ impl Db {
 
     pub async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {
         let results = sqlx::query(
-            "INSERT INTO players (username, password, room, description, flags) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO players (username, password, room, description, flags) VALUES (?, ?, ?, \
+             ?, ?) RETURNING id",
         )
         .bind(user)
         .bind(hash)
@@ -142,17 +139,13 @@ impl Db {
         world::load_world(&self.pool).await
     }
 
-    pub async fn load_player(
-        &self,
-        world: Arc<RwLock<World>>,
-        name: &str,
-    ) -> anyhow::Result<Entity> {
+    pub async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity> {
         player::load_player(&self.pool, world, name).await
     }
 
     pub async fn reload_prototype(
         &self,
-        world: Arc<RwLock<World>>,
+        world: SharedWorld,
         prototype_id: PrototypeId,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(

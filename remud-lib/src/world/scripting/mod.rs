@@ -21,6 +21,7 @@ use thiserror::Error;
 
 use crate::world::{
     action::Action,
+    ecs::{CoreSystem, Ecs, Phase, Plugin, SharedWorld, Step},
     fsm::{StateId, StateMachineBuilder, Transition},
     scripting::{
         execution::{
@@ -30,12 +31,11 @@ use crate::world::{
             event_api, rand_api, self_api, states_api, time_api, transitions_api, world_api,
         },
         systems::{
-            init_script_system, post_action_script_system, queued_action_script_system,
-            script_compiler_system, timer_script_system,
+            init_script_runs_system, post_action_script_runs_system, pre_event_script_runs_system,
+            script_compiler_system, timed_script_runs_system,
         },
-        time::{timed_actions_system, timer_system, TimedActions},
+        time::{tick_timers_system, timed_actions_system, timer_cleanup_system, TimedActions},
     },
-    STAGE_FIRST, STAGE_UPDATE,
 };
 
 #[derive(Bundle)]
@@ -111,7 +111,7 @@ impl Default for ScriptEngine {
     fn default() -> Self {
         let mut engine = rhai::Engine::default();
 
-        engine.register_type_with_name::<Arc<RwLock<World>>>("World");
+        engine.register_type_with_name::<SharedWorld>("World");
 
         engine.register_type_with_name::<StateMachineBuilder>("StateMachineBuilder");
         engine.register_fn("fsm_builder", StateMachineBuilder::default);
@@ -456,46 +456,102 @@ impl From<Action> for QueuedAction {
     }
 }
 
-pub struct ScriptInit {
+pub struct RunInitScript {
     pub entity: Entity,
     pub script: ScriptName,
 }
 
-impl ScriptInit {
+impl RunInitScript {
     pub fn new(entity: Entity, script: ScriptName) -> Self {
-        ScriptInit { entity, script }
+        RunInitScript { entity, script }
     }
 }
 
-pub fn register_scripting(
-    world: &mut World,
-    pre_event_schedule: &mut Schedule,
-    post_event_schedule: &mut Schedule,
-) {
-    // The ScriptInit resource is added by the DB.
-    pre_event_schedule
-        .add_system_to_stage(STAGE_FIRST, Events::<ScriptInit>::update_system.system());
-
-    world.insert_resource(ScriptRuns::default());
-    world.insert_resource(TimedActions::default());
-    world.insert_resource(ScriptEngine::default());
-
-    pre_event_schedule.add_system_to_stage(STAGE_FIRST, timer_system.system());
-    pre_event_schedule
-        .add_system_to_stage(STAGE_UPDATE, timed_actions_system.system().before("queued"));
-    pre_event_schedule
-        .add_system_to_stage(STAGE_UPDATE, timer_script_system.system().before("queued"));
-    pre_event_schedule.add_system_to_stage(STAGE_UPDATE, init_script_system.system());
-    pre_event_schedule.add_system_to_stage(
-        STAGE_UPDATE,
-        queued_action_script_system.system().label("queued"),
-    );
-    pre_event_schedule.add_system_to_stage(STAGE_UPDATE, script_compiler_system.system());
-
-    post_event_schedule.add_system_to_stage(STAGE_UPDATE, post_action_script_system.system());
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
+pub enum ScriptSystem {
+    InitScriptRuns,
+    PostActionScriptRuns,
+    PreEventScriptRuns,
+    ScriptCompiler,
+    TickTimers,
+    TimedActions,
+    TimerCleanup,
+    TimedScriptRuns,
 }
 
-pub fn run_init_scripts(world: Arc<RwLock<World>>) {
+#[derive(Default)]
+pub struct ScriptPlugin {}
+
+impl Plugin for ScriptPlugin {
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<ScriptRuns>()
+            .init_resource::<TimedActions>()
+            .init_resource::<ScriptEngine>()
+            .add_event::<RunInitScript>()
+            .add_system(
+                Step::PreEvent,
+                Phase::First,
+                timer_cleanup_system
+                    .system()
+                    .label(ScriptSystem::TimerCleanup)
+                    .before(ScriptSystem::TickTimers),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::First,
+                tick_timers_system
+                    .system()
+                    .label(ScriptSystem::TickTimers)
+                    .after(CoreSystem::Time),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                timed_actions_system
+                    .system()
+                    .label(ScriptSystem::TimedActions)
+                    .before(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                timed_script_runs_system
+                    .system()
+                    .label(ScriptSystem::TimedScriptRuns)
+                    .before(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                init_script_runs_system
+                    .system()
+                    .label(ScriptSystem::InitScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                pre_event_script_runs_system
+                    .system()
+                    .label(ScriptSystem::PreEventScriptRuns),
+            )
+            .add_system(
+                Step::PreEvent,
+                Phase::Update,
+                script_compiler_system
+                    .system()
+                    .label(ScriptSystem::ScriptCompiler),
+            )
+            .add_system(
+                Step::PostEvent,
+                Phase::Update,
+                post_action_script_runs_system
+                    .system()
+                    .label(ScriptSystem::PostActionScriptRuns),
+            );
+    }
+}
+
+pub fn run_init_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
@@ -511,7 +567,7 @@ pub fn run_init_scripts(world: Arc<RwLock<World>>) {
         .for_each(|ScriptRun { entity, script }| run_init_script(world.clone(), entity, script));
 }
 
-pub fn run_pre_action_scripts(world: Arc<RwLock<World>>) {
+pub fn run_pre_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
@@ -542,7 +598,7 @@ pub fn run_pre_action_scripts(world: Arc<RwLock<World>>) {
     });
 }
 
-pub fn run_post_action_scripts(world: Arc<RwLock<World>>) {
+pub fn run_post_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
@@ -562,7 +618,7 @@ pub fn run_post_action_scripts(world: Arc<RwLock<World>>) {
     });
 }
 
-pub fn run_timed_scripts(world: Arc<RwLock<World>>) {
+pub fn run_timed_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,

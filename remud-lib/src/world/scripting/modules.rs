@@ -1,12 +1,12 @@
-use std::sync::{Arc, RwLock};
-
-use bevy_ecs::prelude::{Entity, World};
+use bevy_ecs::prelude::Entity;
 use rhai::plugin::*;
+
+use crate::world::ecs::SharedWorld;
 
 #[derive(Clone)]
 pub struct Me {
     pub entity: Entity,
-    pub world: Arc<RwLock<World>>,
+    pub world: SharedWorld,
 }
 
 #[export_module]
@@ -45,35 +45,37 @@ pub mod time_api {
 
 #[export_module]
 pub mod world_api {
-    use std::sync::{Arc, RwLock};
 
-    use bevy_ecs::prelude::{Entity, World};
+    use bevy_ecs::prelude::Entity;
     use rhai::Dynamic;
 
-    use crate::world::types::{
-        object::{Container, Keywords, Object},
-        player::Player,
-        room::Room,
-        Contents, Description, Location, Named,
+    use crate::world::{
+        ecs::SharedWorld,
+        types::{
+            object::{Container, Keywords, Object},
+            player::Player,
+            room::Room,
+            Contents, Description, Location, Named,
+        },
     };
 
     #[rhai_fn(pure)]
-    pub fn is_player(world: &mut Arc<RwLock<World>>, entity: Entity) -> bool {
+    pub fn is_player(world: &mut SharedWorld, entity: Entity) -> bool {
         world.read().unwrap().entity(entity).contains::<Player>()
     }
 
     #[rhai_fn(pure)]
-    pub fn is_room(world: &mut Arc<RwLock<World>>, entity: Entity) -> bool {
+    pub fn is_room(world: &mut SharedWorld, entity: Entity) -> bool {
         world.read().unwrap().entity(entity).contains::<Room>()
     }
 
     #[rhai_fn(pure)]
-    pub fn is_object(world: &mut Arc<RwLock<World>>, entity: Entity) -> bool {
+    pub fn is_object(world: &mut SharedWorld, entity: Entity) -> bool {
         world.read().unwrap().entity(entity).contains::<Object>()
     }
 
     #[rhai_fn(pure)]
-    pub fn get_name(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_name(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(named) = world.read().unwrap().get::<Named>(entity) {
             Dynamic::from(named.to_string())
         } else {
@@ -82,7 +84,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_description(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_description(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(description) = world.read().unwrap().get::<Description>(entity) {
             Dynamic::from(description.to_string())
         } else {
@@ -91,7 +93,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_keywords(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_keywords(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(keywords) = world.read().unwrap().get::<Keywords>(entity) {
             Dynamic::from(keywords.get_list())
         } else {
@@ -100,7 +102,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_location(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(location) = world.read().unwrap().get::<Location>(entity) {
             Dynamic::from(location.room())
         } else {
@@ -109,7 +111,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_container(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_container(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(container) = world.read().unwrap().get::<Container>(entity) {
             Dynamic::from(container.entity())
         } else {
@@ -118,7 +120,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_contents(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_contents(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(contents) = world.read().unwrap().get::<Contents>(entity) {
             Dynamic::from(contents.get_objects())
         } else {
@@ -127,7 +129,7 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_players(world: &mut Arc<RwLock<World>>, entity: Entity) -> Dynamic {
+    pub fn get_players(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(room) = world.read().unwrap().get::<Room>(entity) {
             Dynamic::from(room.get_players())
         } else {

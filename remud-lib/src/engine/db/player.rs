@@ -1,7 +1,4 @@
-use std::{
-    convert::TryFrom,
-    sync::{Arc, RwLock},
-};
+use std::convert::TryFrom;
 
 use anyhow::bail;
 use bevy_app::Events;
@@ -12,7 +9,8 @@ use sqlx::SqlitePool;
 use crate::{
     engine::db::HookRow,
     world::{
-        scripting::{ScriptHook, ScriptHooks, ScriptInit, TriggerKind},
+        ecs::SharedWorld,
+        scripting::{RunInitScript, ScriptHook, ScriptHooks, TriggerKind},
         types::{
             object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
             player::{Messages, Player, PlayerBundle, PlayerFlags, PlayerId, Players},
@@ -29,7 +27,7 @@ use crate::{
 
 pub async fn load_player(
     pool: &SqlitePool,
-    world: Arc<RwLock<World>>,
+    world: SharedWorld,
     name: &str,
 ) -> anyhow::Result<Entity> {
     let (player, id) = {
@@ -91,7 +89,7 @@ pub async fn load_player(
 
 async fn load_player_inventory(
     pool: &SqlitePool,
-    world: Arc<RwLock<World>>,
+    world: SharedWorld,
     name: &str,
     player: Entity,
 ) -> anyhow::Result<()> {
@@ -164,9 +162,9 @@ async fn load_player_inventory(
 
             if hook.trigger.kind() == TriggerKind::Init {
                 world
-                    .get_resource_mut::<Events<ScriptInit>>()
+                    .get_resource_mut::<Events<RunInitScript>>()
                     .unwrap()
-                    .send(ScriptInit::new(object, hook.script.clone()));
+                    .send(RunInitScript::new(object, hook.script.clone()));
             }
 
             if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
@@ -182,7 +180,7 @@ async fn load_player_inventory(
 
 async fn load_player_scripts(
     pool: &SqlitePool,
-    world: Arc<RwLock<World>>,
+    world: SharedWorld,
     id: PlayerId,
     player: Entity,
 ) -> anyhow::Result<()> {
