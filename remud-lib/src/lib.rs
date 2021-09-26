@@ -15,6 +15,8 @@ use std::{collections::HashMap, fmt, io};
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
 use futures::{future::join_all, SinkExt, StreamExt};
+use jwt_simple::prelude::ES256KeyPair;
+use once_cell::sync::Lazy;
 use thiserror::Error;
 use tide::listener::Listener;
 use tokio::{
@@ -25,10 +27,17 @@ use tokio_util::codec::Framed;
 
 use crate::{
     color::colorize,
-    engine::{ClientMessage, ControlMessage, Engine, EngineError, EngineMessage},
+    engine::{db::Db, ClientMessage, ControlMessage, Engine, EngineError, EngineMessage},
     telnet::{Codec, Frame, Telnet},
     web::build_web_server,
 };
+
+static TOKEN_KEY: Lazy<ES256KeyPair> = Lazy::new(|| {
+    tracing::info!("Generating Ed25519 key.");
+    let key = ES256KeyPair::generate();
+    tracing::info!("Key generated.");
+    key
+});
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct ClientId(usize);
@@ -56,9 +65,13 @@ pub async fn run_remud(
     let (engine_tx, engine_rx) = mpsc::channel(256);
     let (control_tx, mut control_rx) = mpsc::channel(16);
 
-    let (web_server, web_message_rx) = build_web_server();
+    Lazy::force(&TOKEN_KEY);
 
-    let mut engine = Engine::new(db_path, engine_rx, control_tx, web_message_rx).await?;
+    let db = Db::new(db_path).await.map_err(EngineError::from)?;
+
+    let (web_server, web_message_rx) = build_web_server(db.clone());
+
+    let mut engine = Engine::new(db, engine_rx, control_tx, web_message_rx).await?;
     tokio::spawn(async move {
         engine.run().await;
     });

@@ -1,5 +1,5 @@
 ---
-title: "Script Web Api"
+title: "Web Api"
 date: 2021-09-17T12:54:12-07:00
 weight: 999
 summary: "The contract for the web API that manages scripts."
@@ -16,11 +16,67 @@ Returns appropriate HTTP status codes on error:
 - Duplicate name: conflict (409)
 - Script not found: not found (404)
 
+# Authentication
+
+Token-based authentication API for authorizing other API's use.
+
+## POST /auth/login
+
+Logs a player in and retrieves an access and refresh token.
+
+```
+in: {
+  username: String,
+  password: String
+}
+
+out: {
+  access_token: String,
+  refresh_token: String
+}
+```
+
+## POST /auth/refresh
+
+Requests a new token pair if the access token has expired.
+
+```
+in: {
+  refresh_token: String
+}
+
+out: {
+  access_token: String,
+  refresh_token: String
+}
+```
+
+## POST /auth/logout
+
+Logs the player out, removing all stored tokens.
+
+Uses bearer authentication.
+
+```
+headers:
+Authorization: Bearer <access token>
+
+in: {}
+out: {}
+```
+
+# Scripting
+
 ## POST /scripts/create
 
 Creates and compiles a new script, returning any compilation errors.
 
+Uses bearer authentication.
+
 ```
+headers:
+Authorization: Bearer <access token>
+
 in: {
   name: String,
   trigger: String,
@@ -40,7 +96,12 @@ out: {
 
 Retrieves a script and its compilation status.
 
+Uses bearer authentication.
+
 ```
+headers:
+Authorization: Bearer <access token>
+
 in: {
   name: String
 }
@@ -61,7 +122,12 @@ out: {
 
 Retrieves a list of all scripts including their length and compilation status.
 
+Uses bearer authentication.
+
 ```
+headers:
+Authorization: Bearer <access token>
+
 in: {}
 out: {
   scripts: [
@@ -83,7 +149,12 @@ out: {
 
 Updates a script returning any compilation errors.
 
+Uses bearer authentication.
+
 ```
+headers:
+Authorization: Bearer <access token>
+
 in: {
   name: String,
   trigger: String,
@@ -103,7 +174,12 @@ out: {
 
 Deletes a script.
 
+Uses bearer authentication.
+
 ```
+headers:
+Authorization: Bearer <access token>
+
 in: {
   name: String
 }

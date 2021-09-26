@@ -24,4 +24,6 @@
 
 - add player kick, ban, unban
 
-- add simple token based authentication
+- add simple bearer authentication
+
+- support ssh (thrussh)

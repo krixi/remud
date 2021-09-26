@@ -3,6 +3,8 @@ mod world;
 
 use std::{borrow::Cow, convert::TryFrom, str::FromStr};
 
+use argon2::{password_hash, Argon2, PasswordHash, PasswordVerifier};
+use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
 use itertools::Itertools;
@@ -21,7 +23,7 @@ use crate::{
                 Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId,
                 Prototypes,
             },
-            player::Player,
+            player::{Player, PlayerFlags},
             room::RoomId,
             Contents, Description, Id, Named,
         },
@@ -43,8 +45,39 @@ pub enum DbError {
     DeserializeError(&'static str),
     #[error("missing data")]
     MissingData(&'static str),
+    #[error("password verification error: {0}")]
+    PasswordVerification(String),
 }
 
+#[async_trait]
+pub trait AuthDb {
+    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, DbError>;
+    async fn is_immortal(&self, player: &str) -> Result<bool, DbError>;
+    async fn register_tokens(
+        &self,
+        player: &str,
+        access_issued_secs: i64,
+        refresh_issued_secs: i64,
+    ) -> Result<(), DbError>;
+    async fn logout(&self, player: &str) -> Result<(), DbError>;
+    async fn access_issued_secs(&self, player: &str) -> Result<i64, DbError>;
+    async fn refresh_issued_secs(&self, player: &str) -> Result<i64, DbError>;
+}
+
+#[async_trait]
+pub trait GameDb {
+    async fn load_world(&self, world: &mut World) -> DbResult<()>;
+    async fn has_player(&self, user: &str) -> anyhow::Result<bool>;
+    async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64>;
+    async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity>;
+    async fn reload_prototype(
+        &self,
+        world: SharedWorld,
+        prototype_id: PrototypeId,
+    ) -> anyhow::Result<()>;
+}
+
+#[derive(Clone)]
 pub struct Db {
     pool: SqlitePool,
 }
@@ -86,16 +119,116 @@ impl Db {
         db
     }
 
-    pub fn get_pool(&self) -> &SqlitePool {
-        &self.pool
+    pub fn get_pool(&self) -> SqlitePool {
+        self.pool.clone()
     }
 
     pub async fn vacuum(&self) -> Result<(), sqlx::Error> {
         sqlx::query("VACUUM").execute(&self.pool).await?;
         Ok(())
     }
+}
 
-    pub async fn has_player(&self, user: &str) -> anyhow::Result<bool> {
+#[async_trait]
+impl AuthDb for Db {
+    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, DbError> {
+        let results = sqlx::query("SELECT password FROM players WHERE username = ?")
+            .bind(player)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let hash = results.get("password");
+
+        match verify_password(hash, password) {
+            Ok(_) => Ok(true),
+            Err(e) => match e {
+                VerifyError::BadPassword => Ok(false),
+                VerifyError::Unknown(s) => Err(DbError::PasswordVerification(s)),
+            },
+        }
+    }
+
+    async fn is_immortal(&self, player: &str) -> Result<bool, DbError> {
+        let results = sqlx::query("SELECT flags FROM players WHERE username = ?")
+            .bind(player)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let flags: i64 = results.get("flags");
+        let flags = PlayerFlags::from(flags);
+
+        Ok(flags.contains(types::player::Flags::IMMORTAL))
+    }
+
+    async fn register_tokens(
+        &self,
+        player: &str,
+        access_issued_secs: i64,
+        refresh_issued_secs: i64,
+    ) -> Result<(), DbError> {
+        sqlx::query(
+            r#"INSERT INTO tokens
+        SELECT id AS player_id, ? AS access, ? AS refresh
+        FROM players WHERE username = ?
+        ON CONFLICT(player_id)
+        DO UPDATE SET access = excluded.access, refresh = excluded.refresh"#,
+        )
+        .bind(access_issued_secs)
+        .bind(refresh_issued_secs)
+        .bind(player)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn logout(&self, player: &str) -> Result<(), DbError> {
+        sqlx::query(
+            r#"DELETE FROM tokens
+            WHERE player_id IN (
+                SELECT id FROM players WHERE username = ?
+            )"#,
+        )
+        .bind(player)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn access_issued_secs(&self, player: &str) -> Result<i64, DbError> {
+        let results = sqlx::query(
+            r#"SELECT access FROM tokens
+        INNER JOIN players ON players.id = tokens.player_id
+        WHERE players.name = ?"#,
+        )
+        .bind(player)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(results.get("access"))
+    }
+
+    async fn refresh_issued_secs(&self, player: &str) -> Result<i64, DbError> {
+        let results = sqlx::query(
+            r#"SELECT refresh FROM tokens
+        INNER JOIN players ON players.id = tokens.player_id
+        WHERE players.name = ?"#,
+        )
+        .bind(player)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(results.get("refresh"))
+    }
+}
+
+#[async_trait]
+impl GameDb for Db {
+    async fn load_world(&self, world: &mut World) -> DbResult<()> {
+        world::load_world(&self.pool, world).await
+    }
+
+    async fn has_player(&self, user: &str) -> anyhow::Result<bool> {
         let result = sqlx::query("SELECT * FROM players WHERE username = ?")
             .bind(user)
             .fetch_optional(&self.pool)
@@ -104,7 +237,7 @@ impl Db {
         Ok(result.is_some())
     }
 
-    pub async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {
+    async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64> {
         let results = sqlx::query(
             "INSERT INTO players (username, password, room, description, flags) VALUES (?, ?, ?, \
              ?, ?) RETURNING id",
@@ -131,24 +264,11 @@ impl Db {
         Ok(id)
     }
 
-    pub async fn get_user_hash(&self, user: &str) -> anyhow::Result<String> {
-        let results = sqlx::query("SELECT password FROM players WHERE username = ?")
-            .bind(user)
-            .fetch_one(&self.pool)
-            .await?;
-
-        Ok(results.get("password"))
-    }
-
-    pub async fn load_world(&self, world: &mut World) -> DbResult<()> {
-        world::load_world(&self.pool, world).await
-    }
-
-    pub async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity> {
+    async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity> {
         player::load_player(&self.pool, world, name).await
     }
 
-    pub async fn reload_prototype(
+    async fn reload_prototype(
         &self,
         world: SharedWorld,
         prototype_id: PrototypeId,
@@ -343,4 +463,22 @@ impl ObjectRow {
             .map(ToString::to_string)
             .collect_vec()
     }
+}
+
+pub enum VerifyError {
+    BadPassword,
+    Unknown(String),
+}
+
+pub fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
+    let password_hash = PasswordHash::new(hash)
+        .map_err(|e| VerifyError::Unknown(format!("Hash parsing error: {}", e)))?;
+    let hasher = Argon2::default();
+    hasher
+        .verify_password(password.as_bytes(), &password_hash)
+        .map_err(|e| match e {
+            password_hash::Error::Password => VerifyError::BadPassword,
+            e => VerifyError::Unknown(format!("Verify password error: {}", e)),
+        })?;
+    Ok(())
 }

@@ -1,11 +1,8 @@
 mod client;
-mod db;
+pub mod db;
 pub mod persist;
 
-use argon2::{
-    password_hash::{self, SaltString},
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-};
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use futures::future::join_all;
 use itertools::Itertools;
 use rand::rngs::OsRng;
@@ -19,13 +16,13 @@ use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
         client::{Client, Clients, State},
-        db::{Db, DbError},
+        db::{verify_password, AuthDb, Db, DbError, GameDb, VerifyError},
         persist::PersistPlugin,
     },
     macros::regex,
     web::{
-        JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse, WebMessage, WebRequest,
-        WebResponse,
+        scripts::{JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse},
+        ScriptsRequest, ScriptsResponse, WebMessage,
     },
     world::{
         action::{commands::Commands, observe::Look, system::Login, Action, ActionsPlugin},
@@ -79,7 +76,7 @@ pub enum EngineError {
 
 impl Engine {
     pub(crate) async fn new(
-        db: Option<&str>,
+        db: Db,
         engine_rx: mpsc::Receiver<ClientMessage>,
         control_tx: mpsc::Sender<ControlMessage>,
         web_message_rx: mpsc::Receiver<WebMessage>,
@@ -93,7 +90,6 @@ impl Engine {
         ecs.register(FsmPlugin::default()).await;
         ecs.register(PersistPlugin::default()).await;
 
-        let db = Db::new(db).await?;
         {
             let world = ecs.world();
             db.load_world(&mut *world.write().await).await?;
@@ -138,7 +134,7 @@ impl Engine {
                     // Dispatch all persistance requests
                     let mut handles = Vec::new();
                     for update in self.game_world.updates().await {
-                        let pool = self.db.get_pool().clone();
+                        let pool = self.db.get_pool();
                         handles.push(tokio::spawn(async move {
                             match update.enact(&pool).await {
                                 Ok(_) => (),
@@ -224,7 +220,7 @@ impl Engine {
 
     async fn process_web(&mut self, message: WebMessage) {
         match message.request {
-            WebRequest::CreateScript(JsonScript {
+            ScriptsRequest::CreateScript(JsonScript {
                 name,
                 trigger,
                 code,
@@ -232,33 +228,35 @@ impl Engine {
                 Ok(e) => {
                     message
                         .response
-                        .send(WebResponse::ScriptCompiled(e.map(Into::into)))
+                        .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
                         .ok();
                 }
                 Err(e) => {
                     tracing::error!("Failed CreateScript request: {}", e);
-                    message.response.send(WebResponse::Error(e)).ok();
+                    message.response.send(ScriptsResponse::Error(e)).ok();
                 }
             },
-            WebRequest::ReadScript(JsonScriptName { name }) => {
+            ScriptsRequest::ReadScript(JsonScriptName { name }) => {
                 match self.game_world.read_script(name).await {
                     Ok((script, err)) => {
                         message
                             .response
-                            .send(WebResponse::Script(JsonScriptResponse::new(script, err)))
+                            .send(ScriptsResponse::Script(JsonScriptResponse::new(
+                                script, err,
+                            )))
                             .ok();
                     }
                     Err(e) => {
                         tracing::error!("Failed ReadScript request: {}", e);
-                        message.response.send(WebResponse::Error(e)).ok();
+                        message.response.send(ScriptsResponse::Error(e)).ok();
                     }
                 }
             }
-            WebRequest::ReadAllScripts => {
+            ScriptsRequest::ReadAllScripts => {
                 let scripts = self.game_world.read_all_scripts().await;
                 message
                     .response
-                    .send(WebResponse::ScriptList(
+                    .send(ScriptsResponse::ScriptList(
                         scripts
                             .into_iter()
                             .map(|(script, error)| JsonScriptInfo::new(script, error))
@@ -266,7 +264,7 @@ impl Engine {
                     ))
                     .ok();
             }
-            WebRequest::UpdateScript(JsonScript {
+            ScriptsRequest::UpdateScript(JsonScript {
                 name,
                 trigger,
                 code,
@@ -274,22 +272,22 @@ impl Engine {
                 Ok(e) => {
                     message
                         .response
-                        .send(WebResponse::ScriptCompiled(e.map(Into::into)))
+                        .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
                         .ok();
                 }
                 Err(e) => {
                     tracing::error!("Failed UpdateScript request: {}", e);
-                    message.response.send(WebResponse::Error(e)).ok();
+                    message.response.send(ScriptsResponse::Error(e)).ok();
                 }
             },
-            WebRequest::DeleteScript(JsonScriptName { name }) => {
+            ScriptsRequest::DeleteScript(JsonScriptName { name }) => {
                 match self.game_world.delete_script(name).await {
                     Ok(_) => {
-                        message.response.send(WebResponse::Done).ok();
+                        message.response.send(ScriptsResponse::Done).ok();
                     }
                     Err(e) => {
                         tracing::error!("Failed DeleteScript request: {}", e);
-                        message.response.send(WebResponse::Error(e)).ok();
+                        message.response.send(ScriptsResponse::Error(e)).ok();
                     }
                 }
             }
@@ -455,25 +453,19 @@ impl Engine {
                 State::LoginPassword { name } => {
                     let name = name.clone();
 
-                    let hash = match self.db.get_user_hash(name.as_str()).await {
-                        Ok(hash) => hash,
+                    match self.db.verify_player(name.as_str(), input.as_str()).await {
+                        Ok(verified) => {
+                            if !verified {
+                                client.verification_failed_login().await;
+                                return;
+                            }
+                        }
                         Err(e) => {
                             tracing::error!("Get user hash error: {}", e);
                             client.verification_failed_login().await;
                             return;
                         }
                     };
-
-                    match verify_password(hash.as_str(), input.as_str()) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            if let VerifyError::Unknown(e) = e {
-                                tracing::error!("Login verify password failure: {}", e);
-                            }
-                            client.verification_failed_login().await;
-                            return;
-                        }
-                    }
 
                     let player = match self
                         .db
@@ -532,24 +524,6 @@ impl Engine {
             self.clients.insert(client_id, player);
         }
     }
-}
-
-enum VerifyError {
-    BadPassword,
-    Unknown(String),
-}
-
-fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
-    let password_hash = PasswordHash::new(hash)
-        .map_err(|e| VerifyError::Unknown(format!("Hash parsing error: {}", e)))?;
-    let hasher = Argon2::default();
-    hasher
-        .verify_password(password.as_bytes(), &password_hash)
-        .map_err(|e| match e {
-            password_hash::Error::Password => VerifyError::BadPassword,
-            e => VerifyError::Unknown(format!("Verify password error: {}", e)),
-        })?;
-    Ok(())
 }
 
 fn name_valid(name: &str) -> bool {
