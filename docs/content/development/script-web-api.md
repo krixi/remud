@@ -9,7 +9,16 @@ tags: ["api", "web"]
 
 Runs on port 2080.
 
+Returns appropriate HTTP status codes on error:
+
+- Bad trigger name: bad request (400)
+- Bad script name: bad request (400)
+- Duplicate name: conflict (409)
+- Script not found: not found (404)
+
 ## POST /scripts/create
+
+Creates and compiles a new script, returning any compilation errors.
 
 ```
 in: {
@@ -18,10 +27,18 @@ in: {
   code: String
 }
 
-out: {}
+out: {
+  error?: {
+    line?: Number,
+    position?: Number,
+    message: String
+  }
+}
 ```
 
 ## POST /scripts/read
+
+Retrieves a script and its compilation status.
 
 ```
 in: {
@@ -32,10 +49,17 @@ out: {
   name: String,
   trigger: String,
   code: String
+  error?: {
+    line?: Number,
+    position?: Number,
+    message: String
+  }
 }
 ```
 
 ## POST /scripts/read/all
+
+Retrieves a list of all scripts including their length and compilation status.
 
 ```
 in: {}
@@ -44,13 +68,20 @@ out: {
     {
       name: String,
       trigger: String,
-      code: String
+      lines: Number,
+      error?: {
+        line?: Number,
+        position?: Number,
+        message: String
+      }
     }
   ]
 }
 ```
 
 ## POST /scripts/update
+
+Updates a script returning any compilation errors.
 
 ```
 in: {
@@ -59,10 +90,18 @@ in: {
   code: String
 }
 
-out: {}
+out: {
+  error?: {
+    line?: Number,
+    position?: Number,
+    message: String
+  }
+}
 ```
 
 ## POST /scripts/delete
+
+Deletes a script.
 
 ```
 in: {

@@ -217,5 +217,5 @@ fn test_room_region() {
     //TODO: remove regions
 }
 
-// #[tokio::test(flavor = "multi_thread")]
+#[test]
 fn test_room_remove() {}

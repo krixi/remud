@@ -705,15 +705,18 @@ pub fn room_update_regions_system(
                 .map(|location| location.room())
                 .unwrap();
 
+            let mut changed_regions = Vec::new();
             let (room, mut room_regions) = room_query.get_mut(room_entity).unwrap();
             if *remove {
+                changed_regions = regions.clone();
                 for region in regions {
-                    room_regions.remove(region.as_str())
+                    room_regions.remove(region.as_str());
                 }
             } else {
                 for region in regions.iter() {
                     if !room_regions.contains(region) {
                         room_regions.add(region.to_string());
+                        changed_regions.push(region.to_string());
                     }
                 }
             }
@@ -721,13 +724,10 @@ pub fn room_update_regions_system(
             if *remove {
                 updates.persist(persist::room::RemoveRegions::new(
                     room.id(),
-                    room_regions.get_list(),
+                    changed_regions,
                 ));
             } else {
-                updates.persist(persist::room::AddRegions::new(
-                    room.id(),
-                    room_regions.get_list(),
-                ));
+                updates.persist(persist::room::AddRegions::new(room.id(), changed_regions));
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {

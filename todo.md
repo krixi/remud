@@ -20,8 +20,8 @@
 
 - consider cleaning up timers at the end of a tick
 
-- change states to use timers
-
-- collapse the db changes again in preparation for hosting
-
 - finish building the dog
+
+- add player kick, ban, unban
+
+- add simple token based authentication

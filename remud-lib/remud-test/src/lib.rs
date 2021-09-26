@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use itertools::Itertools;
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError};
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
@@ -135,9 +134,7 @@ impl TelnetClient {
             .read_timeout(Duration::from_secs(1))
             .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
 
-        //let mut message = "".to_string();
         if let TelnetEvent::Data(data) = event {
-            // return this data as a string
             String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string")
         } else {
             panic!(
@@ -147,43 +144,43 @@ impl TelnetClient {
         }
     }
 
-    pub fn recv_contains(&mut self, text: &str) {
+    pub fn recv_contains<S: AsRef<str>>(&mut self, text: S) {
         let message = self.recv();
         assert!(
-            message.contains(text),
+            message.contains(text.as_ref()),
             "did not find '{}' in message {:?}",
-            text,
+            text.as_ref(),
             message,
         )
     }
 
-    pub fn recv_contains_all(&mut self, msgs: Vec<&str>) {
+    pub fn recv_contains_all<S: AsRef<str>>(&mut self, msgs: Vec<S>) {
         let message = self.recv();
         for text in msgs.iter() {
             assert!(
-                message.contains(text),
+                message.contains(text.as_ref()),
                 "did not find '{}' in message {:?}",
-                text,
+                text.as_ref(),
                 message,
             )
         }
     }
-    pub fn recv_contains_none(&mut self, msgs: Vec<&str>) {
+    pub fn recv_contains_none<S: AsRef<str>>(&mut self, msgs: Vec<S>) {
         let message = self.recv();
         for text in msgs.iter() {
             assert!(
-                !message.contains(text),
+                !message.contains(text.as_ref()),
                 "found unwanted '{}' in message {:?}",
-                text,
+                text.as_ref(),
                 message,
             )
         }
     }
 
-    pub fn send(&mut self, line: &str) {
+    pub fn send<S: AsRef<str>>(&mut self, line: S) {
         self.connection
-            .write(format!("{}\r\n", line).as_bytes())
-            .unwrap_or_else(|_| panic!("failed to send '{}'", line));
+            .write(format!("{}\r\n", line.as_ref()).as_bytes())
+            .unwrap_or_else(|_| panic!("failed to send '{}'", line.as_ref()));
     }
 
     pub fn recv_prompt(&mut self) {
@@ -191,7 +188,7 @@ impl TelnetClient {
     }
 
     pub fn create_user(&mut self, name: &str, password: &str) {
-        self.info("-------- create user -------");
+        self.info("create user");
         self.recv_contains("Name?");
         self.send(name);
         self.recv_contains("Password?");
@@ -203,13 +200,13 @@ impl TelnetClient {
         self.recv_prompt();
     }
 
-    pub fn info(&mut self, text: &str) {
-        if !text.is_empty() {
-            tracing::info!("---------- {} ----------", text);
+    pub fn info<S: AsRef<str>>(&mut self, text: S) {
+        if !text.as_ref().is_empty() {
+            tracing::info!("---------- {} ----------", text.as_ref());
         }
     }
 
-    pub fn test<S1: ToString, S2: ToString, S3: ToString>(
+    pub fn test<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
         &mut self,
         scenario: S1,
         command: S2,
@@ -218,7 +215,7 @@ impl TelnetClient {
         self.validate(scenario, command, Validate::Includes(response_contains));
     }
 
-    pub fn test_exclude<S1: ToString, S2: ToString, S3: ToString>(
+    pub fn test_exclude<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
         &mut self,
         scenario: S1,
         command: S2,
@@ -227,31 +224,30 @@ impl TelnetClient {
         self.validate(scenario, command, Validate::Excludes(response_excludes));
     }
 
-    fn validate<S1: ToString, S2: ToString, S3: ToString>(
+    fn validate<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
         &mut self,
         scenario: S1,
         command: S2,
         validate: Validate<S3>,
     ) {
-        self.info(scenario.to_string().as_str());
-        self.send(command.to_string().as_str());
+        self.info(scenario);
+        self.send(command);
 
         let (is_include, items) = match validate {
             Validate::Includes(items) => (true, items),
             Validate::Excludes(items) => (false, items),
         };
 
-        let owned = items.into_iter().map(|s| s.to_string()).collect_vec();
         if is_include {
-            self.recv_contains_all(owned.iter().map(|s| s.as_str()).collect_vec());
+            self.recv_contains_all(items);
         } else {
-            self.recv_contains_none(owned.iter().map(|s| s.as_str()).collect_vec());
+            self.recv_contains_none(items);
         }
         self.recv_prompt();
     }
 }
 
-enum Validate<S: ToString> {
+enum Validate<S: AsRef<str>> {
     Includes(Vec<S>),
     Excludes(Vec<S>),
 }
@@ -287,5 +283,5 @@ pub fn init_subscriber(env_filter: String, sink: impl MakeWriter + Send + Sync +
         .with_env_filter(env_filter)
         .with_writer(sink)
         .with_level(true)
-        .init()
+        .init();
 }
