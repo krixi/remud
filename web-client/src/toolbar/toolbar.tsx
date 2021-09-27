@@ -1,14 +1,19 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
+import { LoginButton } from "../auth/login-button";
+import { useAuth } from "../hooks/use-auth";
 
 export const Toolbar: React.FC = () => {
+  const { isLoggedIn } = useAuth();
+
   return (
     <div className="p-2 bg-dark-gray rounded w-full text-center flex flex-row justify-between">
       <nav className="flex flex-row">
         <NavLink path="/" text="Home" />
-        <NavLink path="/scripts" text="Scripts" />
+        {isLoggedIn && <NavLink path="/scripts" text="Scripts" />}
       </nav>
-      <span className="italic">CitySix</span>
+      <div className="italic">CitySix</div>
+      <LoginButton />
     </div>
   );
 };
