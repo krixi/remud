@@ -33,7 +33,7 @@ export const LoginForm: React.FC = () => {
   return (
     <form
       className="w-full"
-      onSubmit={(e) => onSubmit(e, username.trim(), password.trim())}
+      onSubmit={(e) => onSubmit(e, username.trim(), password)}
     >
       <div className="italic font-mono">ucs://uplink.six.city admin node</div>
       <div className="italic font-mono mb-10">
