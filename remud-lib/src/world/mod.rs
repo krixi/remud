@@ -16,7 +16,7 @@ use rhai::ParseError;
 use crate::{
     ecs::{Ecs, SharedWorld, Step},
     engine::persist::{self, DynPersist, Updates},
-    web,
+    web::scripts::ScriptError,
     world::{
         action::Action,
         scripting::{
@@ -213,10 +213,10 @@ impl GameWorld {
         name: String,
         trigger: String,
         code: String,
-    ) -> Result<Option<ParseError>, web::Error> {
-        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+    ) -> Result<Option<ParseError>, ScriptError> {
+        let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
         let trigger =
-            TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+            TriggerEvent::from_str(trigger.as_str()).map_err(|_| ScriptError::BadTrigger)?;
 
         let script = Script::new(name, trigger, code);
 
@@ -226,8 +226,8 @@ impl GameWorld {
     pub async fn read_script(
         &mut self,
         name: String,
-    ) -> Result<(Script, Option<ParseError>), web::Error> {
-        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+    ) -> Result<(Script, Option<ParseError>), ScriptError> {
+        let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
 
         scripting::actions::read_script(&*self.ecs.world().read().await, name)
     }
@@ -241,18 +241,18 @@ impl GameWorld {
         name: String,
         trigger: String,
         code: String,
-    ) -> Result<Option<ParseError>, web::Error> {
-        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+    ) -> Result<Option<ParseError>, ScriptError> {
+        let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
         let trigger =
-            TriggerEvent::from_str(trigger.as_str()).map_err(|_| web::Error::BadTrigger)?;
+            TriggerEvent::from_str(trigger.as_str()).map_err(|_| ScriptError::BadTrigger)?;
 
         let script = Script::new(name, trigger, code);
 
         scripting::actions::update_script(&mut *self.ecs.world().write().await, script).await
     }
 
-    pub async fn delete_script(&mut self, name: String) -> Result<(), web::Error> {
-        let name = ScriptName::try_from(name).map_err(|_| web::Error::BadScriptName)?;
+    pub async fn delete_script(&mut self, name: String) -> Result<(), ScriptError> {
+        let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
 
         scripting::actions::delete_script(&mut *self.ecs.world().write().await, name)
     }

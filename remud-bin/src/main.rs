@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("  telnet: {}", telnet_addr);
     tracing::info!("  web: {}", web_addr);
 
-    run_remud(telnet_addr.as_str(), web_addr.as_str(), db, None).await?;
+    run_remud(telnet, web, db, None).await?;
 
     Ok(())
 }

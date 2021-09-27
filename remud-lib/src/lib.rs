@@ -18,7 +18,6 @@ use futures::{future::join_all, SinkExt, StreamExt};
 use jwt_simple::prelude::ES256KeyPair;
 use once_cell::sync::Lazy;
 use thiserror::Error;
-use tide::listener::Listener;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, oneshot},
@@ -57,8 +56,8 @@ pub enum RemudError {
 }
 
 pub async fn run_remud(
-    telnet_address: &str,
-    web_address: &str,
+    telnet_port: u16,
+    web_port: u16,
     db_path: Option<&str>,
     ready_tx: Option<oneshot::Sender<()>>,
 ) -> Result<(), RemudError> {
@@ -77,11 +76,11 @@ pub async fn run_remud(
     });
     tracing::debug!("Engine started.");
 
-    let mut server = web_server.bind(web_address).await?;
-    tokio::spawn(async move { server.accept().await });
-    tracing::debug!("Web listening on {}", web_address);
+    tokio::spawn(async move { web_server.run(([0, 0, 0, 0], web_port)).await });
+    tracing::debug!("Web listening on 0.0.0.0:{}", web_port);
 
-    let telnet_listener = TcpListener::bind(telnet_address).await?;
+    let telnet_address = format!("0.0.0.0:{}", telnet_port);
+    let telnet_listener = TcpListener::bind(telnet_address.as_str()).await?;
     tracing::debug!("Telnet listening on {}", telnet_address);
 
     if let Some(tx) = ready_tx {

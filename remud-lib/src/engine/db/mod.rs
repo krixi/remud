@@ -37,13 +37,13 @@ type DbResult<T> = Result<T, DbError>;
 
 #[derive(Debug, Error)]
 pub enum DbError {
-    #[error("failed to execute migrations")]
+    #[error("failed to execute migrations: {0}")]
     MigrationError(#[from] MigrateError),
-    #[error("SQL error")]
+    #[error("SQL error: {0}")]
     SqlError(#[from] sqlx::Error),
-    #[error("failed to deserialize value")]
+    #[error("failed to deserialize value: {0}")]
     DeserializeError(&'static str),
-    #[error("missing data")]
+    #[error("missing data: {0}")]
     MissingData(&'static str),
     #[error("password verification error: {0}")]
     PasswordVerification(String),
@@ -199,7 +199,7 @@ impl AuthDb for Db {
         let results = sqlx::query(
             r#"SELECT access FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
-        WHERE players.name = ?"#,
+        WHERE players.username = ?"#,
         )
         .bind(player)
         .fetch_one(&self.pool)
@@ -212,7 +212,7 @@ impl AuthDb for Db {
         let results = sqlx::query(
             r#"SELECT refresh FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
-        WHERE players.name = ?"#,
+        WHERE players.username = ?"#,
         )
         .bind(player)
         .fetch_one(&self.pool)

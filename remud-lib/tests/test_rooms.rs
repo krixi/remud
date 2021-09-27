@@ -41,7 +41,7 @@ fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32
 // Tests the room immortal commands
 #[test]
 fn test_room_new() {
-    let server = Server::new();
+    let server = Server::default();
     let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
@@ -65,7 +65,7 @@ fn test_room_new() {
 
 #[test]
 fn test_room_name() {
-    let server = Server::new();
+    let server = Server::default();
     let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
@@ -93,7 +93,7 @@ fn test_room_name() {
 
 #[test]
 fn test_room_desc() {
-    let server = Server::new();
+    let server = Server::default();
     let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
@@ -178,7 +178,7 @@ fn assert_link_and_unlink(t: &mut TelnetClient, there: &str, back: &str) {
 
 #[test]
 fn test_room_link_and_unlink() {
-    let server = Server::new();
+    let server = Server::default();
     let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");
@@ -190,7 +190,7 @@ fn test_room_link_and_unlink() {
 
 #[test]
 fn test_room_region() {
-    let server = Server::new();
+    let server = Server::default();
     let mut t = TelnetClient::new(server.telnet());
 
     t.create_user("krixi", "password");

@@ -1,37 +1,31 @@
 use serde::{Deserialize, Serialize};
-use tide::{
-    http::{headers::HeaderValue, mime},
-    security::{CorsMiddleware, Origin},
-    Body, Request, Response, Server, StatusCode,
-};
-use tide_http_auth::{Authentication, BearerAuthScheme};
-use tokio::sync::oneshot;
+use thiserror::Error;
+use tokio::sync::{mpsc, oneshot};
+use warp::Filter;
 
 use crate::{
     engine::db::AuthDb,
-    web::{Context, Player, ScriptsRequest, ScriptsResponse, WebMessage},
+    web::{
+        auth::verify_access, InternalError, JsonEmpty, Player, ScriptsRequest, ScriptsResponse,
+        WebMessage,
+    },
     world::scripting,
 };
 
-pub fn scripts_endpoint<DB>(context: Context<DB>) -> Server<Context<DB>>
+pub fn script_filters<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
 where
-    DB: AuthDb + Clone + Send + Sync + 'static,
+    DB: AuthDb + Send + Sync + Clone + 'static,
 {
-    let mut scripts = tide::with_state(context);
-
-    let cors = CorsMiddleware::new()
-        .allow_methods("POST".parse::<HeaderValue>().unwrap())
-        .allow_origin(Origin::from("*"));
-
-    scripts.with(cors);
-    scripts.with(Authentication::new(BearerAuthScheme::default()));
-    scripts.at("/create").post(create_script);
-    scripts.at("/read").post(read_script);
-    scripts.at("/read/all").post(read_all_scripts);
-    scripts.at("/update").post(update_script);
-    scripts.at("/delete").post(delete_script);
-
-    scripts
+    warp::path("scripts").and(warp::post()).and(
+        create(db.clone(), tx.clone())
+            .or(read_all(db.clone(), tx.clone()))
+            .or(read(db.clone(), tx.clone()))
+            .or(update(db.clone(), tx.clone()))
+            .or(delete(db, tx)),
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,9 +33,8 @@ pub struct JsonScriptName {
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
-struct JsonScripts {
-    scripts: Vec<JsonScriptInfo>,
+fn json_script_name() -> impl Filter<Extract = (JsonScriptName,), Error = warp::Rejection> + Clone {
+    warp::body::content_length_limit(1024 * 16).and(warp::body::json())
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +42,10 @@ pub struct JsonScript {
     pub name: String,
     pub trigger: String,
     pub code: String,
+}
+
+fn json_script() -> impl Filter<Extract = (JsonScript,), Error = warp::Rejection> + Clone {
+    warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +68,11 @@ impl JsonScriptResponse {
             error: error.map(|e| e.into()),
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct JsonScriptsResponse {
+    scripts: Vec<JsonScriptInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -120,180 +122,242 @@ impl From<rhai::ParseError> for JsonParseError {
     }
 }
 
-async fn create_script<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let player = if let Some(player) = req.ext::<Player>() {
-        player
-    } else {
-        return Ok(Response::new(StatusCode::Unauthorized));
-    };
+#[derive(Debug, Error)]
+pub enum ScriptError {
+    #[error("bad trigger name")]
+    BadTrigger,
+    #[error("bad script name")]
+    BadScriptName,
+    #[error("duplicate script found")]
+    DuplicateName,
+    #[error("script not found")]
+    ScriptNotFound,
+}
 
-    if !player.access.contains(&"scripts".to_string()) {
-        return Ok(Response::new(StatusCode::Unauthorized));
-    }
+impl warp::reject::Reject for ScriptError {}
 
-    let script = req.body_json::<JsonScript>().await?;
-    tracing::debug!("Create script: {:?}", script);
+pub fn create<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("create")
+        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(json_script())
+        .and(with_sender(tx))
+        .and_then(handle_create)
+}
+
+pub fn read<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("read")
+        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(json_script_name())
+        .and(with_sender(tx))
+        .and_then(handle_read)
+}
+
+pub fn read_all<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("read")
+        .and(warp::path("all"))
+        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(with_sender(tx))
+        .and_then(handle_read_all)
+}
+
+pub fn update<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("update")
+        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(json_script())
+        .and(with_sender(tx))
+        .and_then(handle_update)
+}
+
+pub fn delete<DB>(
+    db: DB,
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("delete")
+        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(json_script_name())
+        .and(with_sender(tx))
+        .and_then(handle_delete)
+}
+
+async fn handle_create(
+    player: Player,
+    script: JsonScript,
+    sender: mpsc::Sender<WebMessage>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    tracing::info!("authorized create with {:?}", player);
 
     let (tx, rx) = oneshot::channel();
-    req.state()
-        .tx
+    if let Err(err) = sender
         .send(WebMessage {
             response: tx,
             request: ScriptsRequest::CreateScript(script),
         })
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to dispatch CreateScript to engine: {}", err);
+        return Err(warp::reject::custom(InternalError {}));
+    };
 
-    match rx.await? {
-        ScriptsResponse::ScriptCompiled(error) => Ok(Response::builder(200)
-            .body(Body::from_json(&CompileResponse { error })?)
-            .content_type(mime::JSON)
-            .build()),
-        ScriptsResponse::Error(e) => Ok(Response::new(e.status())),
-        _ => Ok(Response::new(500)),
+    match rx.await {
+        Ok(ScriptsResponse::ScriptCompiled(error)) => {
+            Ok(warp::reply::json(&CompileResponse { error }))
+        }
+        Ok(ScriptsResponse::Error(e)) => Err(warp::reject::custom(e)),
+        other => {
+            tracing::error!("Received unexpected response to CreateScript: {:?}", other);
+            Err(warp::reject::custom(InternalError {}))
+        }
     }
 }
 
-async fn read_script<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let player = if let Some(player) = req.ext::<Player>() {
-        player
-    } else {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    };
-
-    if !player.access.contains(&"scripts".to_string()) {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    }
-
-    let name = req.body_json::<JsonScriptName>().await?;
-    tracing::debug!("Read script: {:?}", name);
+async fn handle_read(
+    player: Player,
+    script_name: JsonScriptName,
+    sender: mpsc::Sender<WebMessage>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    tracing::info!("authorized read with {:?}", player);
 
     let (tx, rx) = oneshot::channel();
-    req.state()
-        .tx
+    if let Err(err) = sender
         .send(WebMessage {
             response: tx,
-            request: ScriptsRequest::ReadScript(name),
+            request: ScriptsRequest::ReadScript(script_name),
         })
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to dispatch ReadScript to engine: {}", err);
+        return Err(warp::reject::custom(InternalError {}));
+    };
 
-    match rx.await? {
-        ScriptsResponse::Script(script) => Ok(Response::builder(200)
-            .body(Body::from_json(&script)?)
-            .content_type(mime::JSON)
-            .build()),
-        ScriptsResponse::Error(e) => Ok(Response::new(e.status())),
-        _ => Ok(Response::new(500)),
+    match rx.await {
+        Ok(ScriptsResponse::Script(script)) => Ok(warp::reply::json(&script)),
+        Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
+        other => {
+            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            Err(warp::reject::custom(InternalError {}))
+        }
     }
 }
 
-async fn read_all_scripts<DB: AuthDb>(req: Request<Context<DB>>) -> tide::Result {
-    let player = if let Some(player) = req.ext::<Player>() {
-        player
-    } else {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    };
-
-    if !player.access.contains(&"scripts".to_string()) {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    }
+async fn handle_read_all(
+    player: Player,
+    sender: mpsc::Sender<WebMessage>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    tracing::info!("authorized read_all with {:?}", player);
 
     let (tx, rx) = oneshot::channel();
-    req.state()
-        .tx
+    if let Err(err) = sender
         .send(WebMessage {
             response: tx,
             request: ScriptsRequest::ReadAllScripts,
         })
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to dispatch ReadScript to engine: {}", err);
+        return Err(warp::reject::custom(InternalError {}));
+    };
 
-    match rx.await? {
-        ScriptsResponse::ScriptList(scripts) => Ok(Response::builder(200)
-            .body(Body::from_json(&JsonScripts { scripts })?)
-            .content_type(mime::JSON)
-            .build()),
-        ScriptsResponse::Error(e) => Ok(Response::new(e.status())),
-        _ => Ok(Response::new(500)),
+    match rx.await {
+        Ok(ScriptsResponse::ScriptList(scripts)) => {
+            Ok(warp::reply::json(&JsonScriptsResponse { scripts }))
+        }
+        Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
+        other => {
+            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            Err(warp::reject::custom(InternalError {}))
+        }
     }
 }
 
-async fn update_script<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let player = if let Some(player) = req.ext::<Player>() {
-        player
-    } else {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    };
-
-    if !player.access.contains(&"scripts".to_string()) {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    }
-
-    let script = req.body_json::<JsonScript>().await?;
-    tracing::debug!("Update script: {:?}", script);
+async fn handle_update(
+    player: Player,
+    script: JsonScript,
+    sender: mpsc::Sender<WebMessage>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    tracing::info!("authorized update with {:?}", player);
 
     let (tx, rx) = oneshot::channel();
-    req.state()
-        .tx
+    if let Err(err) = sender
         .send(WebMessage {
             response: tx,
             request: ScriptsRequest::UpdateScript(script),
         })
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to dispatch UpdateScript to engine: {}", err);
+        return Err(warp::reject::custom(InternalError {}));
+    };
 
-    match rx.await? {
-        ScriptsResponse::ScriptCompiled(error) => Ok(Response::builder(200)
-            .body(Body::from_json(&CompileResponse { error })?)
-            .content_type(mime::JSON)
-            .build()),
-        ScriptsResponse::Error(e) => Ok(Response::new(e.status())),
-        _ => Ok(Response::new(500)),
+    match rx.await {
+        Ok(ScriptsResponse::ScriptCompiled(error)) => {
+            Ok(warp::reply::json(&CompileResponse { error }))
+        }
+        Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
+        other => {
+            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            Err(warp::reject::custom(InternalError {}))
+        }
     }
 }
 
-async fn delete_script<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let player = if let Some(player) = req.ext::<Player>() {
-        player
-    } else {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    };
-
-    if !player.access.contains(&"scripts".to_string()) {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        return Ok(response);
-    }
-
-    let name = req.body_json::<JsonScriptName>().await?;
-    tracing::debug!("Delete script: {:?}", name);
+async fn handle_delete(
+    player: Player,
+    script_name: JsonScriptName,
+    sender: mpsc::Sender<WebMessage>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    tracing::info!("authorized delete with {:?}", player);
 
     let (tx, rx) = oneshot::channel();
-    req.state()
-        .tx
+    if let Err(err) = sender
         .send(WebMessage {
             response: tx,
-            request: ScriptsRequest::DeleteScript(name),
+            request: ScriptsRequest::DeleteScript(script_name),
         })
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to dispatch DeleteScript to engine: {}", err);
+        return Err(warp::reject::custom(InternalError {}));
+    };
 
-    match rx.await? {
-        ScriptsResponse::Done => Ok(Response::builder(200)
-            .body("{}")
-            .content_type(mime::JSON)
-            .build()),
-        ScriptsResponse::Error(e) => Ok(Response::new(e.status())),
-        _ => Ok(Response::new(500)),
+    match rx.await {
+        Ok(ScriptsResponse::Done) => Ok(warp::reply::json(&JsonEmpty {})),
+        Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
+        other => {
+            tracing::error!("Received unexpected response to DeleteScript: {:?}", other);
+            Err(warp::reject::custom(InternalError {}))
+        }
     }
+}
+
+fn with_sender(
+    tx: mpsc::Sender<WebMessage>,
+) -> impl Filter<Extract = (mpsc::Sender<WebMessage>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || tx.clone())
 }

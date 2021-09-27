@@ -1,115 +1,45 @@
 use std::{collections::HashSet, convert::TryFrom};
 
-use async_trait::async_trait;
-use itertools::Itertools;
 use jwt_simple::prelude::{
     Claims, Duration, ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, VerificationOptions,
 };
 use serde::{Deserialize, Serialize};
-use tide::{
-    http::{headers::HeaderValue, mime},
-    security::{CorsMiddleware, Origin},
-    Body, Request, Response, Server, StatusCode,
-};
-use tide_http_auth::{Authentication, BearerAuthRequest, BearerAuthScheme, Storage};
+use warp::{reject, Filter, Rejection};
 
 use crate::{
     engine::db::AuthDb,
-    web::{Context, Player},
+    web::{with_db, InternalError, Player},
     TOKEN_KEY,
 };
 
-pub fn auth_endpoint<DB>(context: Context<DB>) -> Server<Context<DB>>
+pub fn auth_filters<DB>(
+    db: DB,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
 where
-    DB: AuthDb + Clone + Send + Sync + 'static,
+    DB: AuthDb + Send + Sync + Clone + 'static,
 {
-    let mut auth = tide::with_state(context);
-
-    let cors = CorsMiddleware::new()
-        .allow_methods("POST".parse::<HeaderValue>().unwrap())
-        .allow_origin(Origin::from("*"));
-
-    auth.with(cors);
-    auth.with(Authentication::new(BearerAuthScheme::default()));
-    auth.at("/login").post(login);
-    auth.at("/refresh").post(refresh);
-    auth.at("/logout").post(logout);
-
-    auth
-}
-
-#[async_trait]
-impl<DB> Storage<Player, BearerAuthRequest> for Context<DB>
-where
-    DB: AuthDb + Clone + Send + Sync + 'static,
-{
-    async fn get_user(&self, request: BearerAuthRequest) -> tide::Result<Option<Player>> {
-        let mut issuers = HashSet::new();
-        issuers.insert("remud".to_string());
-        let mut audiences = HashSet::new();
-        audiences.insert("remud".to_string());
-
-        // Verify the token signature, issuer, and audience
-        let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
-            request.token.as_str(),
-            Some(VerificationOptions {
-                allowed_issuers: Some(issuers),
-                allowed_audiences: Some(audiences),
-                ..Default::default()
-            }),
-        ) {
-            Ok(claims) => claims,
-            Err(e) => {
-                tracing::warn!("failed to validate access bearer token: {}", e);
-                return Ok(None);
-            }
-        };
-
-        // Confirm this is an access token
-        if !claims.custom.scopes.contains(&"access".to_string()) {
-            return Ok(None);
-        }
-
-        let player = claims.subject.as_ref().unwrap().as_str();
-
-        // Confirm that this access token hasn't been refreshed
-        let access_issued = match self.db.access_issued_secs(player).await {
-            Ok(issued) => issued,
-            Err(e) => {
-                tracing::error!("failed to retrieve access token issue time: {}", e);
-                return Ok(None);
-            }
-        };
-        if claims.issued_at.unwrap().as_secs() as i64 != access_issued {
-            if let Err(e) = self.db.logout(player).await {
-                tracing::error!("failed to log out player: {}", e);
-            }
-            return Ok(None);
-        }
-
-        let access = claims
-            .custom
-            .scopes
-            .into_iter()
-            .filter(|s| s != "access")
-            .collect_vec();
-
-        Ok(Some(Player {
-            name: player.to_string(),
-            access,
-        }))
-    }
+    warp::path("auth")
+        .and(warp::post())
+        .and(login(db.clone()).or(refresh(db.clone())).or(logout(db)))
 }
 
 #[derive(Debug, Deserialize)]
-struct JsonTokenRequest {
+pub struct JsonTokenRequest {
     username: String,
     password: String,
 }
 
+fn json_login() -> impl Filter<Extract = (JsonTokenRequest,), Error = Rejection> + Clone {
+    warp::body::content_length_limit(1024 * 16).and(warp::body::json())
+}
+
 #[derive(Debug, Deserialize)]
-struct JsonRefreshRequest {
+pub struct JsonRefreshRequest {
     refresh_token: String,
+}
+
+fn json_refresh() -> impl Filter<Extract = (JsonRefreshRequest,), Error = Rejection> + Clone {
+    warp::body::content_length_limit(1024 * 16).and(warp::body::json())
 }
 
 #[derive(Debug, Serialize)]
@@ -120,113 +50,261 @@ struct JsonTokenResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TokenData {
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum AuthError {
+    AuthenticationError,
+    InvalidAuthHeader,
+    InvalidToken,
+    VerificationError,
+    InadequateAccess,
+}
+
+impl reject::Reject for AuthError {}
+
+pub fn verify_access<DB>(
+    db: DB,
     scopes: Vec<String>,
+) -> impl Filter<Extract = (Player,), Error = Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::header::<String>("Authorization")
+        .and(with_db(db))
+        .and(with_scopes(scopes))
+        .and_then(handle_verify_access)
 }
 
-async fn login<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let request = req.body_json::<JsonTokenRequest>().await?;
-    let player = request.username.as_str();
+pub fn login<DB>(db: DB) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("login")
+        .and(json_login())
+        .and(with_db(db))
+        .and_then(handle_login)
+}
 
-    match req
-        .state()
-        .db
-        .verify_player(player, request.password.as_str())
-        .await
-    {
-        Ok(true) => (),
-        Ok(false) => return Ok(Response::new(StatusCode::Unauthorized)),
-        Err(e) => {
-            tracing::error!("Failed to verify player during token request: {}", e);
-            return Ok(Response::new(StatusCode::InternalServerError));
-        }
-    }
+pub fn refresh<DB>(db: DB) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("refresh")
+        .and(json_refresh())
+        .and(with_db(db))
+        .and_then(handle_refresh)
+}
 
-    let immortal = req.state().db.is_immortal(player).await?;
+pub fn logout<DB>(db: DB) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+where
+    DB: AuthDb + Send + Sync + Clone + 'static,
+{
+    warp::path("logout")
+        .and(with_db(db.clone()))
+        .and(verify_access(db, vec![]))
+        .and_then(handle_logout)
+}
 
-    let (access_token, access_issued_secs, refresh_token, refresh_issued_secs) =
-        generate_tokens(player, immortal)?;
-
-    req.state()
-        .db
-        .register_tokens(player, access_issued_secs, refresh_issued_secs)
-        .await?;
-
-    let response = JsonTokenResponse {
-        access_token,
-        refresh_token,
+async fn handle_verify_access<DB: AuthDb>(
+    auth_header: String,
+    db: DB,
+    scopes: Vec<String>,
+) -> Result<Player, Rejection> {
+    let token = match auth_header.split_whitespace().nth(1) {
+        Some(token) => token,
+        None => return Err(reject::custom(AuthError::InvalidAuthHeader)),
     };
-
-    Ok(Response::builder(200)
-        .body(Body::from_json(&response)?)
-        .content_type(mime::JSON)
-        .build())
-}
-
-async fn refresh<DB: AuthDb>(mut req: Request<Context<DB>>) -> tide::Result {
-    let request = req.body_json::<JsonRefreshRequest>().await?;
 
     let mut issuers = HashSet::new();
     issuers.insert("remud".to_string());
     let mut audiences = HashSet::new();
     audiences.insert("remud".to_string());
 
-    let claims = TOKEN_KEY.public_key().verify_token::<TokenData>(
-        request.refresh_token.as_str(),
+    // Verify the token signature, issuer, and audience
+    let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
+        token,
         Some(VerificationOptions {
             allowed_issuers: Some(issuers),
             allowed_audiences: Some(audiences),
             ..Default::default()
         }),
-    )?;
+    ) {
+        Ok(claims) => claims,
+        Err(_) => {
+            return Err(reject::custom(AuthError::VerificationError));
+        }
+    };
 
-    // Confirm this is a refresh token
-    if !claims.custom.scopes.contains(&"refresh".to_string()) {
-        return Ok(Response::new(StatusCode::Unauthorized));
+    // Confirm this is an access token
+    if !claims.custom.scopes.contains(&"access".to_string()) {
+        return Err(reject::custom(AuthError::InadequateAccess));
+    }
+
+    for scope in &scopes {
+        if !claims.custom.scopes.contains(scope) {
+            return Err(reject::custom(AuthError::InadequateAccess));
+        }
     }
 
     let player = claims.subject.as_ref().unwrap().as_str();
 
-    // Confirm that this refresh token hasn't already been used. If it has, log out the player.
-    let refresh_issued = req.state().db.refresh_issued_secs(player).await?;
-    if claims.issued_at.unwrap().as_secs() as i64 != refresh_issued {
-        req.state().db.logout(player).await?;
-        return Ok(Response::new(StatusCode::Unauthorized));
+    // Confirm that this access token hasn't been refreshed
+    let access_issued = match db.access_issued_secs(player).await {
+        Ok(issued) => issued,
+        Err(e) => {
+            tracing::error!("failed to retrieve access token issue time: {}", e);
+            return Err(reject::custom(InternalError {}));
+        }
+    };
+    if claims.issued_at.unwrap().as_secs() as i64 != access_issued {
+        if let Err(e) = db.logout(player).await {
+            tracing::error!("failed to log out player: {}", e);
+        }
+        return Err(reject::custom(AuthError::InvalidToken));
     }
 
-    // Generate a new set of access/refresh tokens.
-    let immortal = req.state().db.is_immortal(player).await?;
+    Ok(Player {
+        name: player.to_string(),
+    })
+}
+
+async fn handle_login<DB: AuthDb>(
+    request: JsonTokenRequest,
+    db: DB,
+) -> Result<impl warp::Reply, Rejection> {
+    let player = request.username.as_str();
+
+    match db.verify_player(player, request.password.as_str()).await {
+        Ok(true) => (),
+        Ok(false) => return Err(reject::custom(AuthError::AuthenticationError)),
+        Err(e) => {
+            tracing::error!("Failed to verify player during token request: {}", e);
+            return Err(reject::custom(InternalError {}));
+        }
+    }
+
+    let immortal = match db.is_immortal(player).await {
+        Ok(immortal) => immortal,
+        Err(err) => {
+            tracing::error!("Failed to retrieve immortal status: {}", err);
+            return Err(reject::custom(InternalError {}));
+        }
+    };
 
     let (access_token, access_issued_secs, refresh_token, refresh_issued_secs) =
-        generate_tokens(player, immortal)?;
+        match generate_tokens(player, immortal) {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!("Failed to generate tokens: {}", err);
+                return Err(reject::custom(InternalError {}));
+            }
+        };
 
-    req.state()
-        .db
+    if let Err(err) = db
         .register_tokens(player, access_issued_secs, refresh_issued_secs)
-        .await?;
+        .await
+    {
+        tracing::error!("Failed to register web tokens: {}", err);
+        return Err(reject::custom(InternalError {}));
+    };
 
     let response = JsonTokenResponse {
         access_token,
         refresh_token,
     };
 
-    Ok(Response::builder(200)
-        .body(Body::from_json(&response)?)
-        .content_type(mime::JSON)
-        .build())
+    Ok(warp::reply::json(&response))
 }
 
-async fn logout<DB: AuthDb>(req: Request<Context<DB>>) -> tide::Result {
-    if let Some(player) = req.ext::<Player>() {
-        req.state().db.logout(player.name.as_str()).await?;
-        Ok(Response::new(StatusCode::Ok))
-    } else {
-        let mut response = Response::new(StatusCode::Unauthorized);
-        response.append_header("WWW-Authenticate", "Bearer");
-        Ok(response)
+async fn handle_refresh<DB: AuthDb>(
+    request: JsonRefreshRequest,
+    db: DB,
+) -> Result<impl warp::Reply, Rejection> {
+    let mut issuers = HashSet::new();
+    issuers.insert("remud".to_string());
+    let mut audiences = HashSet::new();
+    audiences.insert("remud".to_string());
+
+    let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
+        request.refresh_token.as_str(),
+        Some(VerificationOptions {
+            allowed_issuers: Some(issuers),
+            allowed_audiences: Some(audiences),
+            ..Default::default()
+        }),
+    ) {
+        Ok(claims) => claims,
+        Err(_) => return Err(reject::custom(AuthError::VerificationError)),
+    };
+
+    // Confirm this is a refresh token
+    if !claims.custom.scopes.contains(&"refresh".to_string()) {
+        return Err(reject::custom(AuthError::InadequateAccess));
     }
+
+    let player = claims.subject.as_ref().unwrap().as_str();
+
+    // Confirm that this refresh token hasn't already been used. If it has, log out the player.
+    let refresh_issued = match db.refresh_issued_secs(player).await {
+        Ok(issued) => issued,
+        Err(err) => {
+            tracing::error!("Failed to retrieve refresh token issue time: {}", err);
+            return Err(reject::custom(InternalError {}));
+        }
+    };
+
+    if claims.issued_at.unwrap().as_secs() as i64 != refresh_issued {
+        if db.logout(player).await.is_err() {
+            return Err(reject::custom(InternalError {}));
+        };
+        return Err(reject::custom(AuthError::InvalidToken));
+    }
+
+    // Generate a new set of access/refresh tokens.
+    let immortal = match db.is_immortal(player).await {
+        Ok(immortal) => immortal,
+        Err(err) => {
+            tracing::error!("Failed to retrieve player immortal status: {}", err);
+            return Err(reject::custom(InternalError {}));
+        }
+    };
+
+    let (access_token, access_issued_secs, refresh_token, refresh_issued_secs) =
+        match generate_tokens(player, immortal) {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!("Failed to generate tokens: {}", err);
+                return Err(reject::custom(InternalError {}));
+            }
+        };
+
+    if let Err(err) = db
+        .register_tokens(player, access_issued_secs, refresh_issued_secs)
+        .await
+    {
+        tracing::error!("Failed to register tokens: {}", err);
+        return Err(reject::custom(InternalError {}));
+    };
+
+    let response = JsonTokenResponse {
+        access_token,
+        refresh_token,
+    };
+
+    Ok(warp::reply::json(&response))
 }
 
-pub fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64, String, i64)> {
+async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::Reply, Rejection> {
+    if let Err(err) = db.logout(player.name.as_str()).await {
+        tracing::error!("Failed to log out player: {}", err);
+        return Err(reject::custom(InternalError {}));
+    };
+    Ok(warp::reply())
+}
+
+fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64, String, i64)> {
     let mut scopes = vec!["access".to_string()];
 
     if immortal {
@@ -260,4 +338,10 @@ pub fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, 
         refresh_token,
         refresh_issued_secs,
     ))
+}
+
+fn with_scopes(
+    scopes: Vec<String>,
+) -> impl Filter<Extract = (Vec<String>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || scopes.clone())
 }

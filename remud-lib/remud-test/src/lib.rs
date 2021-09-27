@@ -28,7 +28,17 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new() -> Self {
+    pub fn telnet(&self) -> u16 {
+        self.telnet
+    }
+
+    pub fn web(&self) -> u16 {
+        self.web
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
         Lazy::force(&TRACING);
 
         let (tx, rx) = mpsc::channel();
@@ -46,14 +56,12 @@ impl Server {
 
             'connect_loop: loop {
                 telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-                let telnet_addr = format!("127.0.0.1:{}", telnet_port);
                 web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-                let web_addr = format!("127.0.0.1:{}", web_port);
 
                 let (tx, rx) = oneshot::channel();
 
                 let spawn = tokio::spawn(async move {
-                    run_remud(&telnet_addr, &web_addr, None, Some(tx)).await
+                    run_remud(telnet_port, web_port, None, Some(tx)).await
                 });
 
                 tokio::select! {
@@ -94,14 +102,6 @@ impl Server {
             web,
             runtime,
         }
-    }
-
-    pub fn telnet(&self) -> u16 {
-        self.telnet
-    }
-
-    pub fn web(&self) -> u16 {
-        self.web
     }
 }
 

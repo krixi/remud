@@ -1,6 +1,6 @@
 use crate::{
     engine::persist::{self, Updates},
-    web,
+    web::scripts::ScriptError,
     world::scripting::{
         CompilationError, CompiledScript, FailedScript, Script, ScriptAst, ScriptEngine,
         ScriptName, Scripts,
@@ -14,7 +14,7 @@ use rhai::ParseError;
 pub async fn create_script(
     world: &mut World,
     script: Script,
-) -> Result<Option<ParseError>, web::Error> {
+) -> Result<Option<ParseError>, ScriptError> {
     tracing::debug!("Creating {:?}.", script.name);
 
     if world
@@ -23,7 +23,7 @@ pub async fn create_script(
         .by_name(&script.name)
         .is_some()
     {
-        return Err(web::Error::DuplicateName);
+        return Err(ScriptError::DuplicateName);
     }
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
@@ -72,14 +72,14 @@ pub async fn create_script(
 pub fn read_script(
     world: &World,
     name: ScriptName,
-) -> Result<(Script, Option<ParseError>), web::Error> {
+) -> Result<(Script, Option<ParseError>), ScriptError> {
     tracing::debug!("Retrieving {:?}.", name);
 
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
             entity
         } else {
-            return Err(web::Error::ScriptNotFound);
+            return Err(ScriptError::ScriptNotFound);
         };
 
     let script = world.get::<Script>(script_entity).unwrap().clone();
@@ -108,7 +108,7 @@ pub fn read_all_scripts(world: &mut World) -> Vec<(Script, Option<ParseError>)> 
 pub async fn update_script(
     world: &mut World,
     script: Script,
-) -> Result<Option<ParseError>, web::Error> {
+) -> Result<Option<ParseError>, ScriptError> {
     tracing::debug!("Updating {:?}.", script.name);
 
     let script_entity = if let Some(entity) = world
@@ -118,7 +118,7 @@ pub async fn update_script(
     {
         entity
     } else {
-        return Err(web::Error::ScriptNotFound);
+        return Err(ScriptError::ScriptNotFound);
     };
 
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
@@ -159,12 +159,12 @@ pub async fn update_script(
     Ok(error)
 }
 
-pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), web::Error> {
+pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), ScriptError> {
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
             entity
         } else {
-            return Err(web::Error::ScriptNotFound);
+            return Err(ScriptError::ScriptNotFound);
         };
 
     tracing::debug!("Deleting: {:?}", name);
