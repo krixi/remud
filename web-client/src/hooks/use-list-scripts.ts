@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ajax, AjaxError } from "rxjs/ajax";
+import { ajax } from "rxjs/ajax";
 import { ListScriptsResp, ScriptInfo } from "../models/scripts-api";
+import { useAuth } from "./use-auth";
 
 const sortScripts = (a: ScriptInfo, b: ScriptInfo): number => {
   if (a.name < b.name) {
@@ -15,9 +16,14 @@ const sortScripts = (a: ScriptInfo, b: ScriptInfo): number => {
 export const useListScripts = (baseURL: string) => {
   const [scripts, setScripts] = useState<ScriptInfo[]>();
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<AjaxError>();
+  const [err, setErr] = useState<Error>();
+  const { user } = useAuth();
 
   useEffect(() => {
+    if (!user || !user.tokens) {
+      setErr(new Error("logged in user required"));
+      return;
+    }
     setErr(undefined);
     setLoading(true);
     const s = ajax({
@@ -25,6 +31,9 @@ export const useListScripts = (baseURL: string) => {
       method: `POST`,
       body: {},
       timeout: 2000,
+      headers: {
+        Authorization: `Bearer ${user.tokens.access_token}`,
+      },
     }).subscribe({
       next: (e) => {
         const r = e.response as ListScriptsResp;
@@ -37,7 +46,7 @@ export const useListScripts = (baseURL: string) => {
       },
     });
     return () => s.unsubscribe();
-  }, [baseURL]);
+  }, [baseURL, user]);
 
   return { scripts, loading, err };
 };
