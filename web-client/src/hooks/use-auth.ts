@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { Subscription } from "rxjs";
 import { ajax } from "rxjs/ajax";
 import { useAuthContext } from "./use-auth-context";
-import { Auth, AuthActionKind } from "../models/auth-api";
+import { Auth, AuthActionKind, AuthTokens, LoginReq } from "../models/auth-api";
 import { ScriptApiBaseUrl } from "../env";
 
 export const useAuth = (): Auth => {
@@ -10,6 +10,37 @@ export const useAuth = (): Auth => {
   const baseURL = useMemo(() => {
     return ScriptApiBaseUrl();
   }, []);
+
+  const login = useCallback(
+    async (req: LoginReq): Promise<void> => {
+      dispatch({ kind: AuthActionKind.RequestLogin });
+      return new Promise((resolve, reject) => {
+        const s: Subscription = ajax({
+          url: `${baseURL}/auth/login`,
+          method: `POST`,
+          body: req,
+          timeout: 2000,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }).subscribe({
+          next: (r) => {
+            s.unsubscribe();
+            const tokens = r.response as AuthTokens;
+            dispatch({ kind: AuthActionKind.LoginSuccess, tokens });
+            return resolve();
+          },
+          error: (err) => {
+            s.unsubscribe();
+            dispatch({ kind: AuthActionKind.LoginError });
+            return reject(err);
+          },
+          complete: () => s.unsubscribe(),
+        });
+      });
+    },
+    [baseURL, dispatch]
+  );
 
   const logout = useCallback(async (): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -28,14 +59,16 @@ export const useAuth = (): Auth => {
       }).subscribe({
         next: () => {
           s.unsubscribe();
-          dispatch({ kind: AuthActionKind.Logout });
           return resolve();
         },
         error: (err) => {
           s.unsubscribe();
           return reject(err);
         },
-        complete: () => s.unsubscribe(),
+        complete: () => {
+          s.unsubscribe();
+          dispatch({ kind: AuthActionKind.Logout });
+        },
       });
     });
   }, [baseURL, dispatch, data]);
@@ -45,6 +78,7 @@ export const useAuth = (): Auth => {
   return {
     isLoggedIn,
     user: data,
+    login,
     logout,
   };
 };

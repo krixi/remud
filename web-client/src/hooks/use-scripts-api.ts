@@ -25,18 +25,18 @@ export const useScriptsApi = (baseURL: string) => {
           next: (r) => {
             s.unsubscribe();
             const resp = r.response as ScriptAPIResp;
-            if (resp.error !== undefined) {
+            if (resp && resp.error) {
               return reject({ ...resp.error, isSaved: true });
             }
             return resolve(resp);
           },
           error: (err) => {
             s.unsubscribe();
+            console.log("err = ", err);
             let reason: CompileError = {
               isSaved: false,
               message: err.message,
             };
-            console.log("err = ", err);
             if (err.status === 409) {
               reason.message = `A script with that name already exists.`;
             }

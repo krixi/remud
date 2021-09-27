@@ -1,11 +1,10 @@
-import React, { FormEvent, useCallback, useState } from "react";
-import { useLoginApi } from "../hooks/use-login-api";
-import { ScriptApiBaseUrl } from "../env";
+import React, { FormEvent, useCallback, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
+import { useAuth } from "../hooks/use-auth";
 
 export const LoginForm: React.FC = () => {
   const history = useHistory();
-  const login = useLoginApi(ScriptApiBaseUrl());
+  const { login, user } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | undefined>();
@@ -21,10 +20,15 @@ export const LoginForm: React.FC = () => {
 
       login({ username, password })
         .then(() => history.push("/")) // redirect to home on login
-        .catch((reason) => console.log("couldn't log in", reason));
+        .catch((reason) => {
+          setErr("login failed");
+          console.log(reason);
+        });
     },
     [history, login]
   );
+
+  const loading = useMemo(() => user?.loading || false, [user]);
 
   return (
     <form
@@ -35,6 +39,8 @@ export const LoginForm: React.FC = () => {
       <div className="italic font-mono mb-10">
         {err ? (
           <span className="text-red-600">{err}</span>
+        ) : loading ? (
+          <>processing...</>
         ) : (
           <>credentials required</>
         )}

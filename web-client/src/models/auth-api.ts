@@ -28,6 +28,7 @@ export interface AuthData {
 export interface Auth {
   isLoggedIn: boolean;
   user?: AuthData;
+  login: (req: LoginReq) => Promise<void>;
   logout: () => Promise<void>;
 }
 

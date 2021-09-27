@@ -21,7 +21,7 @@ const AuthReducer = (state: AuthData, action: AuthAction) => {
       return {
         ...state,
         loading: false,
-        tokens: state.tokens,
+        tokens: action.tokens,
       };
     case AuthActionKind.Logout:
       return {
