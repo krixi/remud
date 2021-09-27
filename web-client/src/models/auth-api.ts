@@ -28,7 +28,7 @@ export interface AuthData {
 export interface Auth {
   isLoggedIn: boolean;
   user?: AuthData;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 export interface AuthContext {
