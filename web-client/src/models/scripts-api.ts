@@ -27,8 +27,13 @@ export interface ScriptInfo {
   error?: CompileError;
 }
 
+export interface ListScriptsReq {}
 export interface ListScriptsResp {
   scripts: ScriptInfo[];
+}
+
+export interface GetScriptReq {
+  name: string;
 }
 
 export interface CompileError {
