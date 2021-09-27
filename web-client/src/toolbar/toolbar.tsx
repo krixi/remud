@@ -4,13 +4,15 @@ import { LoginButton } from "../auth/login-button";
 import { useAuth } from "../hooks/use-auth";
 
 export const Toolbar: React.FC = () => {
-  const { isLoggedIn } = useAuth();
+  const { isScopeAuthorized } = useAuth();
 
   return (
     <div className="p-2 bg-dark-gray rounded w-full text-center flex flex-row justify-between">
       <nav className="flex flex-row">
         <NavLink path="/" text="Home" />
-        {isLoggedIn && <NavLink path="/scripts" text="Scripts" />}
+        {isScopeAuthorized("scripts") && (
+          <NavLink path="/scripts" text="Scripts" />
+        )}
       </nav>
       <div className="italic">CitySix</div>
       <LoginButton />

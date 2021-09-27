@@ -1,3 +1,5 @@
+import { JwtPayload } from "jwt-decode";
+
 export interface LoginReq {
   username: string;
   password: string;
@@ -25,10 +27,16 @@ export interface UserData {
   tokens?: AuthTokens;
   name?: string;
   expires?: Date;
+  scopes?: string[];
+}
+
+export interface DecodedToken extends JwtPayload {
+  scopes: string[];
 }
 
 export interface Auth {
   isLoggedIn: boolean;
+  isScopeAuthorized: (scope: string) => boolean;
   user?: UserData;
   login: (req: LoginReq) => Promise<void>;
   logout: () => Promise<void>;

@@ -12,15 +12,15 @@ interface ScriptsParam {
 export const ScriptManagementPage: React.FC = () => {
   const { name } = useParams<ScriptsParam>();
   const history = useHistory();
-  const { isLoggedIn } = useAuth();
+  const { isScopeAuthorized } = useAuth();
   // if the name is 'new', we cam here from the 'Create Script' button
   const shouldCreate = name?.toLowerCase() === "new";
 
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isScopeAuthorized("scripts")) {
       history.push("/");
     }
-  }, [isLoggedIn, history]);
+  }, [isScopeAuthorized, history]);
 
   return (
     <div className="m-2 p-2 h-96">
