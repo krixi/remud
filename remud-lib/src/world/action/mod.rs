@@ -7,7 +7,6 @@ pub mod object;
 pub mod observe;
 pub mod system;
 
-use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 
 use crate::{
@@ -197,13 +196,10 @@ pub enum ActionSystem {
 #[derive(Default)]
 pub struct ActionsPlugin {}
 
-#[async_trait]
 impl Plugin for ActionsPlugin {
-    async fn build(&self, ecs: &mut Ecs) {
+    fn build(&self, ecs: &mut Ecs) {
         ecs.add_event::<QueuedAction>()
-            .await
             .add_event::<Action>()
-            .await
             .add_system(
                 Step::Main,
                 Phase::Update,

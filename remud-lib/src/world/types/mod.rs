@@ -1,6 +1,5 @@
 use std::{fmt, ops::Index};
 
-use async_trait::async_trait;
 use bevy_ecs::prelude::Entity;
 
 use crate::{
@@ -19,10 +18,9 @@ pub mod room;
 #[derive(Default)]
 pub struct TypesPlugin {}
 
-#[async_trait]
 impl Plugin for TypesPlugin {
-    async fn build(&self, ecs: &mut Ecs) {
-        ecs.init_resource::<Players>().await;
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<Players>();
     }
 }
 

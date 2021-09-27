@@ -7,7 +7,6 @@ use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
 use crate::{
-    ecs::SharedWorld,
     engine::db::HookRow,
     world::{
         scripting::{RunInitScript, ScriptHook, ScriptHooks, TriggerKind},
@@ -27,7 +26,7 @@ use crate::{
 
 pub async fn load_player(
     pool: &SqlitePool,
-    world: SharedWorld,
+    world: &mut World,
     name: &str,
 ) -> anyhow::Result<Entity> {
     let (player, id) = {
@@ -37,8 +36,6 @@ pub async fn load_player(
         .bind(name)
         .fetch_one(pool)
         .await?;
-
-        let mut world = world.write().await;
 
         let id = PlayerId::try_from(player_row.id)?;
 
@@ -81,7 +78,7 @@ pub async fn load_player(
         (player, id)
     };
 
-    load_player_inventory(pool, world.clone(), name, player).await?;
+    load_player_inventory(pool, world, name, player).await?;
     load_player_scripts(pool, world, id, player).await?;
 
     Ok(player)
@@ -89,7 +86,7 @@ pub async fn load_player(
 
 async fn load_player_inventory(
     pool: &SqlitePool,
-    world: SharedWorld,
+    world: &mut World,
     name: &str,
     player: Entity,
 ) -> anyhow::Result<()> {
@@ -112,8 +109,6 @@ async fn load_player_inventory(
         let prototype_id = object_row.prototype_id;
 
         let object = {
-            let mut world = world.write().await;
-
             let prototype = match world
                 .get_resource::<Prototypes>()
                 .unwrap()
@@ -157,7 +152,6 @@ async fn load_player_inventory(
         };
 
         while let Some(hook_row) = results.try_next().await? {
-            let mut world = world.write().await;
             let hook = ScriptHook::try_from(hook_row)?;
 
             if hook.trigger.kind() == TriggerKind::Init {
@@ -180,7 +174,7 @@ async fn load_player_inventory(
 
 async fn load_player_scripts(
     pool: &SqlitePool,
-    world: SharedWorld,
+    world: &mut World,
     id: PlayerId,
     player: Entity,
 ) -> anyhow::Result<()> {
@@ -191,8 +185,6 @@ async fn load_player_scripts(
     .fetch(pool);
 
     while let Some(hook_row) = results.try_next().await? {
-        let mut world = world.write().await;
-
         let hook = ScriptHook::try_from(hook_row)?;
 
         if let Some(mut hooks) = world.get_mut::<ScriptHooks>(player) {

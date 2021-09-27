@@ -1,10 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-use async_trait::async_trait;
 use bevy_app::Events;
 use bevy_core::Time;
 use bevy_ecs::{prelude::*, schedule::SystemDescriptor};
-use tokio::sync::RwLock;
 
 use crate::world::{
     scripting::time::Timers,
@@ -27,7 +25,7 @@ pub enum Phase {
 }
 
 pub struct Ecs {
-    world: SharedWorld,
+    world: Option<World>,
     pre_event: Schedule,
     main: Schedule,
     post_event: Schedule,
@@ -48,38 +46,38 @@ impl Ecs {
         let mut post_event = Schedule::default();
         post_event.add_stage(Phase::Update, SystemStage::parallel());
 
-        let world = Arc::new(RwLock::new(world));
-
         Ecs {
-            world,
+            world: Some(world),
             pre_event,
             main,
             post_event,
         }
     }
 
-    pub fn world(&self) -> SharedWorld {
-        self.world.clone()
+    pub fn world(&self) -> &World {
+        self.world.as_ref().unwrap()
     }
 
-    pub async fn run(&mut self, step: Step) {
+    pub fn world_mut(&mut self) -> &mut World {
+        self.world.as_mut().unwrap()
+    }
+
+    pub fn run(&mut self, step: Step) {
+        let world = self.world.as_mut().unwrap();
         match step {
-            Step::PreEvent => self.pre_event.run_once(&mut *self.world.write().await),
-            Step::Main => self.main.run_once(&mut *self.world.write().await),
-            Step::PostEvent => self.post_event.run_once(&mut *self.world.write().await),
+            Step::PreEvent => self.pre_event.run_once(world),
+            Step::Main => self.main.run_once(world),
+            Step::PostEvent => self.post_event.run_once(world),
         }
     }
 
-    pub async fn init_resource<T: Default + Send + Sync + 'static>(&mut self) -> &mut Self {
-        self.world.write().await.insert_resource(T::default());
+    pub fn init_resource<T: Default + Send + Sync + 'static>(&mut self) -> &mut Self {
+        self.world_mut().insert_resource(T::default());
         self
     }
 
-    pub async fn add_event<T: Send + Sync + 'static>(&mut self) -> &mut Self {
-        self.world
-            .write()
-            .await
-            .insert_resource(Events::<T>::default());
+    pub fn add_event<T: Send + Sync + 'static>(&mut self) -> &mut Self {
+        self.world_mut().insert_resource(Events::<T>::default());
         self.pre_event
             .add_system_to_stage(Phase::First, Events::<T>::update_system.system());
         self
@@ -101,14 +99,23 @@ impl Ecs {
     }
 
     pub async fn register(&mut self, plugin: impl Plugin) -> &mut Self {
-        plugin.build(self).await;
+        plugin.build(self);
         self
+    }
+
+    pub fn with_shared_world<F: FnMut(Arc<RwLock<World>>)>(&mut self, mut f: F) {
+        let world = self.world.take().unwrap();
+        let shared_world = Arc::new(RwLock::new(world));
+
+        f(shared_world.clone());
+
+        let world = RwLock::into_inner(Arc::try_unwrap(shared_world).unwrap()).unwrap();
+        self.world = Some(world);
     }
 }
 
-#[async_trait]
 pub trait Plugin {
-    async fn build(&self, ecs: &mut Ecs);
+    fn build(&self, ecs: &mut Ecs);
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, SystemLabel)]
@@ -119,10 +126,9 @@ pub enum CoreSystem {
 #[derive(Default)]
 pub struct CorePlugin {}
 
-#[async_trait]
 impl Plugin for CorePlugin {
-    async fn build(&self, ecs: &mut Ecs) {
-        ecs.init_resource::<Time>().await.add_system(
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<Time>().add_system(
             Step::PreEvent,
             Phase::First,
             time_system.system().label(CoreSystem::Time),

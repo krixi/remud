@@ -2,7 +2,6 @@ pub mod states;
 pub mod system;
 
 use anyhow::{self, bail};
-use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use std::{collections::HashMap, fmt::Debug};
 
@@ -22,9 +21,8 @@ pub enum FsmSystem {
 #[derive(Default)]
 pub struct FsmPlugin {}
 
-#[async_trait]
 impl Plugin for FsmPlugin {
-    async fn build(&self, ecs: &mut Ecs) {
+    fn build(&self, ecs: &mut Ecs) {
         ecs.add_system(
             Step::Main,
             Phase::Update,

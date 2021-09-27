@@ -19,10 +19,9 @@ pub type DynPersist = Box<dyn Persist + Send + Sync>;
 #[derive(Default)]
 pub struct PersistPlugin {}
 
-#[async_trait]
 impl Plugin for PersistPlugin {
-    async fn build(&self, ecs: &mut Ecs) {
-        ecs.init_resource::<Updates>().await;
+    fn build(&self, ecs: &mut Ecs) {
+        ecs.init_resource::<Updates>();
     }
 }
 

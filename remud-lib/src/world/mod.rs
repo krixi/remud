@@ -14,7 +14,7 @@ use once_cell::sync::Lazy;
 use rhai::ParseError;
 
 use crate::{
-    ecs::{Ecs, SharedWorld, Step},
+    ecs::{Ecs, Step},
     engine::persist::{self, DynPersist, Updates},
     web::scripts::ScriptError,
     world::{
@@ -40,48 +40,44 @@ pub struct GameWorld {
 }
 
 impl GameWorld {
-    pub async fn new(ecs: Ecs) -> Self {
-        let world = ecs.world();
-        let mut world = world.write().await;
+    pub fn new(mut ecs: Ecs) -> Self {
+        let world = ecs.world_mut();
 
         // Perform initial compilation of all scripts
-        compile_scripts(&mut *world).await;
+        compile_scripts(world);
 
         // Create emergency room
-        add_void_room(&mut *world);
+        add_void_room(world);
 
         GameWorld { ecs }
     }
 
-    pub async fn run(&mut self) {
-        let world = self.ecs.world();
+    pub fn run(&mut self) {
+        self.ecs.run(Step::PreEvent);
 
-        self.ecs.run(Step::PreEvent).await;
+        self.ecs.with_shared_world(|world| {
+            run_init_scripts(world.clone());
+            run_pre_action_scripts(world);
+        });
 
-        run_init_scripts(world.clone()).await;
+        self.ecs.run(Step::Main);
+        self.ecs.run(Step::PostEvent);
 
-        run_pre_action_scripts(world.clone()).await;
-
-        self.ecs.run(Step::Main).await;
-        self.ecs.run(Step::PostEvent).await;
-
-        run_timed_scripts(world.clone()).await;
-
-        run_post_action_scripts(world).await;
+        self.ecs.with_shared_world(|world| {
+            run_timed_scripts(world.clone());
+            run_post_action_scripts(world);
+        })
     }
 
-    pub async fn should_shutdown(&self) -> bool {
+    pub fn should_shutdown(&self) -> bool {
         self.ecs
             .world()
-            .read()
-            .await
             .get_resource::<Configuration>()
             .map_or(true, |configuration| configuration.shutdown)
     }
 
-    pub async fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
-        let world = self.ecs.world();
-        let mut world = world.write().await;
+    pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
+        let world = self.ecs.world_mut();
 
         let (name, room) = world
             .query::<(&Named, &Location)>()
@@ -124,9 +120,8 @@ impl GameWorld {
         Ok(())
     }
 
-    pub async fn player_action(&mut self, action: Action) {
-        let world = self.ecs.world();
-        let mut world = world.write().await;
+    pub fn player_action(&mut self, action: Action) {
+        let world = self.ecs.world_mut();
 
         world
             .get_mut::<Messages>(action.actor())
@@ -139,34 +134,29 @@ impl GameWorld {
             .send(QueuedAction { action });
     }
 
-    pub async fn player_online(&self, name: &str) -> bool {
+    pub fn player_online(&self, name: &str) -> bool {
         self.ecs
             .world()
-            .read()
-            .await
             .get_resource::<Players>()
             .unwrap()
             .by_name(name)
             .is_some()
     }
 
-    pub async fn spawn_room(&self) -> RoomId {
+    pub fn spawn_room(&self) -> RoomId {
         self.ecs
             .world()
-            .read()
-            .await
             .get_resource::<Configuration>()
             .unwrap()
             .spawn_room
     }
 
-    pub async fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
-        let world = self.ecs.world();
-        let mut world = world.write().await;
+    pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
+        let world = self.ecs.world_mut();
 
         let players_with_messages = world
             .query_filtered::<Entity, (With<Player>, With<Messages>)>()
-            .iter(&world)
+            .iter(world)
             .collect_vec();
 
         let mut outgoing = Vec::new();
@@ -184,31 +174,31 @@ impl GameWorld {
         outgoing
     }
 
-    pub async fn updates(&mut self) -> Vec<DynPersist> {
+    pub fn updates(&mut self) -> Vec<DynPersist> {
         self.ecs
-            .world()
-            .write()
-            .await
+            .world_mut()
             .get_resource_mut::<Updates>()
             .unwrap()
             .take_updates()
     }
 
-    pub async fn prototype_reloads(&mut self) -> Vec<PrototypeId> {
+    pub fn prototype_reloads(&mut self) -> Vec<PrototypeId> {
         self.ecs
-            .world()
-            .write()
-            .await
+            .world_mut()
             .get_resource_mut::<Updates>()
             .unwrap()
             .take_reloads()
     }
 
-    pub fn get_world(&self) -> SharedWorld {
+    pub fn world(&self) -> &World {
         self.ecs.world()
     }
 
-    pub async fn create_script(
+    pub fn world_mut(&mut self) -> &mut World {
+        self.ecs.world_mut()
+    }
+
+    pub fn create_script(
         &mut self,
         name: String,
         trigger: String,
@@ -220,23 +210,23 @@ impl GameWorld {
 
         let script = Script::new(name, trigger, code);
 
-        scripting::actions::create_script(&mut *self.ecs.world().write().await, script).await
+        scripting::actions::create_script(&mut *self.ecs.world_mut(), script)
     }
 
-    pub async fn read_script(
+    pub fn read_script(
         &mut self,
         name: String,
     ) -> Result<(Script, Option<ParseError>), ScriptError> {
         let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
 
-        scripting::actions::read_script(&*self.ecs.world().read().await, name)
+        scripting::actions::read_script(&*self.ecs.world(), name)
     }
 
-    pub async fn read_all_scripts(&mut self) -> Vec<(Script, Option<ParseError>)> {
-        scripting::actions::read_all_scripts(&mut *self.ecs.world().write().await)
+    pub fn read_all_scripts(&mut self) -> Vec<(Script, Option<ParseError>)> {
+        scripting::actions::read_all_scripts(&mut *self.ecs.world_mut())
     }
 
-    pub async fn update_script(
+    pub fn update_script(
         &mut self,
         name: String,
         trigger: String,
@@ -248,13 +238,13 @@ impl GameWorld {
 
         let script = Script::new(name, trigger, code);
 
-        scripting::actions::update_script(&mut *self.ecs.world().write().await, script).await
+        scripting::actions::update_script(&mut *self.ecs.world_mut(), script)
     }
 
-    pub async fn delete_script(&mut self, name: String) -> Result<(), ScriptError> {
+    pub fn delete_script(&mut self, name: String) -> Result<(), ScriptError> {
         let name = ScriptName::try_from(name).map_err(|_| ScriptError::BadScriptName)?;
 
-        scripting::actions::delete_script(&mut *self.ecs.world().write().await, name)
+        scripting::actions::delete_script(&mut *self.ecs.world_mut(), name)
     }
 }
 

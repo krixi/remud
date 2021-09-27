@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     ecs::SharedWorld,
@@ -10,12 +10,11 @@ use crate::{
 
 use bevy_ecs::prelude::*;
 use rhai::{Dynamic, Engine, Scope, AST};
-use tokio::sync::RwLock;
 
 pub type SharedEngine = Arc<RwLock<Engine>>;
 
-pub async fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
-    let (ast, engine) = match prepare_script_execution(&*world.read().await, &script) {
+pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
+    let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
     };
@@ -30,17 +29,21 @@ pub async fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptN
     );
     scope.push_constant("WORLD", world.clone());
 
-    match engine.read().await.consume_ast_with_scope(&mut scope, &ast) {
+    match engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+    {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("Init script {} execution error: {}", script, error);
 
-            if let Some(mut errors) = world.write().await.get_mut::<ExecutionErrors>(entity) {
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
             } else {
                 world
                     .write()
-                    .await
+                    .unwrap()
                     .get_entity_mut(entity)
                     .unwrap()
                     .insert(ExecutionErrors::new_with_error(script, error));
@@ -49,13 +52,13 @@ pub async fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptN
     };
 }
 
-pub async fn run_post_event_script(
+pub fn run_post_event_script(
     world: SharedWorld,
     event: &Action,
     entity: Entity,
     script: ScriptName,
 ) {
-    let (ast, engine) = match prepare_script_execution(&*world.read().await, &script) {
+    let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
     };
@@ -71,12 +74,16 @@ pub async fn run_post_event_script(
     scope.push_constant("WORLD", world.clone());
     scope.push_constant("EVENT", event.clone());
 
-    match engine.read().await.consume_ast_with_scope(&mut scope, &ast) {
+    match engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+    {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("Post-event script {} execution error: {}", script, error);
 
-            let mut world = world.write().await;
+            let mut world = world.write().unwrap();
 
             if let Some(mut errors) = world.get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
@@ -90,13 +97,13 @@ pub async fn run_post_event_script(
     };
 }
 
-pub async fn run_pre_event_script(
+pub fn run_pre_event_script(
     world: SharedWorld,
     event: &Action,
     entity: Entity,
     script: ScriptName,
 ) -> bool {
-    let (ast, engine) = match prepare_script_execution(&*world.read().await, &script) {
+    let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return true,
     };
@@ -113,17 +120,21 @@ pub async fn run_pre_event_script(
     scope.push_constant("EVENT", event.clone());
     scope.push_dynamic("allow_action", Dynamic::from(true));
 
-    match engine.read().await.consume_ast_with_scope(&mut scope, &ast) {
+    match engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+    {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("Pre-event script {} execution error: {}", script, error);
 
-            if let Some(mut errors) = world.write().await.get_mut::<ExecutionErrors>(entity) {
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
             } else {
                 world
                     .write()
-                    .await
+                    .unwrap()
                     .get_entity_mut(entity)
                     .unwrap()
                     .insert(ExecutionErrors::new_with_error(script, error));
@@ -134,8 +145,8 @@ pub async fn run_pre_event_script(
     scope.get_value("allow_action").unwrap()
 }
 
-pub async fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) {
-    let (ast, engine) = match prepare_script_execution(&*world.read().await, &script) {
+pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) {
+    let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
     };
@@ -150,16 +161,20 @@ pub async fn run_timed_script(world: SharedWorld, entity: Entity, script: Script
     );
     scope.push_constant("WORLD", world.clone());
 
-    match engine.read().await.consume_ast_with_scope(&mut scope, &ast) {
+    match engine
+        .read()
+        .unwrap()
+        .consume_ast_with_scope(&mut scope, &ast)
+    {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("Timed script {} execution error: {}", script, error);
-            if let Some(mut errors) = world.write().await.get_mut::<ExecutionErrors>(entity) {
+            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
             } else {
                 world
                     .write()
-                    .await
+                    .unwrap()
                     .get_entity_mut(entity)
                     .unwrap()
                     .insert(ExecutionErrors::new_with_error(script, error));

@@ -11,22 +11,16 @@ use itertools::Itertools;
 use sqlx::{migrate::MigrateError, sqlite::SqliteConnectOptions, Row, SqlitePool};
 use thiserror::Error;
 
-use crate::{
-    ecs::SharedWorld,
-    world::{
-        scripting::{
-            ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind,
+use crate::world::{
+    scripting::{ScriptHook, ScriptHooks, ScriptName, ScriptTrigger, TriggerEvent, TriggerKind},
+    types::{
+        self,
+        object::{
+            Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId, Prototypes,
         },
-        types::{
-            self,
-            object::{
-                Keywords, Object, ObjectBundle, ObjectFlags, ObjectId, Objects, PrototypeId,
-                Prototypes,
-            },
-            player::{Player, PlayerFlags},
-            room::RoomId,
-            Contents, Description, Id, Named,
-        },
+        player::{Player, PlayerFlags},
+        room::RoomId,
+        Contents, Description, Id, Named,
     },
 };
 
@@ -69,10 +63,10 @@ pub trait GameDb {
     async fn load_world(&self, world: &mut World) -> DbResult<()>;
     async fn has_player(&self, user: &str) -> anyhow::Result<bool>;
     async fn create_player(&self, user: &str, hash: &str, room: RoomId) -> anyhow::Result<i64>;
-    async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity>;
+    async fn load_player(&self, world: &mut World, name: &str) -> anyhow::Result<Entity>;
     async fn reload_prototype(
         &self,
-        world: SharedWorld,
+        world: &mut World,
         prototype_id: PrototypeId,
     ) -> anyhow::Result<()>;
 }
@@ -245,8 +239,8 @@ impl GameDb for Db {
         .bind(user)
         .bind(hash)
         .bind(room)
-        .bind(0)
         .bind(DEFAULT_PLAYER_DESCRIPTION)
+        .bind(0)
         .fetch_one(&self.pool)
         .await?;
 
@@ -264,13 +258,13 @@ impl GameDb for Db {
         Ok(id)
     }
 
-    async fn load_player(&self, world: SharedWorld, name: &str) -> anyhow::Result<Entity> {
+    async fn load_player(&self, world: &mut World, name: &str) -> anyhow::Result<Entity> {
         player::load_player(&self.pool, world, name).await
     }
 
     async fn reload_prototype(
         &self,
-        world: SharedWorld,
+        world: &mut World,
         prototype_id: PrototypeId,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
@@ -286,8 +280,6 @@ impl GameDb for Db {
         .fetch(&self.pool);
 
         let prototype = world
-            .write()
-            .await
             .get_resource::<Prototypes>()
             .unwrap()
             .by_id(prototype_id)
@@ -298,8 +290,6 @@ impl GameDb for Db {
 
             let object_id = ObjectId::try_from(object_row.id)?;
             let object = world
-                .write()
-                .await
                 .get_resource::<Objects>()
                 .unwrap()
                 .by_id(object_id)
@@ -307,7 +297,7 @@ impl GameDb for Db {
 
             let bundle = object_row.into_object_bundle(prototype)?;
 
-            world.write().await.entity_mut(object).insert_bundle(bundle);
+            world.entity_mut(object).insert_bundle(bundle);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -319,21 +309,16 @@ impl GameDb for Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.write().await.get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
                         hooks.insert(hook);
                     } else {
-                        world
-                            .write()
-                            .await
-                            .entity_mut(object)
-                            .insert(ScriptHooks::new(hook));
+                        world.entity_mut(object).insert(ScriptHooks::new(hook));
                     }
                 }
             }
         }
 
         let player_objects = {
-            let mut world = world.write().await;
             world
                 .query_filtered::<&Contents, With<Player>>()
                 .iter(&*world)
@@ -343,7 +328,7 @@ impl GameDb for Db {
         };
 
         for object in player_objects {
-            let id = world.read().await.get::<Object>(object).unwrap().id();
+            let id = world.get::<Object>(object).unwrap().id();
             let object_row = sqlx::query_as::<_, ObjectRow>(
             r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
                         COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
@@ -359,8 +344,6 @@ impl GameDb for Db {
 
             let prototype_id = object_row.prototype_id;
             let prototype = world
-                .write()
-                .await
                 .get_resource::<Prototypes>()
                 .unwrap()
                 .by_id(PrototypeId::try_from(object_row.prototype_id)?)
@@ -368,7 +351,7 @@ impl GameDb for Db {
 
             let bundle = object_row.into_object_bundle(prototype)?;
 
-            world.write().await.entity_mut(object).insert_bundle(bundle);
+            world.entity_mut(object).insert_bundle(bundle);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -380,14 +363,10 @@ impl GameDb for Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.write().await.get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
                         hooks.insert(hook)
                     } else {
-                        world
-                            .write()
-                            .await
-                            .entity_mut(object)
-                            .insert(ScriptHooks::new(hook));
+                        world.entity_mut(object).insert(ScriptHooks::new(hook));
                     }
                 }
             }

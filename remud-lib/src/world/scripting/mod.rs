@@ -4,16 +4,20 @@ mod modules;
 mod systems;
 pub mod time;
 
-use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
+use std::{
+    collections::HashMap,
+    convert::TryFrom,
+    fmt,
+    sync::{Arc, RwLock},
+};
 
-use async_trait::async_trait;
 use bevy_app::Events;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rhai::{plugin::*, ParseError, AST};
 use strum::EnumString;
 use thiserror::Error;
-use tokio::sync::RwLock;
 
 use crate::{
     ecs::{CoreSystem, Ecs, Phase, Plugin, SharedWorld, Step},
@@ -51,17 +55,12 @@ pub enum ScriptSystem {
 #[derive(Default)]
 pub struct ScriptPlugin {}
 
-#[async_trait]
 impl Plugin for ScriptPlugin {
-    async fn build(&self, ecs: &mut Ecs) {
+    fn build(&self, ecs: &mut Ecs) {
         ecs.init_resource::<ScriptRuns>()
-            .await
             .init_resource::<TimedActions>()
-            .await
             .init_resource::<ScriptEngine>()
-            .await
             .add_event::<RunInitScript>()
-            .await
             .add_system(
                 Step::PreEvent,
                 Phase::First,
@@ -558,86 +557,85 @@ impl RunInitScript {
     }
 }
 
-pub async fn run_init_scripts(world: SharedWorld) {
+pub fn run_init_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .init_runs,
     );
 
-    for ScriptRun { entity, script } in runs {
-        run_init_script(world.clone(), entity, script).await
-    }
+    runs.into_par_iter()
+        .for_each(|ScriptRun { entity, script }| run_init_script(world.clone(), entity, script))
 }
 
-pub async fn run_pre_action_scripts(world: SharedWorld) {
+pub fn run_pre_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .runs,
     );
 
-    for (action, runs) in runs {
-        let mut allowed = true;
-        for ScriptRun { entity, script } in runs {
-            if !run_pre_event_script(world.clone(), &action, entity, script).await {
-                allowed = false;
-            }
-        }
+    runs.into_par_iter().for_each(|(action, runs)| {
+        let allowed: Vec<bool> = runs
+            .into_par_iter()
+            .map(|ScriptRun { entity, script }| {
+                run_pre_event_script(world.clone(), &action, entity, script)
+            })
+            .collect();
 
-        if allowed {
+        if allowed.into_iter().all(|allowed| allowed) {
             world
                 .write()
-                .await
+                .unwrap()
                 .get_resource_mut::<Events<Action>>()
                 .unwrap()
                 .send(action);
         }
-    }
+    });
 }
 
-pub async fn run_post_action_scripts(world: SharedWorld) {
+pub fn run_post_action_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .runs,
     );
 
-    for (action, runs) in runs {
-        for ScriptRun { entity, script } in runs {
-            run_post_event_script(world.clone(), &action, entity, script).await
-        }
-    }
+    runs.into_par_iter().for_each(|(action, runs)| {
+        runs.into_par_iter()
+            .for_each(|ScriptRun { entity, script }| {
+                run_post_event_script(world.clone(), &action, entity, script);
+            });
+    });
 }
 
-pub async fn run_timed_scripts(world: SharedWorld) {
+pub fn run_timed_scripts(world: SharedWorld) {
     let mut runs = Vec::new();
     std::mem::swap(
         &mut runs,
         &mut world
             .write()
-            .await
+            .unwrap()
             .get_resource_mut::<ScriptRuns>()
             .unwrap()
             .timed_runs,
     );
 
-    for ScriptRun { entity, script } in runs {
-        run_timed_script(world.clone(), entity, script).await
-    }
+    runs.into_par_iter()
+        .for_each(|ScriptRun { entity, script }| run_timed_script(world.clone(), entity, script))
 }
