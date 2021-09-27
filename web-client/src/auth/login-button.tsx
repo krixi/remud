@@ -3,7 +3,7 @@ import { Link, useHistory } from "react-router-dom";
 import { useAuth } from "../hooks/use-auth";
 
 export const LoginButton: React.FC = () => {
-  const { isLoggedIn, logout } = useAuth();
+  const { isLoggedIn, user, logout } = useAuth();
   const history = useHistory();
 
   return isLoggedIn ? (
@@ -11,7 +11,7 @@ export const LoginButton: React.FC = () => {
       className="btn"
       onClick={() => logout().then(() => history.push("/"))}
     >
-      Logout
+      Logout {user?.name}
     </button>
   ) : (
     <button className="btn">

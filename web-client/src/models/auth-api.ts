@@ -20,19 +20,21 @@ export interface AuthAction {
   tokens?: AuthTokens;
 }
 
-export interface AuthData {
+export interface UserData {
   loading?: boolean;
   tokens?: AuthTokens;
+  name?: string;
+  expires?: Date;
 }
 
 export interface Auth {
   isLoggedIn: boolean;
-  user?: AuthData;
+  user?: UserData;
   login: (req: LoginReq) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 export interface AuthContext {
-  data?: AuthData;
+  data?: UserData;
   dispatch: (action: AuthAction) => void;
 }

@@ -57,17 +57,18 @@ export const useAuth = (): Auth => {
           Authorization: `Bearer ${data.tokens.access_token}`,
         },
       }).subscribe({
-        next: () => {
+        next: (val) => {
           s.unsubscribe();
+          dispatch({ kind: AuthActionKind.Logout });
           return resolve();
         },
         error: (err) => {
           s.unsubscribe();
+          dispatch({ kind: AuthActionKind.Logout });
           return reject(err);
         },
         complete: () => {
           s.unsubscribe();
-          dispatch({ kind: AuthActionKind.Logout });
         },
       });
     });

@@ -9,6 +9,9 @@ export const useScriptsApi = (baseURL: string) => {
 
   const send = useCallback(
     async (script: Script, path: string): Promise<ScriptAPIResp> => {
+      // TODO: if user.accessTokenExpires expires soon, first fetch a new access token.
+      // or, respond to a 401 with header www-authenticate or some shit
+
       return new Promise((resolve, reject) => {
         if (!user || !user.tokens) {
           return reject(new Error("logged in user required"));
