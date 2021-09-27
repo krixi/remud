@@ -76,8 +76,19 @@ export const useAuth = (): Auth => {
 
   const isLoggedIn = useMemo(() => data?.tokens !== undefined, [data]);
 
+  const isScopeAuthorized = useCallback(
+    (scope: string): boolean => {
+      if (!data || !data.scopes) {
+        return false;
+      }
+      return data.scopes.includes(scope);
+    },
+    [data]
+  );
+
   return {
     isLoggedIn,
+    isScopeAuthorized,
     user: data,
     login,
     logout,
