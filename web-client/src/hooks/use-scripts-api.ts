@@ -20,15 +20,14 @@ export const useScriptsApi = (baseURL: string) => {
       req: (access_token: string) => Promise<AjaxResponse<any>>
     ): Promise<AjaxResponse<any>> => {
       return new Promise<AjaxResponse<any>>((resolve, reject) => {
-        if (!user?.expires) {
-          return reject(new Error("logged in user required"));
-        }
-
-        // if we are within 1 minute of the expiration, fetch a new access token before continuing.
+        // if we are within 1 minute of the expiration, or we are missing data, fetch a new access token before continuing.
         const soon = new Date();
         soon.setMinutes(soon.getMinutes() + 1);
-        if (user.expires <= soon || !user.tokens?.access_token) {
-          // refresh the token before letting the base request through
+        if (
+          !user?.expires ||
+          user.expires <= soon ||
+          !user.tokens?.access_token
+        ) {
           refresh()
             .then((tokens) => resolve(req(tokens.access_token)))
             .catch((err) => reject(err));
@@ -38,7 +37,7 @@ export const useScriptsApi = (baseURL: string) => {
         }
       });
     },
-    [refresh, user?.expires, user?.tokens?.access_token]
+    [refresh, user]
   );
 
   const send = useCallback(

@@ -114,6 +114,7 @@ export const useAuth = (): Auth => {
   }, [baseURL, dispatch, data]);
 
   const isLoggedIn = useMemo(() => data?.tokens !== undefined, [data]);
+  const isRefreshPending = useMemo(() => data?.refreshPending || false, [data]);
 
   const isScopeAuthorized = useCallback(
     (scope: string): boolean => {
@@ -127,6 +128,7 @@ export const useAuth = (): Auth => {
 
   return {
     isLoggedIn,
+    isRefreshPending,
     isScopeAuthorized,
     user: data,
     login,

@@ -30,6 +30,7 @@ export interface AuthAction {
 
 export interface UserData {
   loading?: boolean;
+  refreshPending?: boolean;
   tokens?: AuthTokens;
   name?: string;
   expires?: Date;
@@ -42,6 +43,7 @@ export interface DecodedToken extends JwtPayload {
 
 export interface Auth {
   isLoggedIn: boolean;
+  isRefreshPending: boolean;
   isScopeAuthorized: (scope: string) => boolean;
   user?: UserData;
   login: (req: LoginReq) => Promise<void>;
