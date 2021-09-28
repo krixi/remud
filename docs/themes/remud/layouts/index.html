@@ -1,6 +1,15 @@
 {{ define "main" }}
   <div class="container rounded p-2 mx-auto text-center">
     <h1 class="italic text-5xl mb-10">{{ .Title }}</h1>
-    <div class="p-5 inline-block rounded">{{ .Content }}</div>
+    <div class="p-5 inline-block rounded">
+      <article>
+        <div class="text-white">
+          {{ .Content }}
+        </div>
+      </article>
+      <a href="https://github.com/siler/remud" class="underline"
+        >Return to GitHub</a
+      >
+    </div>
   </div>
 {{ end }}

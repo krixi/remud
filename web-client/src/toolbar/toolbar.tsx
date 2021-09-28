@@ -10,6 +10,14 @@ export const Toolbar: React.FC = () => {
     <div className="p-2 bg-dark-gray rounded w-full text-center flex flex-row justify-between">
       <nav className="flex flex-row">
         <NavLink path="/" text="Home" />
+        <a
+          href="https://siler.github.io/remud"
+          className="btn"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Docs
+        </a>
         {isScopeAuthorized("scripts") && (
           <NavLink path="/scripts" text="Scripts" />
         )}

@@ -13,6 +13,7 @@ Technologies:
 - [sqlx](https://github.com/launchbadge/sqlx) (currently backed by [SQLite](https://www.sqlite.org/))
 - [bevy_ecs](https://bevyengine.org/)
 - [rhai](https://rhai.rs/)
+- [warp](https://github.com/seanmonstar/warp)
 
 Docs for this project are built using [Hugo](https://gohugo.io/) and are available on [GitHub Pages](https://siler.github.io/remud). To view them locally, install Hugo and run:
 
@@ -28,4 +29,12 @@ The web client for this project allows for management of the in-game scripts. To
 cd web-client
 npm install
 npm start
+```
+
+
+To build and run this project with docker (be warned, this takes at least 5 minutes each time):
+
+```shell
+docker build -t remud .
+docker run -it --rm -v $PWD:/game/world/ --name citysix remud
 ```
