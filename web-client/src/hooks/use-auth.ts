@@ -2,7 +2,13 @@ import { useCallback, useMemo } from "react";
 import { Subscription } from "rxjs";
 import { ajax } from "rxjs/ajax";
 import { useAuthContext } from "./use-auth-context";
-import { Auth, AuthActionKind, AuthTokens, LoginReq } from "../models/auth-api";
+import {
+  Auth,
+  AuthActionKind,
+  AuthTokens,
+  LoginReq,
+  RefreshReq,
+} from "../models/auth-api";
 import { ScriptApiBaseUrl } from "../env";
 
 export const useAuth = (): Auth => {
@@ -74,6 +80,39 @@ export const useAuth = (): Auth => {
     });
   }, [baseURL, dispatch, data]);
 
+  const refresh = useCallback(async (): Promise<AuthTokens> => {
+    return new Promise<AuthTokens>((resolve, reject) => {
+      if (!data?.tokens?.refresh_token) {
+        return reject(new Error("refresh token required"));
+      }
+      const req: RefreshReq = {
+        refresh_token: data.tokens.refresh_token,
+      };
+      const s: Subscription = ajax({
+        url: `${baseURL}/auth/refresh`,
+        method: `POST`,
+        body: req,
+        timeout: 2000,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }).subscribe({
+        next: (r) => {
+          s.unsubscribe();
+          const tokens = r.response as AuthTokens;
+          dispatch({ kind: AuthActionKind.RefreshSuccess, tokens });
+          return resolve(tokens);
+        },
+        error: (err) => {
+          s.unsubscribe();
+          dispatch({ kind: AuthActionKind.RefreshError });
+          return reject(err);
+        },
+        complete: () => s.unsubscribe(),
+      });
+    });
+  }, [baseURL, dispatch, data]);
+
   const isLoggedIn = useMemo(() => data?.tokens !== undefined, [data]);
 
   const isScopeAuthorized = useCallback(
@@ -92,5 +131,6 @@ export const useAuth = (): Auth => {
     user: data,
     login,
     logout,
+    refresh,
   };
 };

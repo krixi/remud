@@ -19,6 +19,7 @@ const AuthReducer = (state: UserData, action: AuthAction) => {
         ...state,
         loading: true,
       };
+    case AuthActionKind.RefreshSuccess: // fallthrough
     case AuthActionKind.LoginSuccess:
       // decode the access token to get more useful data
       let name = "",
@@ -38,15 +39,11 @@ const AuthReducer = (state: UserData, action: AuthAction) => {
         expires,
         scopes,
       };
+    case AuthActionKind.LoginError: // fallthrough
+    case AuthActionKind.RefreshError: // fallthrough
     case AuthActionKind.Logout:
       // reset the whole state
       return {};
-    case AuthActionKind.LoginError:
-      return {
-        ...state,
-        tokens: undefined,
-        loading: false,
-      };
   }
 };
 

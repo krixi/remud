@@ -5,6 +5,10 @@ export interface LoginReq {
   password: string;
 }
 
+export interface RefreshReq {
+  refresh_token: string;
+}
+
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
@@ -13,7 +17,9 @@ export interface AuthTokens {
 export enum AuthActionKind {
   RequestLogin,
   LoginSuccess,
+  RefreshSuccess,
   LoginError,
+  RefreshError,
   Logout,
 }
 
@@ -40,6 +46,7 @@ export interface Auth {
   user?: UserData;
   login: (req: LoginReq) => Promise<void>;
   logout: () => Promise<void>;
+  refresh: () => Promise<AuthTokens>;
 }
 
 export interface AuthContext {

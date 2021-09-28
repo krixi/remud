@@ -13,42 +13,65 @@ import {
 } from "../models/scripts-api";
 
 export const useScriptsApi = (baseURL: string) => {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
+
+  const refreshIfNeeded = useCallback(
+    async (
+      req: (access_token: string) => Promise<AjaxResponse<any>>
+    ): Promise<AjaxResponse<any>> => {
+      return new Promise<AjaxResponse<any>>((resolve, reject) => {
+        if (!user?.expires) {
+          return reject(new Error("logged in user required"));
+        }
+
+        // if we are within 1 minute of the expiration, fetch a new access token before continuing.
+        const soon = new Date();
+        soon.setMinutes(soon.getMinutes() + 1);
+        if (user.expires <= soon || !user.tokens?.access_token) {
+          // refresh the token before letting the base request through
+          refresh()
+            .then((tokens) => resolve(req(tokens.access_token)))
+            .catch((err) => reject(err));
+        } else {
+          // no need to refresh - just let it go
+          return resolve(req(user.tokens.access_token));
+        }
+      });
+    },
+    [refresh, user?.expires, user?.tokens?.access_token]
+  );
 
   const send = useCallback(
     async (
       body: Script | GetScriptReq | ListScriptsReq,
       path: string
     ): Promise<AjaxResponse<any>> => {
-      // TODO: if user.accessTokenExpires expires soon, first fetch a new access token.
-      // or, respond to a 401 with header www-authenticate or some shit
-
-      return new Promise((resolve, reject) => {
-        if (!user || !user.tokens) {
-          return reject(new Error("logged in user required"));
-        }
-        const s: Subscription = ajax({
-          url: `${baseURL}/scripts/${path}`,
-          method: `POST`,
-          body,
-          timeout: 2000,
-          headers: {
-            Authorization: `Bearer ${user.tokens.access_token}`,
-          },
-        }).subscribe({
-          next: (r) => {
-            s.unsubscribe();
-            return resolve(r);
-          },
-          error: (err) => {
-            s.unsubscribe();
-            reject(err);
-          },
-          complete: () => s.unsubscribe(),
+      // we wrap this promise in a function so that we can pass in the correct access token after it's been refreshed.
+      const sendReq = (access_token: string) =>
+        new Promise<AjaxResponse<any>>((resolve, reject) => {
+          const s: Subscription = ajax({
+            url: `${baseURL}/scripts/${path}`,
+            method: `POST`,
+            body,
+            timeout: 2000,
+            headers: {
+              Authorization: `Bearer ${access_token}`,
+            },
+          }).subscribe({
+            next: (r) => {
+              s.unsubscribe();
+              return resolve(r);
+            },
+            error: (err) => {
+              s.unsubscribe();
+              reject(err);
+            },
+            complete: () => s.unsubscribe(),
+          });
         });
-      });
+      return refreshIfNeeded(sendReq);
     },
-    [baseURL, user]
+    [baseURL, refreshIfNeeded]
   );
 
   const checkForErr = useCallback(
