@@ -1,4 +1,4 @@
-# remud
+# ReMUd
 
 Remud is a new MUD server written in Rust. My intention is to begin experimenting with the MUD format once the basics are nailed down, and to build an interesting cyberpunk-themed world. Only the server itself will be open source.
 
@@ -14,7 +14,7 @@ Technologies:
 - [bevy_ecs](https://bevyengine.org/)
 - [rhai](https://rhai.rs/)
 
-Docs for this project are built using [Hugo](https://gohugo.io/) - to view them locally, install Hugo and run:
+Docs for this project are built using [Hugo](https://gohugo.io/) and are available on [GitHub Pages](https://siler.github.io/remud). To view them locally, install Hugo and run:
 
 ```shell
 cd docs

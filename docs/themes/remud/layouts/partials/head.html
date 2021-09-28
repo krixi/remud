@@ -7,24 +7,11 @@
   {{ if .Site.IsServer }}
     <link rel="stylesheet" type="text/css" href="{{ $styles.RelPermalink }}" />
   {{ else }}
-    {{ $styles := $styles | minify | fingerprint |
-      resources.PostProcess
-    }}
-    {{/* https://discourse.gohugo.io/t/css-postprocess-and-relpermalink-issue/29650/5 */}}
-    {{ $deep := strings.Count "/" (strings.TrimPrefix .Site.BaseURL .Permalink) }}
-    {{ $deep = sub $deep 1 }}
-    {{ $relbase := "." }}
-    {{ if gt $deep 0 }}
-      {{ $relbase = "" }}
-      {{ range $i, $sequence := (seq $deep) }}
-        {{ $relbase = (print $relbase "../") }}
-      {{ end }}
-      {{ $relbase = strings.TrimSuffix "/" $relbase }}
-    {{ end }}
+    {{ $styles := $styles | minify | fingerprint | resources.PostProcess }}
     <link
       rel="stylesheet"
       type="text/css"
-      href="{{ $relbase }}{{ $styles.RelPermalink }}"
+      href="{{ $styles.RelPermalink }}"
       integrity="{{ $styles.Data.Integrity }}"
     />
   {{ end }}
