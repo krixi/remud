@@ -5,6 +5,10 @@ export interface LoginReq {
   password: string;
 }
 
+export interface RefreshReq {
+  refresh_token: string;
+}
+
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
@@ -13,7 +17,9 @@ export interface AuthTokens {
 export enum AuthActionKind {
   RequestLogin,
   LoginSuccess,
+  RefreshSuccess,
   LoginError,
+  RefreshError,
   Logout,
 }
 
@@ -24,6 +30,7 @@ export interface AuthAction {
 
 export interface UserData {
   loading?: boolean;
+  refreshPending?: boolean;
   tokens?: AuthTokens;
   name?: string;
   expires?: Date;
@@ -36,10 +43,12 @@ export interface DecodedToken extends JwtPayload {
 
 export interface Auth {
   isLoggedIn: boolean;
+  isRefreshPending: boolean;
   isScopeAuthorized: (scope: string) => boolean;
   user?: UserData;
   login: (req: LoginReq) => Promise<void>;
   logout: () => Promise<void>;
+  refresh: () => Promise<AuthTokens>;
 }
 
 export interface AuthContext {
