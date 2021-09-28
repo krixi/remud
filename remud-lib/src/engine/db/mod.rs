@@ -54,8 +54,8 @@ pub trait AuthDb {
         refresh_issued_secs: i64,
     ) -> Result<(), DbError>;
     async fn logout(&self, player: &str) -> Result<(), DbError>;
-    async fn access_issued_secs(&self, player: &str) -> Result<i64, DbError>;
-    async fn refresh_issued_secs(&self, player: &str) -> Result<i64, DbError>;
+    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError>;
+    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError>;
 }
 
 #[async_trait]
@@ -189,30 +189,30 @@ impl AuthDb for Db {
         Ok(())
     }
 
-    async fn access_issued_secs(&self, player: &str) -> Result<i64, DbError> {
+    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError> {
         let results = sqlx::query(
             r#"SELECT access FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
         WHERE players.username = ?"#,
         )
         .bind(player)
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
-        Ok(results.get("access"))
+        Ok(results.map(|r| r.get("access")))
     }
 
-    async fn refresh_issued_secs(&self, player: &str) -> Result<i64, DbError> {
+    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError> {
         let results = sqlx::query(
             r#"SELECT refresh FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
         WHERE players.username = ?"#,
         )
         .bind(player)
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
-        Ok(results.get("refresh"))
+        Ok(results.map(|r| r.get("refresh")))
     }
 }
 

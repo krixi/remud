@@ -6,8 +6,8 @@ use warp::Filter;
 use crate::{
     engine::db::AuthDb,
     web::{
-        auth::verify_access, InternalError, JsonEmpty, Player, ScriptsRequest, ScriptsResponse,
-        WebMessage,
+        auth::{verify_access, SCOPE_SCRIPTS},
+        InternalError, JsonEmpty, Player, ScriptsRequest, ScriptsResponse, WebMessage,
     },
     world::scripting,
 };
@@ -33,6 +33,12 @@ pub struct JsonScriptName {
     pub name: String,
 }
 
+impl JsonScriptName {
+    pub fn as_str(&self) -> &str {
+        self.name.as_str()
+    }
+}
+
 fn json_script_name() -> impl Filter<Extract = (JsonScriptName,), Error = warp::Rejection> + Clone {
     warp::body::content_length_limit(1024 * 16).and(warp::body::json())
 }
@@ -42,6 +48,12 @@ pub struct JsonScript {
     pub name: String,
     pub trigger: String,
     pub code: String,
+}
+
+impl JsonScript {
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
 }
 
 fn json_script() -> impl Filter<Extract = (JsonScript,), Error = warp::Rejection> + Clone {
@@ -144,7 +156,7 @@ where
     DB: AuthDb + Send + Sync + Clone + 'static,
 {
     warp::path("create")
-        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(verify_access(db, vec![SCOPE_SCRIPTS.to_string()]))
         .and(json_script())
         .and(with_sender(tx))
         .and_then(handle_create)
@@ -158,7 +170,7 @@ where
     DB: AuthDb + Send + Sync + Clone + 'static,
 {
     warp::path("read")
-        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(verify_access(db, vec![SCOPE_SCRIPTS.to_string()]))
         .and(json_script_name())
         .and(with_sender(tx))
         .and_then(handle_read)
@@ -173,7 +185,7 @@ where
 {
     warp::path("read")
         .and(warp::path("all"))
-        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(verify_access(db, vec![SCOPE_SCRIPTS.to_string()]))
         .and(with_sender(tx))
         .and_then(handle_read_all)
 }
@@ -186,7 +198,7 @@ where
     DB: AuthDb + Send + Sync + Clone + 'static,
 {
     warp::path("update")
-        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(verify_access(db, vec![SCOPE_SCRIPTS.to_string()]))
         .and(json_script())
         .and(with_sender(tx))
         .and_then(handle_update)
@@ -200,7 +212,7 @@ where
     DB: AuthDb + Send + Sync + Clone + 'static,
 {
     warp::path("delete")
-        .and(verify_access(db, vec!["scripts".to_string()]))
+        .and(verify_access(db, vec![SCOPE_SCRIPTS.to_string()]))
         .and(json_script_name())
         .and(with_sender(tx))
         .and_then(handle_delete)
@@ -211,7 +223,7 @@ async fn handle_create(
     script: JsonScript,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("authorized create with {:?}", player);
+    tracing::info!("player {} creating script {}", player.name(), script.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -221,7 +233,7 @@ async fn handle_create(
         })
         .await
     {
-        tracing::error!("Failed to dispatch CreateScript to engine: {}", err);
+        tracing::error!("failed to dispatch CreateScript to engine: {}", err);
         return Err(warp::reject::custom(InternalError {}));
     };
 
@@ -231,7 +243,7 @@ async fn handle_create(
         }
         Ok(ScriptsResponse::Error(e)) => Err(warp::reject::custom(e)),
         other => {
-            tracing::error!("Received unexpected response to CreateScript: {:?}", other);
+            tracing::error!("received unexpected response to CreateScript: {:?}", other);
             Err(warp::reject::custom(InternalError {}))
         }
     }
@@ -242,8 +254,11 @@ async fn handle_read(
     script_name: JsonScriptName,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("authorized read with {:?}", player);
-
+    tracing::info!(
+        "player {} reading script {}",
+        player.name(),
+        script_name.as_str()
+    );
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
         .send(WebMessage {
@@ -252,7 +267,7 @@ async fn handle_read(
         })
         .await
     {
-        tracing::error!("Failed to dispatch ReadScript to engine: {}", err);
+        tracing::error!("failed to dispatch ReadScript to engine: {}", err);
         return Err(warp::reject::custom(InternalError {}));
     };
 
@@ -260,7 +275,7 @@ async fn handle_read(
         Ok(ScriptsResponse::Script(script)) => Ok(warp::reply::json(&script)),
         Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
         other => {
-            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            tracing::error!("received unexpected response to ReadScript: {:?}", other);
             Err(warp::reject::custom(InternalError {}))
         }
     }
@@ -270,7 +285,7 @@ async fn handle_read_all(
     player: Player,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("authorized read_all with {:?}", player);
+    tracing::info!("player {} reading all scripts", player.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -280,7 +295,7 @@ async fn handle_read_all(
         })
         .await
     {
-        tracing::error!("Failed to dispatch ReadScript to engine: {}", err);
+        tracing::error!("failed to dispatch ReadScript to engine: {}", err);
         return Err(warp::reject::custom(InternalError {}));
     };
 
@@ -290,7 +305,7 @@ async fn handle_read_all(
         }
         Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
         other => {
-            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            tracing::error!("received unexpected response to ReadScript: {:?}", other);
             Err(warp::reject::custom(InternalError {}))
         }
     }
@@ -301,7 +316,7 @@ async fn handle_update(
     script: JsonScript,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("authorized update with {:?}", player);
+    tracing::info!("player {} updating script {}", player.name(), script.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -311,7 +326,7 @@ async fn handle_update(
         })
         .await
     {
-        tracing::error!("Failed to dispatch UpdateScript to engine: {}", err);
+        tracing::error!("failed to dispatch UpdateScript to engine: {}", err);
         return Err(warp::reject::custom(InternalError {}));
     };
 
@@ -321,7 +336,7 @@ async fn handle_update(
         }
         Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
         other => {
-            tracing::error!("Received unexpected response to ReadScript: {:?}", other);
+            tracing::error!("received unexpected response to ReadScript: {:?}", other);
             Err(warp::reject::custom(InternalError {}))
         }
     }
@@ -332,7 +347,11 @@ async fn handle_delete(
     script_name: JsonScriptName,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("authorized delete with {:?}", player);
+    tracing::info!(
+        "player {} deleting script {}",
+        player.name(),
+        script_name.as_str()
+    );
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -342,7 +361,7 @@ async fn handle_delete(
         })
         .await
     {
-        tracing::error!("Failed to dispatch DeleteScript to engine: {}", err);
+        tracing::error!("failed to dispatch DeleteScript to engine: {}", err);
         return Err(warp::reject::custom(InternalError {}));
     };
 
@@ -350,7 +369,7 @@ async fn handle_delete(
         Ok(ScriptsResponse::Done) => Ok(warp::reply::json(&JsonEmpty {})),
         Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),
         other => {
-            tracing::error!("Received unexpected response to DeleteScript: {:?}", other);
+            tracing::error!("received unexpected response to DeleteScript: {:?}", other);
             Err(warp::reject::custom(InternalError {}))
         }
     }

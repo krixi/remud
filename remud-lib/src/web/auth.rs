@@ -3,6 +3,7 @@ use std::{collections::HashSet, convert::TryFrom};
 use jwt_simple::prelude::{
     Claims, Duration, ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, VerificationOptions,
 };
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use warp::{reject, Filter, Rejection};
 
@@ -11,6 +12,23 @@ use crate::{
     web::{with_db, InternalError, Player},
     TOKEN_KEY,
 };
+
+const TOKEN_ISSUER: &str = "remud";
+const TOKEN_AUDIENCE: &str = "remud";
+const SCOPE_ACCESS: &str = "access";
+const SCOPE_REFRESH: &str = "refresh";
+pub const SCOPE_SCRIPTS: &str = "scripts";
+
+const TOKEN_ISSUERS: Lazy<HashSet<String>> = Lazy::new(|| {
+    let mut issuers = HashSet::new();
+    issuers.insert(TOKEN_ISSUER.to_string());
+    issuers
+});
+const TOKEN_AUDIENCES: Lazy<HashSet<String>> = Lazy::new(|| {
+    let mut audiences = HashSet::new();
+    audiences.insert(TOKEN_AUDIENCE.to_string());
+    audiences
+});
 
 pub fn auth_filters<DB>(
     db: DB,
@@ -114,36 +132,37 @@ async fn handle_verify_access<DB: AuthDb>(
 ) -> Result<Player, Rejection> {
     let token = match auth_header.split_whitespace().nth(1) {
         Some(token) => token,
-        None => return Err(reject::custom(AuthError::InvalidAuthHeader)),
+        None => {
+            tracing::warn!("received invalid Authorization header");
+            return Err(reject::custom(AuthError::InvalidAuthHeader));
+        }
     };
-
-    let mut issuers = HashSet::new();
-    issuers.insert("remud".to_string());
-    let mut audiences = HashSet::new();
-    audiences.insert("remud".to_string());
 
     // Verify the token signature, issuer, and audience
     let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
         token,
         Some(VerificationOptions {
-            allowed_issuers: Some(issuers),
-            allowed_audiences: Some(audiences),
+            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
             ..Default::default()
         }),
     ) {
         Ok(claims) => claims,
-        Err(_) => {
+        Err(e) => {
+            tracing::warn!("token could not be verified: {}", e);
             return Err(reject::custom(AuthError::VerificationError));
         }
     };
 
     // Confirm this is an access token
-    if !claims.custom.scopes.contains(&"access".to_string()) {
+    if !claims.custom.scopes.contains(&SCOPE_ACCESS.to_string()) {
+        tracing::warn!("token missing access scope");
         return Err(reject::custom(AuthError::InadequateAccess));
     }
 
     for scope in &scopes {
         if !claims.custom.scopes.contains(scope) {
+            tracing::warn!("missing required scope: {}", scope);
             return Err(reject::custom(AuthError::InadequateAccess));
         }
     }
@@ -152,13 +171,20 @@ async fn handle_verify_access<DB: AuthDb>(
 
     // Confirm that this access token hasn't been refreshed
     let access_issued = match db.access_issued_secs(player).await {
-        Ok(issued) => issued,
+        Ok(issued) => match issued {
+            Some(issued) => issued,
+            None => {
+                tracing::warn!("player has no active tokens");
+                return Err(reject::custom(AuthError::InvalidToken));
+            }
+        },
         Err(e) => {
             tracing::error!("failed to retrieve access token issue time: {}", e);
             return Err(reject::custom(InternalError {}));
         }
     };
     if claims.issued_at.unwrap().as_secs() as i64 != access_issued {
+        tracing::warn!("client provided an expired token");
         if let Err(e) = db.logout(player).await {
             tracing::error!("failed to log out player: {}", e);
         }
@@ -180,7 +206,7 @@ async fn handle_login<DB: AuthDb>(
         Ok(true) => (),
         Ok(false) => return Err(reject::custom(AuthError::AuthenticationError)),
         Err(e) => {
-            tracing::error!("Failed to verify player during token request: {}", e);
+            tracing::error!("failed to verify player during token request: {}", e);
             return Err(reject::custom(InternalError {}));
         }
     }
@@ -188,7 +214,7 @@ async fn handle_login<DB: AuthDb>(
     let immortal = match db.is_immortal(player).await {
         Ok(immortal) => immortal,
         Err(err) => {
-            tracing::error!("Failed to retrieve immortal status: {}", err);
+            tracing::error!("failed to retrieve immortal status: {}", err);
             return Err(reject::custom(InternalError {}));
         }
     };
@@ -197,7 +223,7 @@ async fn handle_login<DB: AuthDb>(
         match generate_tokens(player, immortal) {
             Ok(result) => result,
             Err(err) => {
-                tracing::error!("Failed to generate tokens: {}", err);
+                tracing::error!("failed to generate tokens: {}", err);
                 return Err(reject::custom(InternalError {}));
             }
         };
@@ -206,7 +232,7 @@ async fn handle_login<DB: AuthDb>(
         .register_tokens(player, access_issued_secs, refresh_issued_secs)
         .await
     {
-        tracing::error!("Failed to register web tokens: {}", err);
+        tracing::error!("failed to register web tokens: {}", err);
         return Err(reject::custom(InternalError {}));
     };
 
@@ -222,25 +248,24 @@ async fn handle_refresh<DB: AuthDb>(
     request: JsonRefreshRequest,
     db: DB,
 ) -> Result<impl warp::Reply, Rejection> {
-    let mut issuers = HashSet::new();
-    issuers.insert("remud".to_string());
-    let mut audiences = HashSet::new();
-    audiences.insert("remud".to_string());
-
     let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
         request.refresh_token.as_str(),
         Some(VerificationOptions {
-            allowed_issuers: Some(issuers),
-            allowed_audiences: Some(audiences),
+            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
             ..Default::default()
         }),
     ) {
         Ok(claims) => claims,
-        Err(_) => return Err(reject::custom(AuthError::VerificationError)),
+        Err(e) => {
+            tracing::warn!("token could not be verified: {}", e);
+            return Err(reject::custom(AuthError::VerificationError));
+        }
     };
 
     // Confirm this is a refresh token
-    if !claims.custom.scopes.contains(&"refresh".to_string()) {
+    if !claims.custom.scopes.contains(&SCOPE_REFRESH.to_string()) {
+        tracing::warn!("token is not a refresh token");
         return Err(reject::custom(AuthError::InadequateAccess));
     }
 
@@ -248,15 +273,23 @@ async fn handle_refresh<DB: AuthDb>(
 
     // Confirm that this refresh token hasn't already been used. If it has, log out the player.
     let refresh_issued = match db.refresh_issued_secs(player).await {
-        Ok(issued) => issued,
+        Ok(issued) => match issued {
+            Some(issued) => issued,
+            None => {
+                tracing::warn!("player has no valid tokens");
+                return Err(reject::custom(AuthError::InvalidToken));
+            }
+        },
         Err(err) => {
-            tracing::error!("Failed to retrieve refresh token issue time: {}", err);
+            tracing::error!("failed to retrieve refresh token issue time: {}", err);
             return Err(reject::custom(InternalError {}));
         }
     };
 
     if claims.issued_at.unwrap().as_secs() as i64 != refresh_issued {
-        if db.logout(player).await.is_err() {
+        tracing::warn!("client attempting to use expired token");
+        if let Err(err) = db.logout(player).await {
+            tracing::error!("failed to log out player using expired token: {}", err);
             return Err(reject::custom(InternalError {}));
         };
         return Err(reject::custom(AuthError::InvalidToken));
@@ -266,7 +299,7 @@ async fn handle_refresh<DB: AuthDb>(
     let immortal = match db.is_immortal(player).await {
         Ok(immortal) => immortal,
         Err(err) => {
-            tracing::error!("Failed to retrieve player immortal status: {}", err);
+            tracing::error!("failed to retrieve player immortal status: {}", err);
             return Err(reject::custom(InternalError {}));
         }
     };
@@ -275,7 +308,7 @@ async fn handle_refresh<DB: AuthDb>(
         match generate_tokens(player, immortal) {
             Ok(result) => result,
             Err(err) => {
-                tracing::error!("Failed to generate tokens: {}", err);
+                tracing::error!("failed to generate tokens: {}", err);
                 return Err(reject::custom(InternalError {}));
             }
         };
@@ -284,7 +317,7 @@ async fn handle_refresh<DB: AuthDb>(
         .register_tokens(player, access_issued_secs, refresh_issued_secs)
         .await
     {
-        tracing::error!("Failed to register tokens: {}", err);
+        tracing::error!("failed to register tokens: {}", err);
         return Err(reject::custom(InternalError {}));
     };
 
@@ -298,33 +331,33 @@ async fn handle_refresh<DB: AuthDb>(
 
 async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::Reply, Rejection> {
     if let Err(err) = db.logout(player.name.as_str()).await {
-        tracing::error!("Failed to log out player: {}", err);
+        tracing::error!("failed to log out player: {}", err);
         return Err(reject::custom(InternalError {}));
     };
     Ok(warp::reply())
 }
 
 fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64, String, i64)> {
-    let mut scopes = vec!["access".to_string()];
+    let mut scopes = vec![SCOPE_ACCESS.to_string()];
 
     if immortal {
-        scopes.push("scripts".to_string());
+        scopes.push(SCOPE_SCRIPTS.to_string());
     }
 
     let access_data = TokenData { scopes };
     let access_claims = Claims::with_custom_claims(access_data, Duration::from_hours(1))
-        .with_issuer("remud")
-        .with_audience("remud")
+        .with_issuer(TOKEN_ISSUER)
+        .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let access_issued = access_claims.issued_at.unwrap();
     let access_token = TOKEN_KEY.sign(access_claims)?;
 
     let refresh_data = TokenData {
-        scopes: vec!["refresh".to_string()],
+        scopes: vec![SCOPE_REFRESH.to_string()],
     };
     let refresh_claims = Claims::with_custom_claims(refresh_data, Duration::from_days(365))
-        .with_issuer("remud")
-        .with_audience("remud")
+        .with_issuer(TOKEN_ISSUER)
+        .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let refresh_issued = refresh_claims.issued_at.unwrap();
     let refresh_token = TOKEN_KEY.sign(refresh_claims)?;

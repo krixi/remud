@@ -12,7 +12,7 @@ use warp::{
         Response, StatusCode,
     },
     reject::Reject,
-    Filter,
+    Filter, Rejection,
 };
 
 use crate::{
@@ -29,7 +29,7 @@ use crate::{
 pub fn build_web_server<DB>(
     db: DB,
 ) -> (
-    warp::Server<impl Filter<Extract = impl warp::Reply, Error = Infallible> + Clone>,
+    warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>,
     mpsc::Receiver<WebMessage>,
 )
 where
@@ -41,8 +41,10 @@ where
         .allow_any_origin()
         .allow_methods(vec!["POST", "OPTIONS"])
         .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
-    let routes = auth_filters(db.clone()).or(script_filters(db, tx));
-    let wrapped = routes.with(cors).recover(handle_rejection);
+    let routes = auth_filters(db.clone())
+        .or(script_filters(db, tx))
+        .recover(handle_rejection);
+    let wrapped = routes.with(cors);
 
     (warp::serve(wrapped), rx)
 }
@@ -64,6 +66,12 @@ where
 #[derive(Debug)]
 pub struct Player {
     name: String,
+}
+
+impl Player {
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
 }
 
 pub struct WebMessage {
