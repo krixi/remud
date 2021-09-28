@@ -32,9 +32,15 @@ npm start
 ```
 
 
-To build and run this project with docker (be warned, this takes at least 5 minutes each time):
+To build and run this project with docker (be warned, the build step takes at least 5 minutes each time). 
+Note that the `remud-build` tag is important, it's referenced from the runtime docker file.
 
 ```shell
+# to build it:
+docker build -f Dockerfile.build -t remud-build .
 docker build -t remud .
-docker run -it --rm -v $PWD:/game/world/ --name citysix remud
+# to run it:
+docker run -it --rm -v $PWD:/game/world/ -p 2004:2004 -p 2080:2080 --name citysix remud
+# to stop it:
+docker stop citysix
 ```

@@ -1,22 +1,14 @@
-FROM rust as builder
-
-COPY . /remud
-WORKDIR /remud
-
-# RUN cargo test
-
-RUN cargo build --release --bin remud
-
-FROM debian:buster-slim as runner
-
-RUN apt-get update && apt-get install -y glibc && rm -rf /var/lib/apt/lists/*
+FROM debian:bullseye-slim as runner
 
 WORKDIR /game
 
-COPY --from=builder /remud/target/release/remud /game/remud
+COPY --from=remud-build /remud/target/release/remud /game/remud
 
 # ports for telnet and web APIs
 EXPOSE 2004/tcp
 EXPOSE 2080/tcp
 
+ENV RUST_LOG="warn,remud_lib=info,remud=info"
+
+# By default, we expect a folder 'world' to be mounted next to the binary, and to contain 'world.db'
 ENTRYPOINT ["./remud", "--db", "./world/world.db"]

@@ -1,0 +1,9 @@
+FROM rust as builder
+
+COPY . /remud
+WORKDIR /remud
+
+# RUN cargo test
+
+RUN cargo build --release --bin remud
+
