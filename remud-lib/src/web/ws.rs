@@ -23,5 +23,6 @@ fn with_engine_tx(
 
 async fn user_connected(ws: WebSocket, engine_tx: mpsc::Sender<ClientMessage>) {
     let client_id = ClientId(CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst));
+    // TODO: see example https://github.com/seanmonstar/warp/blob/master/examples/websockets_chat.rs
     todo!()
 }
