@@ -1,5 +1,6 @@
 mod auth;
 pub mod scripts;
+mod ws;
 
 use std::{convert::Infallible, fmt};
 
@@ -15,8 +16,9 @@ use warp::{
     Filter, Rejection,
 };
 
+use crate::web::ws::websocket_filters;
 use crate::{
-    engine::db::AuthDb,
+    engine::{db::AuthDb, ClientMessage},
     web::{
         auth::{auth_filters, AuthError},
         scripts::{
@@ -28,6 +30,7 @@ use crate::{
 
 pub fn build_web_server<DB>(
     db: DB,
+    engine_tx: mpsc::Sender<ClientMessage>,
 ) -> (
     warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>,
     mpsc::Receiver<WebMessage>,
@@ -43,6 +46,7 @@ where
         .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
     let routes = auth_filters(db.clone())
         .or(script_filters(db, tx))
+        .or(websocket_filters(engine_tx))
         .recover(handle_rejection);
     let wrapped = routes.with(cors);
 

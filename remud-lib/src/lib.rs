@@ -10,7 +10,11 @@ mod text;
 mod web;
 mod world;
 
-use std::{collections::HashMap, fmt, io};
+use std::{
+    collections::HashMap,
+    fmt, io,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
@@ -38,8 +42,10 @@ static TOKEN_KEY: Lazy<ES256KeyPair> = Lazy::new(|| {
     key
 });
 
+static CLIENT_ID_COUNTER: Lazy<AtomicUsize> = Lazy::new(|| AtomicUsize::new(1));
+
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct ClientId(usize);
+pub struct ClientId(usize);
 
 impl fmt::Display for ClientId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -68,7 +74,7 @@ pub async fn run_remud(
 
     let db = Db::new(db_path).await.map_err(EngineError::from)?;
 
-    let (web_server, web_message_rx) = build_web_server(db.clone());
+    let (web_server, web_message_rx) = build_web_server(db.clone(), engine_tx.clone());
 
     let mut engine = Engine::new(db, engine_rx, control_tx, web_message_rx).await?;
     tokio::spawn(async move {
@@ -87,14 +93,12 @@ pub async fn run_remud(
         tx.send(()).ok();
     }
 
-    let mut next_client_id = 1;
     let mut join_handles = HashMap::new();
 
     loop {
         tokio::select! {
             Ok((socket, addr)) = telnet_listener.accept() => {
-                let client_id = ClientId(next_client_id);
-                next_client_id += 1;
+                let client_id = ClientId(CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst));
 
                 let engine_tx = engine_tx.clone();
 

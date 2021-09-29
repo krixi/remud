@@ -43,7 +43,7 @@ pub(crate) enum ControlMessage {
 }
 
 #[derive(Debug)]
-pub(crate) enum ClientMessage {
+pub enum ClientMessage {
     Connect(ClientId, mpsc::Sender<EngineMessage>),
     Disconnect(ClientId),
     Ready(ClientId),
