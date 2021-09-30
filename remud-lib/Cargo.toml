@@ -6,6 +6,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+acme-lib = "0.8"
 anyhow = "1.0"
 argon2 = "0.3"
 ascii = "1.0"
@@ -18,7 +19,7 @@ bytes = "1.1"
 either = "1.6"
 futures = "0.3"
 itertools = "0.10"
-jwt-simple = "0.10.6"
+jwt-simple = "0.10"
 once_cell = "1.8"
 priority-queue = "1.2"
 rand = "0.8"

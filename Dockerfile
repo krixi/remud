@@ -1,14 +1,17 @@
-FROM debian:bullseye-slim as runner
+FROM frolvlad/alpine-glibc
 
 WORKDIR /game
 
 COPY --from=remud-build /remud/target/release/remud /game/remud
 
-# ports for telnet and web APIs
+# Persistent world/key storage
+VOLUME [ "/game/world", "/game/keys" ]
+
+# Used for Let's Encrypt HTTP auth, must be port 80 externally
+EXPOSE 80/tcp
+# default Telnet port
 EXPOSE 2004/tcp
+# Default web port - optionally HTTPS w/the --tls option
 EXPOSE 2080/tcp
 
 ENV RUST_LOG="warn,remud_lib=info,remud=info"
-
-# By default, we expect a folder 'world' to be mounted next to the binary, and to contain 'world.db'
-ENTRYPOINT ["./remud", "--db", "./world/world.db"]

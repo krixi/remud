@@ -244,14 +244,12 @@ pub fn script_attach_system(
                 }
             };
 
-            let script_trigger = if *trigger == TriggerKind::Init {
-                ScriptTrigger::Init
-            } else {
+            let script_trigger = {
                 let trigger_event = &script_query.get(script_entity).unwrap().trigger();
                 match trigger {
                     TriggerKind::PreEvent => ScriptTrigger::PreEvent(*trigger_event),
                     TriggerKind::PostEvent => ScriptTrigger::PostEvent(*trigger_event),
-                    TriggerKind::Init => unreachable!(),
+                    TriggerKind::Init => ScriptTrigger::Init,
                     TriggerKind::Timer => ScriptTrigger::Timer(timer.clone().unwrap()),
                 }
             };
@@ -431,6 +429,10 @@ pub fn script_detach_system(
                 remove_trigger.unwrap(),
                 copy,
             ));
+
+            if let Id::Prototype(id) = id {
+                updates.reload(id);
+            }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {

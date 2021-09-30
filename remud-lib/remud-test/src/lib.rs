@@ -1,5 +1,6 @@
 use std::{
     io::{self},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU16, Ordering},
         mpsc,
@@ -61,7 +62,7 @@ impl Default for Server {
                 let (tx, rx) = oneshot::channel();
 
                 let spawn = tokio::spawn(async move {
-                    run_remud(telnet_port, web_port, None, Some(tx)).await
+                    run_remud(None, telnet_port, web_port, PathBuf::from("./keys"), vec!["localhost"], None, None, Some(tx)).await
                 });
 
                 tokio::select! {
@@ -75,7 +76,7 @@ impl Default for Server {
                                         RemudError::BindError(_) => {
                                             tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
                                         },
-                                        RemudError::EngineError(e) => panic!("ReMUD failed to start: {}", e)
+                                        e => panic!("ReMUD failed to start: {}", e)
                                     }
                                 }
                             }

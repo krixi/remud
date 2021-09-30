@@ -1,4 +1,11 @@
-target/
-docs/
-web-client/
+.git
+**/target
+
+backup
+docs
+keys
+web-client
+terraform
+
 world.*
+sqlite3*

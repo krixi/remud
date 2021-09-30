@@ -1,4 +1,6 @@
 /target
+/keys
+/acme
 *.db
 *.db-shm
 *.db-wal

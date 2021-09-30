@@ -1,4 +1,4 @@
-use std::{env, fs::create_dir_all, io, path::PathBuf};
+use std::{env, fs::create_dir_all, path::PathBuf};
 
 use anyhow::bail;
 use clap::{App, Arg};
@@ -29,6 +29,30 @@ async fn main() -> anyhow::Result<()> {
                 .takes_value(true),
         )
         .arg(
+            Arg::new("tls")
+                .short('s')
+                .long("tls")
+                .about("Enables TLS for the specified domain")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("cors")
+                .short('c')
+                .long("cors")
+                .default_value("localhost")
+                .about("Specify which domains should be allowed origins via CORS")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("email")
+                .short('e')
+                .long("email")
+                .about(
+                    "Specify a contact email for Let's Encrypt's automated TLS certificate process",
+                )
+                .takes_value(true),
+        )
+        .arg(
             Arg::new("db")
                 .short('d')
                 .long("db")
@@ -36,11 +60,38 @@ async fn main() -> anyhow::Result<()> {
                 .about("Sets the database file path")
                 .takes_value(true),
         )
+        .arg(
+            Arg::new("keys")
+                .short('k')
+                .long("keys")
+                .default_value("./keys")
+                .about("Sets the key storage path")
+                .takes_value(true),
+        )
         .arg(Arg::new("in-memory").long("in-memory").about(
             "Runs ReMUD with an in-memory SQLite database - all data will be lost when the \
              program is closed",
         ))
         .get_matches();
+
+    let keys = {
+        let path_str = matches.value_of("keys").unwrap();
+
+        let path = PathBuf::from(path_str);
+
+        // Validate the database path, creating directories if necessary.
+        if path.exists() && !path.is_dir() {
+            bail!("parameter 'key' must be a directory, not a file.");
+        }
+
+        if !path.exists() {
+            if let Err(e) = create_dir_all(path.as_path()) {
+                bail!("failed to create directory path for key storage: {}", e);
+            }
+        }
+
+        path
+    };
 
     let db = if matches.is_present("in-memory") {
         None
@@ -51,25 +102,18 @@ async fn main() -> anyhow::Result<()> {
 
         // Validate the database path, creating directories if necessary.
         if path.is_dir() {
-            bail!("Parameter 'db' must be a filename, not a directory.");
+            bail!("parameter 'db' must be a filename, not a directory.");
         }
 
         if let Some(parent) = path.parent() {
-            match parent.metadata() {
-                Ok(_) => (),
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::NotFound {
-                        if let Err(e) = create_dir_all(parent) {
-                            bail!("Failed to create directory path for database: {}", e);
-                        }
-                    } else {
-                        bail!("Unable to access database parent directory: {}", e);
-                    }
+            if !parent.exists() {
+                if let Err(e) = create_dir_all(parent) {
+                    bail!("failed to create directory path for database path: {}", e);
                 }
             }
         } else {
             bail!(
-                "Unable to determine parent directory of database: {:?}",
+                "unable to determine parent directory of database path: {:?}",
                 path.as_os_str()
             );
         }
@@ -77,29 +121,37 @@ async fn main() -> anyhow::Result<()> {
         Some(path_str)
     };
 
+    let tls = matches.value_of("tls");
+    let email = matches.value_of("email");
+    if tls.is_some() && email.is_none() {
+        bail!("email required when TLS is enabled for certificate acquisition");
+    }
+
+    let cors: Vec<&str> = matches.value_of("cors").unwrap().split(",").collect();
+
     let telnet = parse_port(matches.value_of("telnet").unwrap())?;
     let web = parse_port(matches.value_of("web").unwrap())?;
-
-    let db_str = db.unwrap_or("in-memory");
-
-    let telnet_addr = format!("0.0.0.0:{}", telnet);
-    let web_addr = format!("0.0.0.0:{}", web);
 
     let cwd = env::current_dir();
     let dir = match &cwd {
         Ok(path) => path.to_str(),
-        Err(e) => bail!("Cannot determine current working directory: {}", e),
+        Err(e) => bail!("cannot determine current working directory: {}", e),
     };
 
     match dir {
-        Some(dir) => tracing::info!("Running ReMUD from {:?} with:", dir),
-        None => tracing::info!("Running Remud with:"),
+        Some(dir) => tracing::info!("running ReMUD from {:?} with:", dir),
+        None => tracing::info!("running Remud with:"),
     }
-    tracing::info!("  database: {}", db_str);
-    tracing::info!("  telnet: {}", telnet_addr);
-    tracing::info!("  web: {}", web_addr);
+    tracing::info!("  with cors: {:?}", cors);
+    tracing::info!("  database: {}", db.unwrap_or("in-memory"));
+    tracing::info!("  telnet: {}", format!("0.0.0.0:{}", telnet));
+    if let Some(domain) = tls {
+        tracing::info!("  API: https://{}", format!("{}:{}", domain, web));
+    } else {
+        tracing::info!("  API: http://{}", format!("0.0.0.0:{}", web));
+    }
 
-    run_remud(telnet, web, db, None).await?;
+    run_remud(db, telnet, web, keys, cors, tls, email, None).await?;
 
     Ok(())
 }
@@ -107,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
 fn parse_port(port: &str) -> anyhow::Result<u16> {
     let port = match port.parse::<u16>() {
         Ok(port) => port,
-        Err(_) => bail!("Ports should be an integer between 1024 and 65,535 inclusive."),
+        Err(_) => bail!("ports should be an integer between 1024 and 65,535 inclusive."),
     };
 
     Ok(port)
