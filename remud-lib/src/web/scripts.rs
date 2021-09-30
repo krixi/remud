@@ -218,6 +218,14 @@ where
         .and_then(handle_delete)
 }
 
+#[tracing::instrument(
+    name = "create script",
+    skip_all,
+    fields(
+        player = player.name.as_str(),
+        script = script.name.as_str()
+    )
+)]
 async fn handle_create(
     player: Player,
     script: JsonScript,
@@ -249,6 +257,14 @@ async fn handle_create(
     }
 }
 
+#[tracing::instrument(
+    name = "read script",
+    skip_all,
+    fields(
+        player = player.name.as_str(),
+        script = script_name.as_str()
+    )
+)]
 async fn handle_read(
     player: Player,
     script_name: JsonScriptName,
@@ -281,6 +297,11 @@ async fn handle_read(
     }
 }
 
+#[tracing::instrument(
+    name = "list scripts",
+    skip_all
+    fields(player = player.name.as_str())
+)]
 async fn handle_read_all(
     player: Player,
     sender: mpsc::Sender<WebMessage>,
@@ -311,6 +332,14 @@ async fn handle_read_all(
     }
 }
 
+#[tracing::instrument(
+    name = "update script",
+    skip_all,
+    fields(
+        player = player.name.as_str(),
+        script = script.name.as_str()
+    )
+)]
 async fn handle_update(
     player: Player,
     script: JsonScript,
@@ -342,6 +371,14 @@ async fn handle_update(
     }
 }
 
+#[tracing::instrument(
+    name = "delete script",
+    skip_all,
+    fields(
+        player = player.name.as_str(),
+        script = script_name.as_str()
+    )
+)]
 async fn handle_delete(
     player: Player,
     script_name: JsonScriptName,

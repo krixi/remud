@@ -1,6 +1,6 @@
 use std::{
     io::{self},
-    path::PathBuf,
+    path::Path,
     sync::{
         atomic::{AtomicU16, Ordering},
         mpsc,
@@ -9,7 +9,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
-use remud_lib::{run_remud, RemudError};
+use remud_lib::{run_remud, RemudError, WebOptions};
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
 use tokio::sync::oneshot;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
@@ -59,10 +59,11 @@ impl Default for Server {
                 telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
                 web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
 
+                let web = WebOptions::new(web_port, Path::new("./keys"), vec!["http://localhost"], None);
                 let (tx, rx) = oneshot::channel();
 
                 let spawn = tokio::spawn(async move {
-                    run_remud(None, telnet_port, web_port, PathBuf::from("./keys"), vec!["localhost"], None, None, Some(tx)).await
+                    run_remud(None, telnet_port, web, Some(tx)).await
                 });
 
                 tokio::select! {
@@ -73,7 +74,7 @@ impl Default for Server {
                                     // ReMUD did not stop to listen for requests and the run function returned early.
                                     Ok(_) => panic!("ReMUD exited early"),
                                     Err(e) => match e {
-                                        RemudError::BindError(_) => {
+                                        RemudError::TelnetError(_) => {
                                             tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
                                         },
                                         e => panic!("ReMUD failed to start: {}", e)

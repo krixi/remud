@@ -68,22 +68,3 @@ resource "aws_key_pair" "remud" {
   key_name   = "admin-key"
   public_key = var.public_key
 }
-
-# resource "aws_iam_role" "remud-server" {
-#  name = "remud_server"
-
-#  assume_role_policy = jsonencode({
-#    Version = "2012-10-17"
-#
-#    Statement = [
-#      {
-#        Action = "sts::AssumeRole"
-#        Effect = "Allow"
-#        Sid = ""
-#        Principal = {
-#          Service = "ec2.amazonaws.com"
-#        }
-#      }
-#    ]
-#  })
-#}

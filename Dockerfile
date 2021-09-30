@@ -9,7 +9,7 @@ VOLUME [ "/game/world", "/game/keys" ]
 
 # Used for Let's Encrypt HTTP auth, must be port 80 externally
 EXPOSE 80/tcp
-# default Telnet port
+# Default Telnet port
 EXPOSE 2004/tcp
 # Default web port - optionally HTTPS w/the --tls option
 EXPOSE 2080/tcp

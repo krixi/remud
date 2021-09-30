@@ -27,3 +27,15 @@
 - support ssh (thrussh)
 
 - support graceful shutdown handling via signals
+
+- add change password command
+
+- check on prototype info command
+
+- colorize did weird things when the color was invalid for room info (made everything after the |-| white like the room title)
+
+- add persist feedback for immortal commands
+
+- add object/prototype keywords add/remove
+
+- add room regions add/remove

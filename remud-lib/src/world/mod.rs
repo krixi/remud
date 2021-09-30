@@ -25,7 +25,7 @@ use crate::{
             TriggerEvent,
         },
         types::{
-            object::PrototypeId,
+            object::{Objects, PrototypeId},
             player::{Messages, Player, Players},
             room::{Regions, Room, RoomBundle, RoomId, Rooms},
             Configuration, Contents, Description, Id, Location, Named,
@@ -40,6 +40,7 @@ pub struct GameWorld {
 }
 
 impl GameWorld {
+    #[tracing::instrument(name = "creating game world", skip_all)]
     pub fn new(mut ecs: Ecs) -> Self {
         let world = ecs.world_mut();
 
@@ -108,6 +109,10 @@ impl GameWorld {
         {
             for object in objects {
                 world.despawn(object);
+                world
+                    .get_resource_mut::<Objects>()
+                    .unwrap()
+                    .remove_entity(object);
             }
         }
         world.despawn(player);

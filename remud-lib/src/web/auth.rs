@@ -9,15 +9,15 @@ use warp::{reject, Filter, Rejection};
 
 use crate::{
     engine::db::AuthDb,
-    web::{with_db, InternalError, Player},
-    JWT_KEY,
+    web::{security::JWT_KEY, with_db, InternalError, Player},
 };
+
+pub const SCOPE_SCRIPTS: &str = "scripts";
 
 const TOKEN_ISSUER: &str = "remud";
 const TOKEN_AUDIENCE: &str = "remud";
 const SCOPE_ACCESS: &str = "access";
 const SCOPE_REFRESH: &str = "refresh";
-pub const SCOPE_SCRIPTS: &str = "scripts";
 
 const TOKEN_ISSUERS: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut issuers = HashSet::new();
@@ -125,6 +125,7 @@ where
         .and_then(handle_logout)
 }
 
+#[tracing::instrument(name = "verify access", skip(db))]
 async fn handle_verify_access<DB: AuthDb>(
     auth_header: String,
     db: DB,
@@ -200,6 +201,7 @@ async fn handle_verify_access<DB: AuthDb>(
     })
 }
 
+#[tracing::instrument(name = "login", skip(db))]
 async fn handle_login<DB: AuthDb>(
     request: JsonTokenRequest,
     db: DB,
@@ -248,6 +250,7 @@ async fn handle_login<DB: AuthDb>(
     Ok(warp::reply::json(&response))
 }
 
+#[tracing::instrument(name = "refresh", skip(db))]
 async fn handle_refresh<DB: AuthDb>(
     request: JsonRefreshRequest,
     db: DB,
@@ -337,6 +340,7 @@ async fn handle_refresh<DB: AuthDb>(
     Ok(warp::reply::json(&response))
 }
 
+#[tracing::instrument(name = "logout", skip(db))]
 async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::Reply, Rejection> {
     if let Err(err) = db.logout(player.name.as_str()).await {
         tracing::error!("failed to log out player: {}", err);

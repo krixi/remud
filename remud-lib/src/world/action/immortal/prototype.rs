@@ -131,8 +131,7 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                     }
                 } else {
                     Err(
-                        "Enter a prototype subcommand: desc, info, keywords, name, set, \
-                         or unset."
+                        "Enter a prototype subcommand: desc, info, keywords, name, set, or unset."
                             .to_string(),
                     )
                 }

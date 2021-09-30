@@ -175,6 +175,7 @@ pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), ScriptEr
     Ok(())
 }
 
+#[tracing::instrument(name = "compiling scripts", skip_all)]
 pub fn compile_scripts(world: &mut World) {
     let engine = world.get_resource::<ScriptEngine>().unwrap().get();
     let engine = engine.read().unwrap();

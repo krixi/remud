@@ -333,6 +333,13 @@ impl Objects {
         self.by_id.remove(&id);
     }
 
+    pub fn remove_entity(&mut self, entity: Entity) {
+        if let Some((id, _)) = self.by_id.iter().find(|(_, object)| **object == entity) {
+            let id = *id;
+            self.by_id.remove(&id);
+        }
+    }
+
     pub fn by_id(&self, id: ObjectId) -> Option<Entity> {
         self.by_id.get(&id).copied()
     }

@@ -27,10 +27,10 @@ use crate::world::{
 const DEFAULT_PLAYER_DESCRIPTION: &str = "A being exists here.";
 const DB_NOT_FOUND_CODE: &str = "14";
 
-type DbResult<T> = Result<T, DbError>;
+type DbResult<T> = Result<T, Error>;
 
 #[derive(Debug, Error)]
-pub enum DbError {
+pub enum Error {
     #[error("failed to execute migrations: {0}")]
     MigrationError(#[from] MigrateError),
     #[error("SQL error: {0}")]
@@ -45,17 +45,17 @@ pub enum DbError {
 
 #[async_trait]
 pub trait AuthDb {
-    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, DbError>;
-    async fn is_immortal(&self, player: &str) -> Result<bool, DbError>;
+    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error>;
+    async fn is_immortal(&self, player: &str) -> Result<bool, Error>;
     async fn register_tokens(
         &self,
         player: &str,
         access_issued_secs: i64,
         refresh_issued_secs: i64,
-    ) -> Result<(), DbError>;
-    async fn logout(&self, player: &str) -> Result<(), DbError>;
-    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError>;
-    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError>;
+    ) -> Result<(), Error>;
+    async fn logout(&self, player: &str) -> Result<(), Error>;
+    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, Error>;
+    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, Error>;
 }
 
 #[async_trait]
@@ -77,8 +77,9 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn new(db: Option<&str>) -> DbResult<Self> {
-        let uri = db
+    #[tracing::instrument(name = "initializing database")]
+    pub async fn new(path: Option<&str>) -> DbResult<Self> {
+        let uri = path
             .map(|path| format!("sqlite://{}", path))
             .unwrap_or_else(|| "sqlite::memory:".to_string());
 
@@ -98,10 +99,10 @@ impl Db {
                         sqlx::migrate!("../migrations").run(&pool).await?;
                         Ok(Db { pool })
                     } else {
-                        return Err(DbError::SqlError(e));
+                        return Err(Error::SqlError(e));
                     }
                 } else {
-                    Err(DbError::SqlError(e))
+                    Err(Error::SqlError(e))
                 }
             }
         };
@@ -125,7 +126,7 @@ impl Db {
 
 #[async_trait]
 impl AuthDb for Db {
-    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, DbError> {
+    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error> {
         let results = sqlx::query("SELECT password FROM players WHERE username = ?")
             .bind(player)
             .fetch_one(&self.pool)
@@ -137,12 +138,12 @@ impl AuthDb for Db {
             Ok(_) => Ok(true),
             Err(e) => match e {
                 VerifyError::BadPassword => Ok(false),
-                VerifyError::Unknown(s) => Err(DbError::PasswordVerification(s)),
+                VerifyError::Unknown(s) => Err(Error::PasswordVerification(s)),
             },
         }
     }
 
-    async fn is_immortal(&self, player: &str) -> Result<bool, DbError> {
+    async fn is_immortal(&self, player: &str) -> Result<bool, Error> {
         let results = sqlx::query("SELECT flags FROM players WHERE username = ?")
             .bind(player)
             .fetch_one(&self.pool)
@@ -159,7 +160,7 @@ impl AuthDb for Db {
         player: &str,
         access_issued_secs: i64,
         refresh_issued_secs: i64,
-    ) -> Result<(), DbError> {
+    ) -> Result<(), Error> {
         sqlx::query(
             r#"INSERT INTO tokens
         SELECT id AS player_id, ? AS access, ? AS refresh
@@ -176,7 +177,7 @@ impl AuthDb for Db {
         Ok(())
     }
 
-    async fn logout(&self, player: &str) -> Result<(), DbError> {
+    async fn logout(&self, player: &str) -> Result<(), Error> {
         sqlx::query(
             r#"DELETE FROM tokens
             WHERE player_id IN (
@@ -189,7 +190,7 @@ impl AuthDb for Db {
         Ok(())
     }
 
-    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError> {
+    async fn access_issued_secs(&self, player: &str) -> Result<Option<i64>, Error> {
         let results = sqlx::query(
             r#"SELECT access FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
@@ -202,7 +203,7 @@ impl AuthDb for Db {
         Ok(results.map(|r| r.get("access")))
     }
 
-    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, DbError> {
+    async fn refresh_issued_secs(&self, player: &str) -> Result<Option<i64>, Error> {
         let results = sqlx::query(
             r#"SELECT refresh FROM tokens
         INNER JOIN players ON players.id = tokens.player_id
@@ -384,23 +385,23 @@ struct HookRow {
 }
 
 impl TryFrom<HookRow> for ScriptHook {
-    type Error = DbError;
+    type Error = Error;
 
     fn try_from(value: HookRow) -> Result<Self, Self::Error> {
         let script = ScriptName::try_from(value.script)
-            .map_err(|_| DbError::DeserializeError("script name"))?;
+            .map_err(|_| Error::DeserializeError("script name"))?;
         let kind = TriggerKind::from_str(value.kind.as_str())
-            .map_err(|_| DbError::DeserializeError("script trigger kind"))?;
+            .map_err(|_| Error::DeserializeError("script trigger kind"))?;
         let trigger = match kind {
             TriggerKind::Init => ScriptTrigger::Init,
             TriggerKind::PreEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())
-                    .map_err(|_| DbError::DeserializeError("script trigger event"))?;
+                    .map_err(|_| Error::DeserializeError("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::PostEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())
-                    .map_err(|_| DbError::DeserializeError("script trigger event"))?;
+                    .map_err(|_| Error::DeserializeError("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::Timer => ScriptTrigger::Timer(value.trigger),
@@ -424,7 +425,7 @@ struct ObjectRow {
 
 impl ObjectRow {
     fn into_object_bundle(self, prototype: Entity) -> DbResult<ObjectBundle> {
-        let id = ObjectId::try_from(self.id).map_err(|_| DbError::DeserializeError("object ID"))?;
+        let id = ObjectId::try_from(self.id).map_err(|_| Error::DeserializeError("object ID"))?;
 
         Ok(ObjectBundle {
             id: Id::Object(id),

@@ -1,19 +1,25 @@
 mod auth;
 pub mod scripts;
+mod security;
 mod ws;
 
-use std::{convert::Infallible, fmt, fs::create_dir_all, path::PathBuf};
+use std::{convert::Infallible, fmt, path::Path};
 
 use serde::Serialize;
-use tokio::sync::{mpsc, oneshot};
+use thiserror::Error;
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use warp::{
+    any,
     http::HeaderValue,
     hyper::{
         header::{CONTENT_TYPE, WWW_AUTHENTICATE},
         Response, StatusCode,
     },
     reject::Reject,
-    Filter, Rejection,
+    serve, Filter, Rejection, Reply, Server, TlsServer,
 };
 
 use crate::web::ws::websocket_filters;
@@ -25,41 +31,145 @@ use crate::{
             script_filters, JsonParseError, JsonScript, JsonScriptInfo, JsonScriptName,
             JsonScriptResponse, ScriptError,
         },
+        security::{retrieve_certificate, retrieve_jwt_key, CertificateError, JwtError, TLS_CERT},
     },
 };
 
-pub fn build_acme_challenge_server(
-) -> warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone> {
-    let path = PathBuf::from("acme");
-    create_dir_all(path.as_path()).unwrap();
-
-    let routes = warp::path(".well-known")
-        .and(warp::path("acme-challenge"))
-        .and(warp::filters::fs::dir("acme"));
-
-    warp::serve(routes)
+#[derive(Debug)]
+pub struct WebOptions<'a> {
+    port: u16,
+    keys: &'a Path,
+    cors: Vec<&'a str>,
+    tls: Option<TlsOptions<'a>>,
 }
 
-pub fn build_web_server<DB>(
+impl<'a> WebOptions<'a> {
+    pub fn new(port: u16, keys: &'a Path, cors: Vec<&'a str>, tls: Option<TlsOptions<'a>>) -> Self {
+        WebOptions {
+            port,
+            keys,
+            cors,
+            tls,
+        }
+    }
+
+    pub fn uri(&self) -> String {
+        if let Some(TlsOptions { domain, .. }) = &self.tls {
+            format!("https://{}:{}", domain, self.port)
+        } else {
+            format!("https://0.0.0.0:{}", self.port)
+        }
+    }
+
+    pub fn cors(&self) -> &[&str] {
+        self.cors.as_slice()
+    }
+
+    fn address(&self) -> ([u8; 4], u16) {
+        ([0, 0, 0, 0], self.port)
+    }
+}
+
+#[derive(Debug)]
+pub struct TlsOptions<'a> {
+    domain: &'a str,
+    email: &'a str,
+}
+
+impl<'a> TlsOptions<'a> {
+    pub fn new(domain: &'a str, email: &'a str) -> Self {
+        TlsOptions { domain, email }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("failed to acquire certificate: {0}")]
+    CertificateError(#[from] CertificateError),
+    #[error("failed to acquire JWT key: {0}")]
+    JwtError(#[from] JwtError),
+}
+
+#[tracing::instrument(name = "starting web server", skip(db, web_tx, client_tx))]
+pub(crate) async fn run_web_server<'a, DB>(
+    options: WebOptions<'a>,
     db: DB,
-    engine_tx: mpsc::Sender<ClientMessage>,
     web_tx: mpsc::Sender<WebMessage>,
-    cors: Vec<&str>,
-) -> warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>
+    client_tx: mpsc::Sender<ClientMessage>,
+) -> Result<JoinHandle<()>, Error>
 where
     DB: AuthDb + Clone + Send + Sync + 'static,
 {
-    let cors = warp::cors()
-        .allow_origins(cors.into_iter())
-        .allow_methods(vec!["POST", "OPTIONS"])
-        .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
+    let address = options.address();
+    let handle = if let Some(tls) = options.tls {
+        let web_server = build_tls_server(
+            db,
+            web_tx,
+            client_tx,
+            options.keys,
+            options.cors,
+            tls.domain,
+            tls.email,
+        )
+        .await?;
+        tokio::spawn(async move { web_server.run(address).await })
+    } else {
+        let web_server =
+            build_web_server(db, web_tx, client_tx, options.keys, options.cors).await?;
+        tokio::spawn(async move { web_server.run(address).await })
+    };
+
+    Ok(handle)
+}
+
+async fn build_tls_server<DB>(
+    db: DB,
+    web_tx: mpsc::Sender<WebMessage>,
+    client_tx: mpsc::Sender<ClientMessage>,
+    key_path: &Path,
+    cors: Vec<&str>,
+    domain: &str,
+    email: &str,
+) -> Result<TlsServer<impl Filter<Extract = impl Reply, Error = Rejection> + Clone>, Error>
+where
+    DB: AuthDb + Clone + Send + Sync + 'static,
+{
+    retrieve_certificate(key_path, domain, email).await?;
+
+    Ok(build_web_server(db, web_tx, client_tx, key_path, cors)
+        .await?
+        .tls()
+        .key(TLS_CERT.get().unwrap().private_key())
+        .cert(TLS_CERT.get().unwrap().certificate()))
+}
+
+async fn build_web_server<DB>(
+    db: DB,
+    web_tx: mpsc::Sender<WebMessage>,
+    client_tx: mpsc::Sender<ClientMessage>,
+    key_path: &Path,
+    cors: Vec<&str>,
+) -> Result<Server<impl Filter<Extract = impl Reply, Error = Rejection> + Clone>, Error>
+where
+    DB: AuthDb + Clone + Send + Sync + 'static,
+{
+    retrieve_jwt_key(key_path).await?;
+
+    let cors = if cors.is_empty() {
+        warp::cors().allow_any_origin()
+    } else {
+        warp::cors().allow_origins(cors.into_iter())
+    }
+    .allow_methods(vec!["POST", "OPTIONS"])
+    .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
+
     let routes = auth_filters(db.clone())
         .or(script_filters(db, web_tx))
-        .or(websocket_filters(engine_tx))
+        .or(websocket_filters(client_tx))
         .recover(handle_rejection);
     let wrapped = routes.with(cors);
 
-    warp::serve(wrapped)
+    Ok(serve(wrapped))
 }
 
 #[derive(Debug)]
@@ -73,7 +183,7 @@ fn with_db<DB>(db: DB) -> impl Filter<Extract = (DB,), Error = std::convert::Inf
 where
     DB: AuthDb + Send + Sync + Clone + 'static,
 {
-    warp::any().map(move || db.clone())
+    any().map(move || db.clone())
 }
 
 #[derive(Debug)]
@@ -124,7 +234,7 @@ struct ErrorMessage {
     message: String,
 }
 
-async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, Infallible> {
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let code;
     let message;
     let mut headers = vec![(CONTENT_TYPE, HeaderValue::from_static("application/json"))];

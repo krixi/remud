@@ -16,7 +16,7 @@ use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
         client::{Client, Clients, State},
-        db::{verify_password, AuthDb, Db, DbError, GameDb, VerifyError},
+        db::{verify_password, AuthDb, Db, GameDb, VerifyError},
         persist::PersistPlugin,
     },
     macros::regex,
@@ -37,29 +37,29 @@ use crate::{
     ClientId,
 };
 
-pub(crate) enum ControlMessage {
+pub(crate) enum EngineMessage {
     Shutdown,
     Disconnect(ClientId),
 }
 
 #[derive(Debug)]
-pub enum ClientMessage {
-    Connect(ClientId, mpsc::Sender<EngineMessage>),
+pub(crate) enum ClientMessage {
+    Connect(ClientId, mpsc::Sender<EngineResponse>),
     Disconnect(ClientId),
     Ready(ClientId),
     Input(ClientId, String),
 }
 
 #[derive(Debug)]
-pub enum EngineMessage {
+pub enum EngineResponse {
     Output(String),
     EndOutput,
 }
 
 pub struct Engine {
-    engine_rx: mpsc::Receiver<ClientMessage>,
-    control_tx: mpsc::Sender<ControlMessage>,
-    web_message_rx: mpsc::Receiver<WebMessage>,
+    client_rx: mpsc::Receiver<ClientMessage>,
+    engine_tx: mpsc::Sender<EngineMessage>,
+    web_rx: mpsc::Receiver<WebMessage>,
     clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
@@ -69,18 +69,19 @@ pub struct Engine {
 }
 
 #[derive(Debug, Error)]
-pub enum EngineError {
+pub enum Error {
     #[error("error with database")]
-    DbError(#[from] DbError),
+    DbError(#[from] db::Error),
 }
 
 impl Engine {
+    #[tracing::instrument(name = "creating engine", skip_all)]
     pub(crate) async fn new(
         db: Db,
-        engine_rx: mpsc::Receiver<ClientMessage>,
-        control_tx: mpsc::Sender<ControlMessage>,
-        web_message_rx: mpsc::Receiver<WebMessage>,
-    ) -> Result<Self, EngineError> {
+        client_rx: mpsc::Receiver<ClientMessage>,
+        engine_tx: mpsc::Sender<EngineMessage>,
+        web_rx: mpsc::Receiver<WebMessage>,
+    ) -> Result<Self, Error> {
         let mut ecs = Ecs::new();
 
         ecs.register(CorePlugin::default()).await;
@@ -102,9 +103,9 @@ impl Engine {
         let commands = Commands::default();
 
         Ok(Engine {
-            engine_rx,
-            control_tx,
-            web_message_rx,
+            client_rx,
+            engine_tx,
+            web_rx,
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
@@ -159,12 +160,12 @@ impl Engine {
 
                     self.tick += 1;
                 }
-                maybe_message = self.engine_rx.recv() => {
+                maybe_message = self.client_rx.recv() => {
                     if let Some(message) = maybe_message {
                         self.process(message).await;
                     }
                 }
-                maybe_message = self.web_message_rx.recv() => {
+                maybe_message = self.web_rx.recv() => {
                     if let Some(message) = maybe_message {
                         self.process_web(message).await;
                     }
@@ -172,7 +173,7 @@ impl Engine {
             }
         }
 
-        self.control_tx.send(ControlMessage::Shutdown).await.ok();
+        self.engine_tx.send(EngineMessage::Shutdown).await.ok();
     }
 
     async fn process(&mut self, message: ClientMessage) {
@@ -192,8 +193,8 @@ impl Engine {
                 }
 
                 self.clients.remove(client_id);
-                self.control_tx
-                    .send(ControlMessage::Disconnect(client_id))
+                self.engine_tx
+                    .send(EngineMessage::Disconnect(client_id))
                     .await
                     .ok();
             }

@@ -186,3 +186,31 @@ in: {
 
 out: {}
 ```
+
+# Websockets
+
+Allows spinning up a websocket connection to ReMUD.
+
+## /ws
+
+The websocket endpoint. Supports upgrading properly formed client requests to websockets.
+
+**Request:**
+
+```
+{
+  "input": {
+    "message": String
+  }
+}
+```
+
+**Response:**
+
+```
+{
+  "output": {
+    "message": String
+  }
+}
+```

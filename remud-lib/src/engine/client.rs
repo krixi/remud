@@ -6,7 +6,7 @@ use std::{
 use bevy_ecs::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::{engine::EngineMessage, ClientId};
+use crate::{engine::EngineResponse, ClientId};
 
 pub enum State {
     LoginName,
@@ -18,7 +18,7 @@ pub enum State {
 
 pub struct Client {
     id: ClientId,
-    tx: mpsc::Sender<EngineMessage>,
+    tx: mpsc::Sender<EngineResponse>,
     state: State,
 }
 
@@ -34,7 +34,7 @@ impl Client {
         tracing::debug!("{:?} <- {:?}.", self.id, message);
         if self
             .tx
-            .send(EngineMessage::Output(message.to_string()))
+            .send(EngineResponse::Output(message.to_string()))
             .await
             .is_err()
         {
@@ -45,12 +45,12 @@ impl Client {
     pub async fn send_batch(&self, tick: u64, messages: VecDeque<String>) {
         for message in messages {
             tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-            if self.tx.send(EngineMessage::Output(message)).await.is_err() {
+            if self.tx.send(EngineResponse::Output(message)).await.is_err() {
                 tracing::error!("Failed to send message to client {:?}", self.id);
                 break;
             }
         }
-        if self.tx.send(EngineMessage::EndOutput).await.is_err() {
+        if self.tx.send(EngineResponse::EndOutput).await.is_err() {
             tracing::error!("Failed to send message to client {:?}", self.id);
         }
     }
@@ -100,7 +100,7 @@ pub(crate) struct Clients {
 }
 
 impl Clients {
-    pub fn add(&mut self, client_id: ClientId, tx: mpsc::Sender<EngineMessage>) {
+    pub fn add(&mut self, client_id: ClientId, tx: mpsc::Sender<EngineResponse>) {
         self.clients.insert(
             client_id,
             Client {

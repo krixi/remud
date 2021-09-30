@@ -303,6 +303,19 @@ fn default_commands() -> Vec<Command> {
         },
         Help::new("east", "Moves you to the room to the east, if possible."),
     ));
+    commands.push(
+        Command::new(
+            "emote",
+            parse_say,
+            Help::new(
+                "me <message> || /<message>",
+                "Causes your character to emote the message to the room. The example message \
+                 would read as \"Ted dances around.\"",
+            )
+            .with_example("me dances around. || 'dances around."),
+        )
+        .with_shortcut('\''),
+    );
     commands.push(Command::new(
         "exits",
         |actor, _| Ok(Action::from(Exits { actor })),
@@ -377,7 +390,8 @@ fn default_commands() -> Vec<Command> {
                 "errors",
                 Help::new(
                     "object <id> errors <script name>",
-                    "Retrieves information on the latest error that occurred for the provided script name on the object, if any.",
+                    "Retrieves information on the latest error that occurred for the provided \
+                     script name on the object, if any.",
                 )
                 .with_example("object 2 errors robo_dog_init"),
             )
@@ -407,7 +421,8 @@ fn default_commands() -> Vec<Command> {
                 "init",
                 Help::new(
                     "object <id> init",
-                "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
+                    "Clears all attached script data, FSMs, and timers before running all \
+                     attached init scripts.",
                 )
                 .with_example("object 4 init"),
             )
@@ -481,7 +496,8 @@ fn default_commands() -> Vec<Command> {
                 "errors",
                 Help::new(
                     "player <id> errors <script name>",
-                    "Retrieves information on the latest error that occurred for the provided script name on the player, if any.",
+                    "Retrieves information on the latest error that occurred for the provided \
+                     script name on the player, if any.",
                 )
                 .with_example("player 2 errors ted_super_power"),
             )
@@ -501,7 +517,8 @@ fn default_commands() -> Vec<Command> {
                 "init",
                 Help::new(
                     "player <name> init",
-                    "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
+                    "Clears all attached script data, FSMs, and timers before running all \
+                     attached init scripts.",
                 )
                 .with_example("player Ted init"),
             )
@@ -621,7 +638,8 @@ fn default_commands() -> Vec<Command> {
                 "errors",
                 Help::new(
                     "room <id> errors <script name>",
-                    "Retrieves information on the latest error that occurred for the provided script name on the room, if any.",
+                    "Retrieves information on the latest error that occurred for the provided \
+                     script name on the room, if any.",
                 )
                 .with_example("room 2 errors poisonous_gas"),
             )
@@ -633,7 +651,8 @@ fn default_commands() -> Vec<Command> {
                 "init",
                 Help::new(
                     "room <id> init",
-                    "Clears all attached script data, FSMs, and timers before running all attached init scripts.",
+                    "Clears all attached script data, FSMs, and timers before running all \
+                     attached init scripts.",
                 )
                 .with_example("room 4 init"),
             )
