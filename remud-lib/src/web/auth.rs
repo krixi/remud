@@ -10,7 +10,7 @@ use warp::{reject, Filter, Rejection};
 use crate::{
     engine::db::AuthDb,
     web::{with_db, InternalError, Player},
-    TOKEN_KEY,
+    JWT_KEY,
 };
 
 const TOKEN_ISSUER: &str = "remud";
@@ -139,14 +139,18 @@ async fn handle_verify_access<DB: AuthDb>(
     };
 
     // Verify the token signature, issuer, and audience
-    let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
-        token,
-        Some(VerificationOptions {
-            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
-            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
-            ..Default::default()
-        }),
-    ) {
+    let claims = match JWT_KEY
+        .get()
+        .unwrap()
+        .public_key()
+        .verify_token::<TokenData>(
+            token,
+            Some(VerificationOptions {
+                allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+                allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
+                ..Default::default()
+            }),
+        ) {
         Ok(claims) => claims,
         Err(e) => {
             tracing::warn!("token could not be verified: {}", e);
@@ -248,14 +252,18 @@ async fn handle_refresh<DB: AuthDb>(
     request: JsonRefreshRequest,
     db: DB,
 ) -> Result<impl warp::Reply, Rejection> {
-    let claims = match TOKEN_KEY.public_key().verify_token::<TokenData>(
-        request.refresh_token.as_str(),
-        Some(VerificationOptions {
-            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
-            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
-            ..Default::default()
-        }),
-    ) {
+    let claims = match JWT_KEY
+        .get()
+        .unwrap()
+        .public_key()
+        .verify_token::<TokenData>(
+            request.refresh_token.as_str(),
+            Some(VerificationOptions {
+                allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+                allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
+                ..Default::default()
+            }),
+        ) {
         Ok(claims) => claims,
         Err(e) => {
             tracing::warn!("token could not be verified: {}", e);
@@ -350,7 +358,7 @@ fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64,
         .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let access_issued = access_claims.issued_at.unwrap();
-    let access_token = TOKEN_KEY.sign(access_claims)?;
+    let access_token = JWT_KEY.get().unwrap().sign(access_claims)?;
 
     let refresh_data = TokenData {
         scopes: vec![SCOPE_REFRESH.to_string()],
@@ -360,7 +368,7 @@ fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64,
         .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let refresh_issued = refresh_claims.issued_at.unwrap();
-    let refresh_token = TOKEN_KEY.sign(refresh_claims)?;
+    let refresh_token = JWT_KEY.get().unwrap().sign(refresh_claims)?;
 
     let access_issued_secs = i64::try_from(access_issued.as_secs())?;
     let refresh_issued_secs = i64::try_from(refresh_issued.as_secs())?;

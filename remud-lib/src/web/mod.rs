@@ -1,7 +1,7 @@
 mod auth;
 pub mod scripts;
 
-use std::{convert::Infallible, fmt};
+use std::{convert::Infallible, fmt, fs::create_dir_all, path::PathBuf};
 
 use serde::Serialize;
 use tokio::sync::{mpsc, oneshot};
@@ -26,19 +26,28 @@ use crate::{
     },
 };
 
+pub fn build_acme_challenge_server(
+) -> warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone> {
+    let path = PathBuf::from("acme");
+    create_dir_all(path.as_path()).unwrap();
+
+    let routes = warp::path(".well-known")
+        .and(warp::path("acme-challenge"))
+        .and(warp::filters::fs::dir("acme"));
+
+    warp::serve(routes)
+}
+
 pub fn build_web_server<DB>(
     db: DB,
-) -> (
-    warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>,
-    mpsc::Receiver<WebMessage>,
-)
+    tx: mpsc::Sender<WebMessage>,
+    cors: Vec<&str>,
+) -> warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>
 where
     DB: AuthDb + Clone + Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::channel(16);
-
     let cors = warp::cors()
-        .allow_any_origin()
+        .allow_origins(cors.into_iter())
         .allow_methods(vec!["POST", "OPTIONS"])
         .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
     let routes = auth_filters(db.clone())
@@ -46,7 +55,7 @@ where
         .recover(handle_rejection);
     let wrapped = routes.with(cors);
 
-    (warp::serve(wrapped), rx)
+    warp::serve(wrapped)
 }
 
 #[derive(Debug)]

@@ -26,4 +26,4 @@
 
 - support ssh (thrussh)
 
-- support TLS
+- support graceful shutdown handling via signals
