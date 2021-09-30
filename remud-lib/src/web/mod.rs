@@ -1,5 +1,6 @@
 mod auth;
 pub mod scripts;
+mod ws;
 
 use std::{convert::Infallible, fmt, fs::create_dir_all, path::PathBuf};
 
@@ -15,8 +16,9 @@ use warp::{
     Filter, Rejection,
 };
 
+use crate::web::ws::websocket_filters;
 use crate::{
-    engine::db::AuthDb,
+    engine::{db::AuthDb, ClientMessage},
     web::{
         auth::{auth_filters, AuthError},
         scripts::{
@@ -40,7 +42,8 @@ pub fn build_acme_challenge_server(
 
 pub fn build_web_server<DB>(
     db: DB,
-    tx: mpsc::Sender<WebMessage>,
+    engine_tx: mpsc::Sender<ClientMessage>,
+    web_tx: mpsc::Sender<WebMessage>,
     cors: Vec<&str>,
 ) -> warp::Server<impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone>
 where
@@ -51,7 +54,8 @@ where
         .allow_methods(vec!["POST", "OPTIONS"])
         .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);
     let routes = auth_filters(db.clone())
-        .or(script_filters(db, tx))
+        .or(script_filters(db, web_tx))
+        .or(websocket_filters(engine_tx))
         .recover(handle_rejection);
     let wrapped = routes.with(cors);
 

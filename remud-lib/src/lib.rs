@@ -16,6 +16,7 @@ use std::{
     fs::File,
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use acme_lib::{create_p384_key, persist::FilePersist, Certificate, Directory, DirectoryUrl};
@@ -23,7 +24,7 @@ use ascii::{AsciiString, IntoAsciiString, ToAsciiChar};
 use bytes::{Buf, Bytes};
 use futures::{future::join_all, SinkExt, StreamExt};
 use jwt_simple::prelude::ES256KeyPair;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use thiserror::Error;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -43,8 +44,10 @@ static JWT_KEY_FILE: &str = "jwt_key";
 static JWT_KEY: OnceCell<ES256KeyPair> = OnceCell::new();
 static TLS_CERT: OnceCell<Certificate> = OnceCell::new();
 
+static CLIENT_ID_COUNTER: Lazy<AtomicUsize> = Lazy::new(|| AtomicUsize::new(1));
+
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct ClientId(usize);
+pub struct ClientId(usize);
 
 impl fmt::Display for ClientId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -104,13 +107,13 @@ pub async fn run_remud(
         }
 
         // use acme and http validation
-        let web_server = build_web_server(db, web_message_tx.clone(), cors)
+        let web_server = build_web_server(db, engine_tx.clone(), web_message_tx.clone(), cors)
             .tls()
             .key(TLS_CERT.get().unwrap().private_key())
             .cert(TLS_CERT.get().unwrap().certificate());
         tokio::spawn(async move { web_server.run(([0, 0, 0, 0], web_port)).await })
     } else {
-        let web_server = build_web_server(db, web_message_tx.clone(), cors);
+        let web_server = build_web_server(db, engine_tx.clone(), web_message_tx.clone(), cors);
         tokio::spawn(async move { web_server.run(([0, 0, 0, 0], web_port)).await })
     };
 
@@ -123,14 +126,12 @@ pub async fn run_remud(
         tx.send(()).ok();
     }
 
-    let mut next_client_id = 1;
     let mut join_handles = HashMap::new();
 
     loop {
         tokio::select! {
             Ok((socket, addr)) = telnet_listener.accept() => {
-                let client_id = ClientId(next_client_id);
-                next_client_id += 1;
+                let client_id = ClientId(CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst));
 
                 let engine_tx = engine_tx.clone();
 
