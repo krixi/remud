@@ -31,7 +31,7 @@ use crate::{
             script_filters, JsonParseError, JsonScript, JsonScriptInfo, JsonScriptName,
             JsonScriptResponse, ScriptError,
         },
-        security::{retrieve_certificate, retrieve_jwt_key, CertificateError, JwtError, TLS_CERT},
+        security::{retrieve_certificate, retrieve_jwt_key, CertificateError, JwtError},
     },
 };
 
@@ -92,7 +92,7 @@ pub enum Error {
 
 #[tracing::instrument(name = "starting web server", skip(db, web_tx, client_tx))]
 pub(crate) async fn run_web_server<'a, DB>(
-    options: WebOptions<'a>,
+    options: &WebOptions<'a>,
     db: DB,
     web_tx: mpsc::Sender<WebMessage>,
     client_tx: mpsc::Sender<ClientMessage>,
@@ -101,13 +101,13 @@ where
     DB: AuthDb + Clone + Send + Sync + 'static,
 {
     let address = options.address();
-    let handle = if let Some(tls) = options.tls {
+    let handle = if let Some(tls) = &options.tls {
         let web_server = build_tls_server(
             db,
             web_tx,
             client_tx,
             options.keys,
-            options.cors,
+            options.cors.as_slice(),
             tls.domain,
             tls.email,
         )
@@ -115,7 +115,7 @@ where
         tokio::spawn(async move { web_server.run(address).await })
     } else {
         let web_server =
-            build_web_server(db, web_tx, client_tx, options.keys, options.cors).await?;
+            build_web_server(db, web_tx, client_tx, options.keys, options.cors.as_slice()).await?;
         tokio::spawn(async move { web_server.run(address).await })
     };
 
@@ -127,20 +127,20 @@ async fn build_tls_server<DB>(
     web_tx: mpsc::Sender<WebMessage>,
     client_tx: mpsc::Sender<ClientMessage>,
     key_path: &Path,
-    cors: Vec<&str>,
+    cors: &[&str],
     domain: &str,
     email: &str,
 ) -> Result<TlsServer<impl Filter<Extract = impl Reply, Error = Rejection> + Clone>, Error>
 where
     DB: AuthDb + Clone + Send + Sync + 'static,
 {
-    retrieve_certificate(key_path, domain, email).await?;
+    let certificate = retrieve_certificate(key_path, domain, email).await?;
 
     Ok(build_web_server(db, web_tx, client_tx, key_path, cors)
         .await?
         .tls()
-        .key(TLS_CERT.get().unwrap().private_key())
-        .cert(TLS_CERT.get().unwrap().certificate()))
+        .key(certificate.private_key())
+        .cert(certificate.certificate()))
 }
 
 async fn build_web_server<DB>(
@@ -148,7 +148,7 @@ async fn build_web_server<DB>(
     web_tx: mpsc::Sender<WebMessage>,
     client_tx: mpsc::Sender<ClientMessage>,
     key_path: &Path,
-    cors: Vec<&str>,
+    cors: &[&str],
 ) -> Result<Server<impl Filter<Extract = impl Reply, Error = Rejection> + Clone>, Error>
 where
     DB: AuthDb + Clone + Send + Sync + 'static,
@@ -158,7 +158,7 @@ where
     let cors = if cors.is_empty() {
         warp::cors().allow_any_origin()
     } else {
-        warp::cors().allow_origins(cors.into_iter())
+        warp::cors().allow_origins(cors.into_iter().map(|c| *c))
     }
     .allow_methods(vec!["POST", "OPTIONS"])
     .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);

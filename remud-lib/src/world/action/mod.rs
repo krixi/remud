@@ -46,7 +46,7 @@ use crate::{
             observe::{
                 exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who,
             },
-            system::{login_system, shutdown_system, Login, Shutdown},
+            system::{login_system, restart_system, shutdown_system, Login, Restart, Shutdown},
         },
         scripting::QueuedAction,
     },
@@ -85,6 +85,7 @@ pub enum Action {
     PlayerUpdateFlags(PlayerUpdateFlags),
     PrototypeCreate(PrototypeCreate),
     PrototypeInfo(PrototypeInfo),
+    Restart(Restart),
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
     RoomLink(RoomLink),
@@ -128,6 +129,7 @@ impl Action {
             Action::PlayerUpdateFlags(action) => action.actor,
             Action::PrototypeCreate(action) => action.actor,
             Action::PrototypeInfo(action) => action.actor,
+            Action::Restart(action) => action.actor,
             Action::RoomCreate(action) => action.actor,
             Action::RoomInfo(action) => action.actor,
             Action::RoomLink(action) => action.actor,
@@ -172,6 +174,7 @@ pub enum ActionSystem {
     PlayerUpdateFlags,
     PrototypeCreate,
     PrototypeInfo,
+    Restart,
     RoomCreate,
     RoomInfo,
     RoomLink,
@@ -309,6 +312,11 @@ impl Plugin for ActionsPlugin {
                 prototype_info_system
                     .system()
                     .label(ActionSystem::PrototypeInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                restart_system.system().label(ActionSystem::Restart),
             )
             .add_system(
                 Step::Main,

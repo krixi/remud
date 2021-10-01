@@ -78,6 +78,13 @@ impl GameWorld {
             .map_or(true, |configuration| configuration.shutdown)
     }
 
+    pub fn should_restart(&self) -> bool {
+        self.ecs
+            .world()
+            .get_resource::<Configuration>()
+            .map_or(false, |configuration| configuration.restart)
+    }
+
     #[tracing::instrument(name = "despawning player", skip_all, fields(player = player.to_bits()))]
     pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         let world = self.ecs.world_mut();

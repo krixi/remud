@@ -11,7 +11,6 @@ use std::{
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError, WebOptions};
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
-use tokio::sync::oneshot;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
@@ -46,7 +45,7 @@ impl Default for Server {
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .worker_threads(2)
+            .worker_threads(1)
             .build()
             .unwrap();
 
@@ -60,7 +59,7 @@ impl Default for Server {
                 web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
 
                 let web = WebOptions::new(web_port, Path::new("./keys"), vec!["http://localhost"], None);
-                let (tx, rx) = oneshot::channel();
+                let (tx, mut rx) = tokio::sync::mpsc::channel(16);
 
                 let spawn = tokio::spawn(async move {
                     run_remud(None, telnet_port, web, Some(tx)).await
@@ -86,7 +85,7 @@ impl Default for Server {
                             }
                         }
                     }
-                    _ = rx => {
+                    _ = rx.recv() => {
                         break 'connect_loop
                     }
                 }
@@ -96,7 +95,7 @@ impl Default for Server {
         });
 
         let (telnet, web) = rx
-            .recv_timeout(Duration::from_secs(1))
+            .recv_timeout(Duration::from_secs(5))
             .unwrap_or_else(|e| panic!("failed to receive server init message: {}", e));
 
         Server {
@@ -133,7 +132,7 @@ impl TelnetClient {
     pub fn recv(&mut self) -> String {
         let event = self
             .connection
-            .read_timeout(Duration::from_secs(1))
+            .read_timeout(Duration::from_secs(5))
             .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
 
         if let TelnetEvent::Data(data) = event {

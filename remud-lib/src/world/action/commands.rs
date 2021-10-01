@@ -18,7 +18,7 @@ use crate::{
             movement::{parse_teleport, Move},
             object::{parse_drop, parse_get, Inventory},
             observe::{parse_look, Exits, Who},
-            system::Shutdown,
+            system::{Restart, Shutdown},
             Action,
         },
         types::{room::Direction, ActionTarget},
@@ -609,6 +609,14 @@ fn default_commands() -> Vec<Command> {
                 )
                 .with_example("prototype 2 unset fixed subtle"),
             ),
+        )
+        .restricted(),
+    );
+    commands.push(
+        Command::new(
+            "restart",
+            |actor, _| Ok(Action::from(Restart { actor })),
+            Help::new("restart", "Immediately restarts ReMUD."),
         )
         .restricted(),
     );

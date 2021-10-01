@@ -12,10 +12,10 @@ mod world;
 
 use std::{collections::HashMap, fmt, sync::atomic::AtomicUsize};
 
-use futures::future::join_all;
+use futures::{executor::block_on, future::join_all};
 use once_cell::sync::Lazy;
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::{
     engine::{db::Db, Engine, EngineMessage},
@@ -57,63 +57,90 @@ pub async fn run_remud(
     db_path: Option<&str>,
     telnet_port: u16,
     web: WebOptions<'_>,
-    ready_tx: Option<oneshot::Sender<()>>,
+    ready_tx: Option<mpsc::Sender<()>>,
 ) -> Result<(), RemudError> {
-    let (client_tx, client_rx) = mpsc::channel(256);
-    let (engine_tx, mut engine_rx) = mpsc::channel(16);
-    let (web_tx, web_rx) = mpsc::channel(16);
+    'program: loop {
+        let (client_tx, client_rx) = mpsc::channel(256);
+        let (engine_tx, mut engine_rx) = mpsc::channel(16);
+        let (web_tx, web_rx) = mpsc::channel(16);
 
-    let db = Db::new(db_path).await.map_err(engine::Error::from)?;
+        let db = Db::new(db_path).await.map_err(engine::Error::from)?;
 
-    let mut engine = Engine::new(db.clone(), client_rx, engine_tx, web_rx).await?;
-    let _engine_handle = tokio::spawn(async move {
-        engine.run().await;
-    });
+        let mut engine = Engine::new(db.clone(), client_rx, engine_tx, web_rx).await?;
+        let engine_handle = tokio::spawn(async move {
+            engine.run().await;
+        });
 
-    let telnet_address = format!("0.0.0.0:{}", telnet_port);
-    let telnet = telnet::Server::new(telnet_address.as_str()).await?;
+        let telnet_address = format!("0.0.0.0:{}", telnet_port);
+        let telnet = telnet::Server::new(telnet_address.as_str()).await?;
 
-    let _web_handle = run_web_server(web, db, web_tx, client_tx.clone()).await?;
+        let web_handle = run_web_server(&web, db, web_tx, client_tx.clone()).await?;
 
-    if let Some(tx) = ready_tx {
-        tx.send(()).ok();
-    }
+        if let Some(tx) = ready_tx.clone() {
+            tx.send(()).await.ok();
+        }
 
-    let mut join_handles = HashMap::new();
+        let mut join_handles = HashMap::new();
 
-    'main: loop {
-        tokio::select! {
-            handle = telnet.accept(client_tx.clone()) => {
-                match handle {
-                    Some((client_id, handle)) => {
-                        join_handles.insert(client_id, handle);
-                    },
-                    None => break 'main
+        'main: loop {
+            tokio::select! {
+                handle = telnet.accept(client_tx.clone()) => {
+                    match handle {
+                        Some((client_id, handle)) => {
+                            join_handles.insert(client_id, handle);
+                        },
+                        None => break 'main
+                    }
                 }
-            }
-            message = engine_rx.recv() => {
-                match message {
-                    Some(message) => {
-                        match message {
-                            EngineMessage::Shutdown => {
-                                tracing::warn!("engine shutdown, halting server.");
-                                break 'main
-                            },
-                            EngineMessage::Disconnect(client_id) => {
-                                join_handles.remove(&client_id);
-                            },
-                        }
-                    },
-                    None => {
-                        tracing::error!("engine control closed, halting server");
-                        break 'main
-                    },
+                message = engine_rx.recv() => {
+                    match message {
+                        Some(message) => {
+                            match message {
+                                EngineMessage::Disconnect(client_id) => {
+                                    join_handles.remove(&client_id);
+                                },
+                                EngineMessage::Restart => {
+                                    tracing::warn!("engine restart, rebooting server");
+                                    break 'main
+                                },
+                                EngineMessage::Shutdown => {
+                                    tracing::warn!("engine shutdown, halting server");
+                                    break 'program
+                                },
+                            }
+                        },
+                        None => {
+                            tracing::error!("engine control closed, halting server");
+                            break 'main
+                        },
+                    }
                 }
             }
         }
+
+        // Join all telnet connections - they should be shutting down as the server channel shuts down
+        join_all(join_handles.values_mut()).await;
+
+        // Make sure everything is shutdown before restarting
+        web_handle.abort();
+        match block_on(web_handle) {
+            Ok(_) => (),
+            Err(e) => {
+                if !e.is_cancelled() {
+                    tracing::error!("error halting web server: {}", e)
+                }
+            }
+        };
+
+        match block_on(engine_handle) {
+            Ok(_) => (),
+            Err(e) => tracing::error!("error halting engine: {}", e),
+        }
+
+        tracing::warn!("servers halted, restarting game server");
     }
 
-    join_all(join_handles.values_mut()).await;
+    tracing::warn!("server shutdown complete");
 
     Ok(())
 }

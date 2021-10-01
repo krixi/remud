@@ -53,6 +53,22 @@ pub fn login_system(
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Restart {
+    pub actor: Entity,
+}
+
+into_action!(Restart);
+
+#[tracing::instrument(name = "restart system", skip_all)]
+pub fn restart_system(mut action_reader: EventReader<Action>, mut config: ResMut<Configuration>) {
+    for action in action_reader.iter() {
+        if let Action::Restart(Restart { .. }) = action {
+            config.restart = true
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Shutdown {
     pub actor: Entity,
 }
