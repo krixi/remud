@@ -201,6 +201,7 @@ pub struct RoomCreate {
 
 into_action!(RoomCreate);
 
+#[tracing::instrument(name = "create_room_system", skip_all)]
 pub fn room_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -215,7 +216,7 @@ pub fn room_create_system(
             let current_room_entity = if let Ok(location) = player_query.get(*actor) {
                 location.room()
             } else {
-                tracing::info!("Player {:?} cannot create a room from nowhere.", actor);
+                tracing::info!("player {:?} cannot create a room from nowhere.", actor);
                 continue;
             };
 
@@ -299,6 +300,7 @@ pub struct RoomInfo {
 
 into_action!(RoomInfo);
 
+#[tracing::instrument(name = "room info system", skip_all)]
 pub fn room_info_system(
     mut action_reader: EventReader<Action>,
     player_query: Query<&Location, With<Player>>,
@@ -322,7 +324,7 @@ pub fn room_info_system(
             let room_entity = if let Ok(location) = player_query.get(*actor) {
                 location.room()
             } else {
-                tracing::info!("Player {:?} cannot create a room from nowhere.", actor);
+                tracing::info!("player {:?} cannot create a room from nowhere.", actor);
                 continue;
             };
 
@@ -450,6 +452,7 @@ pub struct RoomLink {
 
 into_action!(RoomLink);
 
+#[tracing::instrument(name = "room link system", skip_all)]
 pub fn room_link_system(
     mut action_reader: EventReader<Action>,
     rooms: Res<Rooms>,
@@ -508,6 +511,7 @@ pub struct RoomRemove {
 
 into_action!(RoomRemove);
 
+#[tracing::instrument(name = "remove room system", skip_all)]
 pub fn room_remove_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -644,6 +648,7 @@ pub struct RoomUnlink {
 
 into_action!(RoomUnlink);
 
+#[tracing::instrument(name = "room unlink system", skip_all)]
 pub fn room_unlink_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
@@ -686,6 +691,7 @@ pub struct RoomUpdateRegions {
 
 into_action!(RoomUpdateRegions);
 
+#[tracing::instrument(name = "update room regions system", skip_all)]
 pub fn room_update_regions_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,

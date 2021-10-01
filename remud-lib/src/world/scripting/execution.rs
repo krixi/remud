@@ -36,7 +36,7 @@ pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
     {
         Ok(_) => (),
         Err(error) => {
-            tracing::warn!("Init script {} execution error: {}", script, error);
+            tracing::warn!("init script {} execution error: {}", script, error);
 
             if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
@@ -81,7 +81,7 @@ pub fn run_post_event_script(
     {
         Ok(_) => (),
         Err(error) => {
-            tracing::warn!("Post-event script {} execution error: {}", script, error);
+            tracing::warn!("post-event script {} execution error: {}", script, error);
 
             let mut world = world.write().unwrap();
 
@@ -127,7 +127,7 @@ pub fn run_pre_event_script(
     {
         Ok(_) => (),
         Err(error) => {
-            tracing::warn!("Pre-event script {} execution error: {}", script, error);
+            tracing::warn!("pre-event script {} execution error: {}", script, error);
 
             if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
@@ -168,7 +168,7 @@ pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) 
     {
         Ok(_) => (),
         Err(error) => {
-            tracing::warn!("Timed script {} execution error: {}", script, error);
+            tracing::warn!("timed script {} execution error: {}", script, error);
             if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
                 errors.insert(script, error)
             } else {
@@ -189,7 +189,7 @@ fn prepare_script_execution(world: &World, script: &ScriptName) -> Option<(AST, 
             script
         } else {
             tracing::warn!(
-                "Skipping execution of {:?}, unable to find named script.",
+                "skipping execution of {:?}, unable to find named script.",
                 script
             );
             return None;
@@ -204,7 +204,7 @@ fn prepare_script_execution(world: &World, script: &ScriptName) -> Option<(AST, 
             ast
         } else {
             tracing::warn!(
-                "Skipping execution of {:?}, compiled script not found.",
+                "skipping execution of {:?}, compiled script not found.",
                 script
             );
             return None;

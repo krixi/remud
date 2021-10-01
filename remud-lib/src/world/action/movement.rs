@@ -27,6 +27,7 @@ pub struct Move {
 
 into_action!(Move);
 
+#[tracing::instrument(name = "move system", skip_all)]
 pub fn move_system(
     mut action_reader: EventReader<Action>,
     mut pre_events: EventWriter<QueuedAction>,
@@ -43,7 +44,7 @@ pub fn move_system(
                 if let Ok((id, named, location)) = moving_query.get_mut(*actor) {
                     (id, named.as_str(), location)
                 } else {
-                    tracing::warn!("Cannot move {:?} without Named and Location.", actor);
+                    tracing::warn!("cannot move {:?} without Named and Location.", actor);
                     continue;
                 };
 
@@ -188,6 +189,7 @@ pub struct Teleport {
 
 into_action!(Teleport);
 
+#[tracing::instrument(name = "teleport system", skip_all)]
 pub fn teleport_system(
     mut action_reader: EventReader<Action>,
     mut pre_events: EventWriter<QueuedAction>,
@@ -213,7 +215,7 @@ pub fn teleport_system(
                 if let Ok((id, named, location)) = moving_query.get_mut(*actor) {
                     (id, named.as_str(), location)
                 } else {
-                    tracing::warn!("Cannot teleport {:?} without Named and Location.", actor);
+                    tracing::warn!("cannot teleport {:?} without Named and Location.", actor);
                     continue;
                 };
 

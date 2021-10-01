@@ -199,6 +199,7 @@ pub struct ObjectCreate {
 
 into_action!(ObjectCreate);
 
+#[tracing::instrument(name = "object create system", skip_all)]
 pub fn object_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -294,6 +295,7 @@ pub struct ObjectInfo {
 
 into_action!(ObjectInfo);
 
+#[tracing::instrument(name = "object info system", skip_all)]
 pub fn object_info_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
@@ -459,6 +461,7 @@ pub struct ObjectInheritFields {
 
 into_action!(ObjectInheritFields);
 
+#[tracing::instrument(name = "object inherit fields system", skip_all)]
 pub fn object_inherit_fields_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -534,6 +537,7 @@ pub struct UpdateObjectFlags {
 
 into_action!(UpdateObjectFlags);
 
+#[tracing::instrument(name = "object flags system", skip_all)]
 pub fn update_object_flags(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
@@ -616,6 +620,7 @@ pub struct UpdateKeywords {
 
 into_action!(UpdateKeywords);
 
+#[tracing::instrument(name = "object keywords system", skip_all)]
 pub fn update_keywords_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
@@ -683,6 +688,7 @@ pub struct ObjectRemove {
 
 into_action!(ObjectRemove);
 
+#[tracing::instrument(name = "remove object system", skip_all)]
 pub fn object_remove_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,

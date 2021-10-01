@@ -32,11 +32,11 @@ type DbResult<T> = Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("failed to execute migrations: {0}")]
-    MigrationError(#[from] MigrateError),
+    Migration(#[from] MigrateError),
     #[error("SQL error: {0}")]
-    SqlError(#[from] sqlx::Error),
+    Sql(#[from] sqlx::Error),
     #[error("failed to deserialize value: {0}")]
-    DeserializeError(&'static str),
+    Deserialize(&'static str),
     #[error("missing data: {0}")]
     MissingData(&'static str),
     #[error("password verification error: {0}")]
@@ -91,7 +91,7 @@ impl Db {
             Err(e) => {
                 if let sqlx::Error::Database(ref de) = e {
                     if de.code() == Some(Cow::Borrowed(DB_NOT_FOUND_CODE)) {
-                        tracing::warn!("World database {} not found, creating new instance.", uri);
+                        tracing::warn!("world database {} not found, creating new instance.", uri);
                         let options = SqliteConnectOptions::from_str(&uri)
                             .unwrap()
                             .create_if_missing(true);
@@ -99,10 +99,10 @@ impl Db {
                         sqlx::migrate!("../migrations").run(&pool).await?;
                         Ok(Db { pool })
                     } else {
-                        return Err(Error::SqlError(e));
+                        return Err(Error::Sql(e));
                     }
                 } else {
-                    Err(Error::SqlError(e))
+                    Err(Error::Sql(e))
                 }
             }
         };
@@ -263,6 +263,7 @@ impl GameDb for Db {
         player::load_player(&self.pool, world, name).await
     }
 
+    #[tracing::instrument(name = "reload prototype", skip(self, world))]
     async fn reload_prototype(
         &self,
         world: &mut World,
@@ -388,20 +389,20 @@ impl TryFrom<HookRow> for ScriptHook {
     type Error = Error;
 
     fn try_from(value: HookRow) -> Result<Self, Self::Error> {
-        let script = ScriptName::try_from(value.script)
-            .map_err(|_| Error::DeserializeError("script name"))?;
+        let script =
+            ScriptName::try_from(value.script).map_err(|_| Error::Deserialize("script name"))?;
         let kind = TriggerKind::from_str(value.kind.as_str())
-            .map_err(|_| Error::DeserializeError("script trigger kind"))?;
+            .map_err(|_| Error::Deserialize("script trigger kind"))?;
         let trigger = match kind {
             TriggerKind::Init => ScriptTrigger::Init,
             TriggerKind::PreEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())
-                    .map_err(|_| Error::DeserializeError("script trigger event"))?;
+                    .map_err(|_| Error::Deserialize("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::PostEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())
-                    .map_err(|_| Error::DeserializeError("script trigger event"))?;
+                    .map_err(|_| Error::Deserialize("script trigger event"))?;
                 ScriptTrigger::PostEvent(trigger)
             }
             TriggerKind::Timer => ScriptTrigger::Timer(value.trigger),
@@ -425,7 +426,7 @@ struct ObjectRow {
 
 impl ObjectRow {
     fn into_object_bundle(self, prototype: Entity) -> DbResult<ObjectBundle> {
-        let id = ObjectId::try_from(self.id).map_err(|_| Error::DeserializeError("object ID"))?;
+        let id = ObjectId::try_from(self.id).map_err(|_| Error::Deserialize("object ID"))?;
 
         Ok(ObjectBundle {
             id: Id::Object(id),

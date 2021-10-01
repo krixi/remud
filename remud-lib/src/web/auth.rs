@@ -19,12 +19,12 @@ const TOKEN_AUDIENCE: &str = "remud";
 const SCOPE_ACCESS: &str = "access";
 const SCOPE_REFRESH: &str = "refresh";
 
-const TOKEN_ISSUERS: Lazy<HashSet<String>> = Lazy::new(|| {
+static TOKEN_ISSUERS: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut issuers = HashSet::new();
     issuers.insert(TOKEN_ISSUER.to_string());
     issuers
 });
-const TOKEN_AUDIENCES: Lazy<HashSet<String>> = Lazy::new(|| {
+static TOKEN_AUDIENCES: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut audiences = HashSet::new();
     audiences.insert(TOKEN_AUDIENCE.to_string());
     audiences

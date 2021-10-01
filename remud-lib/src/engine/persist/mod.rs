@@ -75,6 +75,7 @@ impl UpdateGroup {
 
 #[async_trait]
 impl Persist for UpdateGroup {
+    #[tracing::instrument(name = "update group", skip_all)]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         for update in self.list.iter() {
             update.enact(pool).await?;

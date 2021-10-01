@@ -38,7 +38,7 @@ impl Client {
             .await
             .is_err()
         {
-            tracing::error!("Failed to send message to client {:?}", self.id);
+            tracing::error!("failed to send message to client {:?}", self.id);
         }
     }
 
@@ -46,12 +46,12 @@ impl Client {
         for message in messages {
             tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
             if self.tx.send(EngineResponse::Output(message)).await.is_err() {
-                tracing::error!("Failed to send message to client {:?}", self.id);
+                tracing::error!("failed to send message to client {:?}", self.id);
                 break;
             }
         }
         if self.tx.send(EngineResponse::EndOutput).await.is_err() {
-            tracing::error!("Failed to send message to client {:?}", self.id);
+            tracing::error!("failed to send message to client {:?}", self.id);
         }
     }
 

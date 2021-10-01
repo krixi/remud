@@ -258,7 +258,7 @@ impl Telnet {
                         if let Some(response) = list.checked_add_type(data) {
                             frames.push(response);
                         } else if let Some(best) = list.best() {
-                            tracing::info!("Chosen TType: {:?}", best);
+                            tracing::info!("chosen TType: {:?}", best);
                             if best.mtts {
                                 self.terminal_selection_state =
                                     TerminalSelectionState::Done(Some(best));
@@ -526,7 +526,7 @@ impl TerminalTypes {
 
     fn checked_add_type(&mut self, ttype: Bytes) -> Option<Frame> {
         if self.types.last().map_or(false, |last| last == &ttype) {
-            tracing::info!("TType List: {:?}", self.types);
+            tracing::info!("TType list: {:?}", self.types);
         } else {
             self.types.push(ttype);
 

@@ -88,6 +88,7 @@ impl Regions {
         self.list.push(region);
     }
 
+    #[allow(clippy::ptr_arg)]
     pub fn contains(&self, region: &String) -> bool {
         self.list.contains(region)
     }

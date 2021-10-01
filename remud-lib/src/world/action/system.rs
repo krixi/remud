@@ -18,6 +18,7 @@ pub struct Login {
 
 into_action!(Login);
 
+#[tracing::instrument(name = "login system", skip_all)]
 pub fn login_system(
     mut action_reader: EventReader<Action>,
     player_query: Query<(&Named, &Location), With<Player>>,
@@ -58,6 +59,7 @@ pub struct Shutdown {
 
 into_action!(Shutdown);
 
+#[tracing::instrument(name = "shutdown system", skip_all)]
 pub fn shutdown_system(mut action_reader: EventReader<Action>, mut config: ResMut<Configuration>) {
     for action in action_reader.iter() {
         if let Action::Shutdown(Shutdown { .. }) = action {

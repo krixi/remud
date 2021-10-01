@@ -164,6 +164,7 @@ pub struct ScriptAttach {
 
 into_action!(ScriptAttach);
 
+#[tracing::instrument(name = "script attach system", skip_all)]
 pub fn script_attach_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -325,6 +326,7 @@ pub struct ScriptDetach {
 
 into_action!(ScriptDetach);
 
+#[tracing::instrument(name = "script detach system", skip_all)]
 pub fn script_detach_system(
     mut action_reader: EventReader<Action>,
     prototypes: Res<Prototypes>,

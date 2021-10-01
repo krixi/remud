@@ -2,6 +2,7 @@ use crate::world::fsm::StateMachines;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+#[tracing::instrument(name = "run state machines system")]
 pub fn run_state_machines(world: &mut World) {
     // Get all entities with a state machine component, call on_update on them.
     let fsm_entities = world

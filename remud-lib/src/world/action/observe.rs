@@ -59,6 +59,7 @@ pub struct Look {
 
 into_action!(Look);
 
+#[tracing::instrument(name = "look system", skip_all)]
 pub fn look_system(
     mut action_reader: EventReader<Action>,
     looker_query: Query<&Location, With<Player>>,
@@ -149,6 +150,7 @@ pub struct LookAt {
 
 into_action!(LookAt);
 
+#[tracing::instrument(name = "look at system", skip_all)]
 pub fn look_at_system(
     mut action_reader: EventReader<Action>,
     looker_query: Query<&Location, With<Player>>,
@@ -229,6 +231,7 @@ pub struct Exits {
 
 into_action!(Exits);
 
+#[tracing::instrument(name = "exits system", skip_all)]
 pub fn exits_system(
     mut action_reader: EventReader<Action>,
     exiter_query: Query<&Location, With<Player>>,
@@ -274,6 +277,7 @@ pub struct Who {
 
 into_action!(Who);
 
+#[tracing::instrument(name = "who system", skip_all)]
 pub fn who_system(
     mut action_reader: EventReader<Action>,
     player_query: Query<&Named, With<Player>>,

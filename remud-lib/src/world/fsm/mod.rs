@@ -81,6 +81,7 @@ pub struct StateMachine {
     pub current: StateId,
 }
 impl StateMachine {
+    #[tracing::instrument(name = "fsm on update")]
     fn on_update(&mut self, entity: Entity, world: &mut World) {
         // delegate to current state -
         // Step 1: see if it requested a transition by calling decide.
@@ -116,6 +117,7 @@ pub struct StateMachineBuilder {
 }
 
 impl StateMachineBuilder {
+    #[tracing::instrument(name = "fsm build", skip_all)]
     pub fn build(self) -> anyhow::Result<StateMachine> {
         let mut states = HashMap::new();
         let mut first = None;

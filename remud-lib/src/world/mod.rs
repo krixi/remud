@@ -40,7 +40,7 @@ pub struct GameWorld {
 }
 
 impl GameWorld {
-    #[tracing::instrument(name = "creating game world", skip_all)]
+    #[tracing::instrument(name = "creating world", skip_all)]
     pub fn new(mut ecs: Ecs) -> Self {
         let world = ecs.world_mut();
 
@@ -53,6 +53,7 @@ impl GameWorld {
         GameWorld { ecs }
     }
 
+    #[tracing::instrument(name = "ticking world", skip_all)]
     pub fn run(&mut self) {
         self.ecs.run(Step::PreEvent);
 
@@ -77,6 +78,7 @@ impl GameWorld {
             .map_or(true, |configuration| configuration.shutdown)
     }
 
+    #[tracing::instrument(name = "despawning player", skip_all, fields(player = player.to_bits()))]
     pub fn despawn_player(&mut self, player: Entity) -> anyhow::Result<()> {
         let world = self.ecs.world_mut();
 
@@ -125,6 +127,7 @@ impl GameWorld {
         Ok(())
     }
 
+    #[tracing::instrument(name = "player action", skip_all, fields(player = action.actor().to_bits()))]
     pub fn player_action(&mut self, action: Action) {
         let world = self.ecs.world_mut();
 
@@ -156,6 +159,7 @@ impl GameWorld {
             .spawn_room
     }
 
+    #[tracing::instrument(name = "dispatching messages", skip_all)]
     pub fn messages(&mut self) -> Vec<(Entity, VecDeque<String>)> {
         let world = self.ecs.world_mut();
 
@@ -281,6 +285,6 @@ fn add_void_room(world: &mut World) {
             .unwrap()
             .persist(persist::room::Create::new(*VOID_ROOM_ID, name, description));
 
-        tracing::warn!("Void room was created.");
+        tracing::warn!("void room was created.");
     }
 }

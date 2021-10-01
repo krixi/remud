@@ -50,6 +50,17 @@ pub(crate) enum ClientMessage {
     Input(ClientId, String),
 }
 
+impl ClientMessage {
+    fn client_id(&self) -> ClientId {
+        match self {
+            ClientMessage::Connect(id, _) => *id,
+            ClientMessage::Disconnect(id) => *id,
+            ClientMessage::Ready(id) => *id,
+            ClientMessage::Input(id, _) => *id,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum EngineResponse {
     Output(String),
@@ -115,43 +126,18 @@ impl Engine {
         })
     }
 
+    #[tracing::instrument(name = "run engine", skip_all)]
     pub async fn run(&mut self) {
         loop {
             tokio::select! {
                 _ = self.ticker.tick() => {
                     self.game_world.run();
 
-                    // Dispatch all queued messages to players
-                    for (player, mut messages) in self.game_world.messages(){
-                        if let Some(client) = self.clients.by_player(player) {
-                            messages.push_back("|white|> ".to_string());
-                            client.send_batch(self.tick, messages).await;
-                        } else {
-                            tracing::error!("Attempting to send messages to player without client: {:?}", player);
-                        }
-                    }
+                    self.send_messages().await;
 
-                    // Dispatch all persistance requests
-                    let mut handles = Vec::new();
-                    for update in self.game_world.updates(){
-                        let pool = self.db.get_pool();
-                        handles.push(tokio::spawn(async move {
-                            match update.enact(&pool).await {
-                                Ok(_) => (),
-                                Err(e) => tracing::error!("Failed to execute update: {}", e),
-                            };
-                        }));
-                    }
-                    join_all(handles).await;
+                    self.persist_updates().await;
 
-                    // Reload changed prototypes
-                    let prototype_reloads = self.game_world.prototype_reloads();
-                    for prototype in prototype_reloads {
-                        match self.db.reload_prototype(self.game_world.world_mut(), prototype).await {
-                            Ok(_) => (),
-                            Err(e) => tracing::error!("Failed to reload prototype {}: {}", prototype, e),
-                        };
-                    }
+                    self.reload_prototypes().await;
 
                     // Shutdown if requested
                     if self.game_world.should_shutdown(){
@@ -176,6 +162,55 @@ impl Engine {
         self.engine_tx.send(EngineMessage::Shutdown).await.ok();
     }
 
+    #[tracing::instrument(name = "send messages", skip_all)]
+    pub async fn send_messages(&mut self) {
+        // Dispatch all queued messages to players
+        for (player, mut messages) in self.game_world.messages() {
+            if let Some(client) = self.clients.by_player(player) {
+                messages.push_back("|white|> ".to_string());
+                client.send_batch(self.tick, messages).await;
+            } else {
+                tracing::error!(
+                    "attempting to send messages to player without client: {:?}",
+                    player
+                );
+            }
+        }
+    }
+
+    #[tracing::instrument(name = "persist updates", skip_all)]
+    pub async fn persist_updates(&mut self) {
+        // Dispatch all persistance requests
+        let mut handles = Vec::new();
+        for update in self.game_world.updates() {
+            let pool = self.db.get_pool();
+            handles.push(tokio::spawn(async move {
+                match update.enact(&pool).await {
+                    Ok(_) => (),
+                    Err(e) => tracing::error!("failed to execute update: {}", e),
+                };
+            }));
+        }
+        join_all(handles).await;
+    }
+
+    #[tracing::instrument(name = "reload prototypes", skip_all)]
+    pub async fn reload_prototypes(&mut self) {
+        // Reload changed prototypes
+        let prototype_reloads = self.game_world.prototype_reloads();
+        for prototype in prototype_reloads {
+            match self
+                .db
+                .reload_prototype(self.game_world.world_mut(), prototype)
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => tracing::error!("failed to reload prototype {}: {}", prototype, e),
+            };
+        }
+    }
+
+    #[tracing::instrument(name = "process client message", skip_all, fields(client_id = message.client_id().id()))]
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client_id, tx) => {
@@ -188,7 +223,7 @@ impl Engine {
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
                     if let Err(e) = self.game_world.despawn_player(player) {
-                        tracing::error!("Failed to despawn player: {}", e);
+                        tracing::error!("failed to despawn player: {}", e);
                     }
                 }
 
@@ -208,7 +243,7 @@ impl Engine {
                 if let Some(client) = self.clients.get(client_id) {
                     client.send(message.into()).await;
                 } else {
-                    tracing::error!("Received message from unknown client: {:?}", message);
+                    tracing::error!("received message from unknown client: {:?}", message);
                 }
             }
             ClientMessage::Input(client_id, input) => {
@@ -218,6 +253,7 @@ impl Engine {
         }
     }
 
+    #[tracing::instrument(name = "process web message", skip_all)]
     async fn process_web(&mut self, message: WebMessage) {
         match message.request {
             ScriptsRequest::CreateScript(JsonScript {
@@ -232,7 +268,7 @@ impl Engine {
                         .ok();
                 }
                 Err(e) => {
-                    tracing::error!("Failed CreateScript request: {}", e);
+                    tracing::error!("failed CreateScript request: {}", e);
                     message.response.send(ScriptsResponse::Error(e)).ok();
                 }
             },
@@ -247,7 +283,7 @@ impl Engine {
                             .ok();
                     }
                     Err(e) => {
-                        tracing::error!("Failed ReadScript request: {}", e);
+                        tracing::error!("failed ReadScript request: {}", e);
                         message.response.send(ScriptsResponse::Error(e)).ok();
                     }
                 }
@@ -276,7 +312,7 @@ impl Engine {
                         .ok();
                 }
                 Err(e) => {
-                    tracing::error!("Failed UpdateScript request: {}", e);
+                    tracing::error!("failed UpdateScript request: {}", e);
                     message.response.send(ScriptsResponse::Error(e)).ok();
                 }
             },
@@ -286,7 +322,7 @@ impl Engine {
                         message.response.send(ScriptsResponse::Done).ok();
                     }
                     Err(e) => {
-                        tracing::error!("Failed DeleteScript request: {}", e);
+                        tracing::error!("failed DeleteScript request: {}", e);
                         message.response.send(ScriptsResponse::Error(e)).ok();
                     }
                 }
@@ -294,6 +330,7 @@ impl Engine {
         };
     }
 
+    #[tracing::instrument(name = "process input", skip_all)]
     async fn process_input(&mut self, client_id: ClientId, input: String) {
         let mut spawned_player = None;
 
@@ -305,7 +342,7 @@ impl Engine {
                         let has_user = match self.db.has_player(name).await {
                             Ok(has_user) => has_user,
                             Err(e) => {
-                                tracing::error!("Player presence check error: {}", e);
+                                tracing::error!("player presence check error: {}", e);
                                 client
                                     .send(
                                         "|Red1|Error retrieving \
@@ -379,7 +416,7 @@ impl Engine {
                     {
                         Ok(hash) => hash,
                         Err(e) => {
-                            tracing::error!("Create password hash error: {}", e);
+                            tracing::error!("create password hash error: {}", e);
                             client
                                 .send(
                                     "Error computing password hash.\r\nPassword?\r\n|white|> "
@@ -405,7 +442,7 @@ impl Engine {
                         Ok(_) => (),
                         Err(e) => {
                             if let VerifyError::Unknown(e) = e {
-                                tracing::error!("Create verify password failure: {}", e);
+                                tracing::error!("create verify password failure: {}", e);
                             }
                             client.verification_failed_creation(name.as_str()).await;
                             return;
@@ -416,7 +453,7 @@ impl Engine {
                     match self.db.create_player(name.as_str(), hash, spawn_room).await {
                         Ok(_) => (),
                         Err(e) => {
-                            tracing::error!("User creation error: {}", e);
+                            tracing::error!("user creation error: {}", e);
                             client.verification_failed_creation(name.as_str()).await;
                             return;
                         }
@@ -429,7 +466,7 @@ impl Engine {
                     {
                         Ok(player) => (player),
                         Err(e) => {
-                            tracing::error!("Failed to load player: {}", e);
+                            tracing::error!("failed to load player: {}", e);
                             client.spawn_failed().await;
                             return;
                         }
@@ -458,7 +495,7 @@ impl Engine {
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Get user hash error: {}", e);
+                            tracing::error!("get user hash error: {}", e);
                             client.verification_failed_login().await;
                             return;
                         }
@@ -471,7 +508,7 @@ impl Engine {
                     {
                         Ok(player) => (player),
                         Err(e) => {
-                            tracing::error!("Failed to load player: {}", e);
+                            tracing::error!("failed to load player: {}", e);
                             client.spawn_failed().await;
                             return;
                         }
@@ -509,7 +546,7 @@ impl Engine {
                 }
             }
         } else {
-            tracing::error!("Received message from unknown client ({:?})", client_id);
+            tracing::error!("received message from unknown client ({:?})", client_id);
         }
 
         if let Some(player) = spawned_player {

@@ -109,6 +109,7 @@ pub struct PlayerInfo {
 
 into_action!(PlayerInfo);
 
+#[tracing::instrument(name = "player info system", skip_all)]
 pub fn player_info_system(
     mut action_reader: EventReader<Action>,
     players: Res<Players>,
@@ -236,6 +237,7 @@ pub struct PlayerUpdateFlags {
 
 into_action!(PlayerUpdateFlags);
 
+#[tracing::instrument(name = "update player flags system", skip_all)]
 pub fn player_update_flags_system(
     mut action_reader: EventReader<Action>,
     players: Res<Players>,

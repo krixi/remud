@@ -94,12 +94,14 @@ impl WanderState {
 }
 
 impl State for WanderState {
+    #[tracing::instrument(name = "wander on enter")]
     fn on_enter(&mut self, entity: Entity, world: &mut World) {
         self.set_timer(entity, world);
         self.current_wanders = 0;
         self.current_max_wanders = thread_rng().gen_range(self.min_wanders..=self.max_wanders);
     }
 
+    #[tracing::instrument(name = "wander decide")]
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
         // If looking for players, check any they have entered the room.
         if self.find_player {
@@ -119,6 +121,7 @@ impl State for WanderState {
         None
     }
 
+    #[tracing::instrument(name = "wander act")]
     fn act(&mut self, entity: Entity, world: &mut World) {
         // Check to see if wander time has elapsed
         let mut done_waiting = false;
@@ -229,6 +232,7 @@ impl FollowState {
 }
 
 impl State for FollowState {
+    #[tracing::instrument(name = "follow on enter")]
     fn on_enter(&mut self, entity: Entity, world: &mut World) {
         if self.target.is_none() {
             // Choose a player in the room to follow.
@@ -255,6 +259,7 @@ impl State for FollowState {
         }
     }
 
+    #[tracing::instrument(name = "follow decide")]
     fn decide(&mut self, entity: Entity, world: &mut World) -> Option<Transition> {
         // Check current and surrounding rooms for the player we are following.
         // Initialize our move list with the current room and movement direction of None.
@@ -304,6 +309,7 @@ impl State for FollowState {
         }
     }
 
+    #[tracing::instrument(name = "follow act")]
     fn act(&mut self, entity: Entity, world: &mut World) {
         // We know where the target is, follow them.
         if let Some(direction) = self.move_direction {
@@ -324,6 +330,7 @@ impl State for FollowState {
         }
     }
 
+    #[tracing::instrument(name = "follow on exit")]
     fn on_exit(&mut self, _: Entity, _: &mut World) {
         self.target = None;
         self.move_direction = None;
@@ -338,6 +345,7 @@ impl State for FollowState {
 // - when: Transition
 // - then: StateId.
 // We need to translate this into the tx hashmap.
+#[tracing::instrument(name = "build_tx_map")]
 fn build_tx_map(txs: rhai::Array) -> HashMap<Transition, StateId> {
     let mut result = HashMap::new();
     for ele in txs.iter() {

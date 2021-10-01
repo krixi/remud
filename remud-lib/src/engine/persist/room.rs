@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::{Row, SqlitePool};
+use tracing::Instrument;
 
 use crate::{
     engine::persist::Persist,
@@ -9,6 +10,7 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 pub struct AddExit {
     from_id: RoomId,
     to_id: RoomId,
@@ -27,18 +29,21 @@ impl AddExit {
 
 #[async_trait]
 impl Persist for AddExit {
+    #[tracing::instrument(name = "add room exit", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO exits (room_from, room_to, direction) VALUES (?, ?, ?)")
             .bind(self.from_id)
             .bind(self.to_id)
             .bind(self.direction.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct AddObject {
     room_id: RoomId,
     object_id: ObjectId,
@@ -52,16 +57,19 @@ impl AddObject {
 
 #[async_trait]
 impl Persist for AddObject {
+    #[tracing::instrument(name = "add room object", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO room_objects (room_id, object_id) VALUES (?, ?)")
             .bind(self.room_id)
             .bind(self.object_id)
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
+#[derive(Debug)]
 pub struct AddRegions {
     id: RoomId,
     regions: Vec<String>,
@@ -75,19 +83,22 @@ impl AddRegions {
 
 #[async_trait]
 impl Persist for AddRegions {
+    #[tracing::instrument(name = "add room regions", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         for region in self.regions.iter() {
-            let region_id: i64 = if let Ok(region_row) =
+            let region_id: i64 = if let Some(region_row) =
                 sqlx::query("SELECT id FROM regions WHERE name = ?")
-                    .bind(region)
-                    .fetch_one(pool)
-                    .await
+                    // .bind(region)
+                    .fetch_optional(pool)
+                    .in_current_span()
+                    .await?
             {
                 region_row.get("id")
             } else {
                 sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
                     .bind(region)
                     .fetch_one(pool)
+                    .in_current_span()
                     .await?
                     .get("id")
             };
@@ -96,6 +107,7 @@ impl Persist for AddRegions {
                 .bind(self.id)
                 .bind(region_id)
                 .execute(pool)
+                .in_current_span()
                 .await?;
         }
 
@@ -103,6 +115,7 @@ impl Persist for AddRegions {
     }
 }
 
+#[derive(Debug)]
 pub struct Create {
     id: RoomId,
     name: String,
@@ -121,18 +134,21 @@ impl Create {
 
 #[async_trait]
 impl Persist for Create {
+    #[tracing::instrument(name = "add room", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO rooms (id, name, description) VALUES (?, ?, ?)")
             .bind(self.id)
             .bind(self.name.as_str())
             .bind(self.description.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct Delete {
     id: RoomId,
 }
@@ -145,16 +161,19 @@ impl Delete {
 
 #[async_trait]
 impl Persist for Delete {
+    #[tracing::instrument(name = "remove room", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM rooms WHERE id = ?")
             .bind(self.id)
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct Description {
     id: RoomId,
     description: String,
@@ -168,17 +187,20 @@ impl Description {
 
 #[async_trait]
 impl Persist for Description {
+    #[tracing::instrument(name = "update room description", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE rooms SET description = ? WHERE id = ?")
             .bind(self.description.as_str())
             .bind(self.id)
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct Name {
     id: RoomId,
     name: String,
@@ -192,17 +214,20 @@ impl Name {
 
 #[async_trait]
 impl Persist for Name {
+    #[tracing::instrument(name = "update room name", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE rooms SET name = ? WHERE id = ?")
             .bind(self.name.as_str())
             .bind(self.id)
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct RemoveExit {
     id: RoomId,
     direction: Direction,
@@ -216,17 +241,20 @@ impl RemoveExit {
 
 #[async_trait]
 impl Persist for RemoveExit {
+    #[tracing::instrument(name = "update room exit", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM exits WHERE room_from = ? AND direction = ?")
             .bind(self.id)
             .bind(self.direction.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct RemoveObject {
     room_id: RoomId,
     object_id: ObjectId,
@@ -240,17 +268,20 @@ impl RemoveObject {
 
 #[async_trait]
 impl Persist for RemoveObject {
+    #[tracing::instrument(name = "remove room object", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM room_objects WHERE room_id = ? AND object_id = ?")
             .bind(self.room_id)
             .bind(self.object_id)
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct RemoveRegions {
     id: RoomId,
     regions: Vec<String>,
@@ -264,19 +295,22 @@ impl RemoveRegions {
 
 #[async_trait]
 impl Persist for RemoveRegions {
+    #[tracing::instrument(name = "remove room regions", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         for region in self.regions.iter() {
-            let region_id: i64 = if let Ok(region_row) =
+            let region_id: i64 = if let Some(region_row) =
                 sqlx::query("SELECT id FROM regions WHERE name = ?")
                     .bind(region)
-                    .fetch_one(pool)
-                    .await
+                    .fetch_optional(pool)
+                    .in_current_span()
+                    .await?
             {
                 region_row.get("id")
             } else {
                 sqlx::query("INSERT INTO regions(name) VALUES(?) RETURNING id")
                     .bind(region)
                     .fetch_one(pool)
+                    .in_current_span()
                     .await?
                     .get("id")
             };
@@ -285,6 +319,7 @@ impl Persist for RemoveRegions {
                 .bind(self.id)
                 .bind(region_id)
                 .execute(pool)
+                .in_current_span()
                 .await?;
         }
 

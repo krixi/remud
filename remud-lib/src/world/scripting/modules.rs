@@ -270,7 +270,7 @@ pub mod self_api {
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to build state machine: {}", e);
+                tracing::warn!("failed to build state machine: {}", e);
             }
         }
     }

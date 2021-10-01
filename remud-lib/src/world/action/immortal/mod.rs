@@ -34,6 +34,7 @@ pub struct Initialize {
 
 into_action!(Initialize);
 
+#[tracing::instrument(name = "initialize system", skip_all)]
 pub fn initialize_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -124,6 +125,7 @@ pub struct ShowError {
 
 into_action!(ShowError);
 
+#[tracing::instrument(name = "show error", skip_all)]
 pub fn show_error_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
@@ -240,6 +242,7 @@ pub struct UpdateDescription {
 
 into_action!(UpdateDescription);
 
+#[tracing::instrument(name = "update description system", skip_all)]
 pub fn update_description_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,
@@ -342,6 +345,7 @@ pub struct UpdateName {
 
 into_action!(UpdateName);
 
+#[tracing::instrument(name = "update name system", skip_all)]
 pub fn update_name_system(
     mut action_reader: EventReader<Action>,
     objects: Res<Objects>,

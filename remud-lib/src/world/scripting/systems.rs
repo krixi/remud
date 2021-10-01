@@ -62,7 +62,7 @@ pub fn pre_event_script_runs_system(
         {
             room
         } else {
-            tracing::warn!("Unable to determine location of action {:?}", action);
+            tracing::warn!("unable to determine location of action {:?}", action);
             action_writer.send(action.clone());
             continue;
         };
@@ -106,7 +106,7 @@ pub fn post_action_script_runs_system(
         {
             room
         } else {
-            tracing::warn!("Unable to determine location of action {:?}", action);
+            tracing::warn!("unable to determine location of action {:?}", action);
             continue;
         };
 

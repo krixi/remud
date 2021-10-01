@@ -60,7 +60,7 @@ pub fn colorize(message: &str, color_support: ColorSupport) -> String {
 
 struct ColorReplacer<'a> {
     color_support: ColorSupport,
-    stack: Vec<Color>,
+    stack: Vec<Option<Color>>,
     closed: &'a mut bool,
 }
 
@@ -81,37 +81,48 @@ impl<'a> Replacer for ColorReplacer<'a> {
         } else if let Some(m) = caps.name("byte") {
             if let Ok(color) = Color256::from_str(m.as_str()) {
                 if let Some(color) = self.color_support.supported_from_256(color) {
-                    self.stack.push(color);
+                    self.stack.push(Some(color));
                     dst.push_str(color.to_string().as_str());
                     *self.closed = false;
                 }
             } else {
-                tracing::warn!("Failed to capture matched 256 color: {}", m.as_str());
+                self.stack.push(None);
+                tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
             }
         } else if let Some(m) = caps.name("true") {
             if let Ok(color) = ColorTrue::from_str(m.as_str()) {
                 if let Some(color) = self.color_support.supported_from_true(color) {
-                    self.stack.push(color);
+                    self.stack.push(Some(color));
                     dst.push_str(color.to_string().as_str());
                     *self.closed = false;
+                } else {
+                    self.stack.push(None);
                 }
             } else {
-                tracing::warn!("Failed to capture matched true color: {}", m.as_str());
+                self.stack.push(None);
+                tracing::warn!("failed to capture matched true color: {}", m.as_str());
             }
         } else if let Some(name) = caps.name("name") {
             if let Some(index) = COLOR_NAME_MAP.get(name.as_str().to_lowercase().as_str()) {
                 if let Some(color) = self.color_support.supported_from_256(Color256::new(*index)) {
-                    self.stack.push(color);
+                    self.stack.push(Some(color));
                     dst.push_str(color.to_string().as_str());
                     *self.closed = false;
+                } else {
+                    self.stack.push(None)
                 }
+            } else {
+                self.stack.push(None)
             }
         } else if caps.name("clear").is_some() {
             if self.color_support.supports_color() && !self.stack.is_empty() {
                 self.stack.pop();
 
                 if let Some(color) = self.stack.last() {
-                    dst.push_str(color.to_string().as_str())
+                    if let Some(color) = color {
+                        // Only resume coloring if there is a previous color and the opening color tag was valid
+                        dst.push_str(color.to_string().as_str())
+                    }
                 } else {
                     *self.closed = true;
                     dst.push_str(CLEAR_COLOR);
@@ -122,7 +133,7 @@ impl<'a> Replacer for ColorReplacer<'a> {
                 .iter()
                 .flat_map(|m| m.map(|m| format!("'{}'", m.as_str())))
                 .join(", ");
-            tracing::warn!("Unknown color tag(s) captured: {}", capture);
+            tracing::warn!("unknown color tag(s) captured: {}", capture);
         }
     }
 }

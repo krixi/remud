@@ -41,6 +41,7 @@ pub struct Drop {
 
 into_action!(Drop);
 
+#[tracing::instrument(name = "drop system", skip_all)]
 pub fn drop_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -67,7 +68,7 @@ pub fn drop_system(
                     });
                     (*id, location.room(), target)
                 } else {
-                    tracing::warn!("Entity {:?} cannot drop an item without Contents.", actor);
+                    tracing::warn!("entity {:?} cannot drop an item without Contents.", actor);
                     continue;
                 };
 
@@ -145,6 +146,7 @@ pub struct Get {
 
 into_action!(Get);
 
+#[tracing::instrument(name = "get system", skip_all)]
 pub fn get_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -161,7 +163,7 @@ pub fn get_system(
                 if let Ok((id, location, _)) = getting_query.get_mut(*actor) {
                     (*id, location.room())
                 } else {
-                    tracing::warn!("Entity {:?} without Contents cannot get an item.", actor);
+                    tracing::warn!("entity {:?} without Contents cannot get an item.", actor);
                     continue;
                 };
 
@@ -251,6 +253,7 @@ pub struct Inventory {
 
 into_action!(Inventory);
 
+#[tracing::instrument(name = "inventory system", skip_all)]
 pub fn inventory_system(
     mut action_reader: EventReader<Action>,
     inventory_query: Query<&Contents>,

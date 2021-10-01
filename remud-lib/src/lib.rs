@@ -35,6 +35,12 @@ impl fmt::Display for ClientId {
     }
 }
 
+impl ClientId {
+    fn id(&self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum RemudError {
     #[error("engine failed to execute: {0}")]
@@ -47,10 +53,10 @@ pub enum RemudError {
     DbError(#[from] engine::db::Error),
 }
 
-pub async fn run_remud<'a>(
+pub async fn run_remud(
     db_path: Option<&str>,
     telnet_port: u16,
-    web: WebOptions<'a>,
+    web: WebOptions<'_>,
     ready_tx: Option<oneshot::Sender<()>>,
 ) -> Result<(), RemudError> {
     let (client_tx, client_rx) = mpsc::channel(256);
@@ -90,7 +96,7 @@ pub async fn run_remud<'a>(
                     Some(message) => {
                         match message {
                             EngineMessage::Shutdown => {
-                                tracing::warn!("Engine shutdown, halting server.");
+                                tracing::warn!("engine shutdown, halting server.");
                                 break 'main
                             },
                             EngineMessage::Disconnect(client_id) => {
@@ -99,7 +105,7 @@ pub async fn run_remud<'a>(
                         }
                     },
                     None => {
-                        tracing::error!("Engine control closed, halting server");
+                        tracing::error!("engine control closed, halting server");
                         break 'main
                     },
                 }

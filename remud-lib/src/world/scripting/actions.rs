@@ -12,7 +12,7 @@ use either::Either;
 use rhai::ParseError;
 
 pub fn create_script(world: &mut World, script: Script) -> Result<Option<ParseError>, ScriptError> {
-    tracing::debug!("Creating {:?}.", script.name);
+    tracing::debug!("creating {:?}.", script.name);
 
     if world
         .get_resource::<Scripts>()
@@ -70,7 +70,7 @@ pub fn read_script(
     world: &World,
     name: ScriptName,
 ) -> Result<(Script, Option<ParseError>), ScriptError> {
-    tracing::debug!("Retrieving {:?}.", name);
+    tracing::debug!("retrieving {:?}.", name);
 
     let script_entity =
         if let Some(entity) = world.get_resource::<Scripts>().unwrap().by_name(&name) {
@@ -97,13 +97,13 @@ pub fn read_all_scripts(world: &mut World) -> Vec<(Script, Option<ParseError>)> 
         scripts.push((script.clone(), error.map(|c| c.error.clone())));
     }
 
-    tracing::debug!("Retrieved {} scripts.", scripts.len());
+    tracing::debug!("retrieved {} scripts.", scripts.len());
 
     scripts
 }
 
 pub fn update_script(world: &mut World, script: Script) -> Result<Option<ParseError>, ScriptError> {
-    tracing::debug!("Updating {:?}.", script.name);
+    tracing::debug!("updating {:?}.", script.name);
 
     let script_entity = if let Some(entity) = world
         .get_resource::<Scripts>()
@@ -161,7 +161,7 @@ pub fn delete_script(world: &mut World, name: ScriptName) -> Result<(), ScriptEr
             return Err(ScriptError::ScriptNotFound);
         };
 
-    tracing::debug!("Deleting: {:?}", name);
+    tracing::debug!("deleting: {:?}", name);
 
     world.despawn(script_entity);
 

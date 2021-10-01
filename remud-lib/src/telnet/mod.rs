@@ -44,7 +44,7 @@ impl Server {
                     let client_id = ClientId(CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst));
 
                     let handle = tokio::spawn(async move {
-                        tracing::info!("New client ({:?}): {:?}", client_id, address);
+                        tracing::info!("new client ({:?}): {:?}", client_id, address);
                         let client_tx = client_tx;
                         let (engine_tx, engine_rx) = mpsc::channel(16);
                         let message = ClientMessage::Connect(client_id, engine_tx);
@@ -166,7 +166,7 @@ async fn process(
                             }
                         },
                         Err(_) => {
-                            tracing::info!("Client disconnected");
+                            tracing::info!("client disconnected");
                             break;
                         }
                     }

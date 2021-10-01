@@ -32,6 +32,7 @@ pub struct Emote {
 
 into_action!(Emote);
 
+#[tracing::instrument(name = "emote system", skip_all)]
 pub fn emote_system(
     mut action_reader: EventReader<Action>,
     emoting_query: Query<(&Named, &Location)>,
@@ -73,6 +74,7 @@ pub struct Message {
 
 into_action!(Message);
 
+#[tracing::instrument(name = "message system", skip_all)]
 pub fn message_system(
     mut action_reader: EventReader<Action>,
     messaging_query: Query<&Location>,
@@ -84,7 +86,7 @@ pub fn message_system(
             let room_entity = if let Ok(location) = messaging_query.get(*actor) {
                 location.room()
             } else {
-                tracing::warn!("Entity {:?} cannot message without Location.", actor);
+                tracing::warn!("entity {:?} cannot message without Location.", actor);
                 continue;
             };
 
@@ -120,6 +122,7 @@ pub struct Say {
 
 into_action!(Say);
 
+#[tracing::instrument(name = "say system", skip_all)]
 pub fn say_system(
     mut action_reader: EventReader<Action>,
     saying_query: Query<(&Named, &Location)>,
@@ -131,7 +134,7 @@ pub fn say_system(
             let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
                 (named.as_str(), location.room())
             } else {
-                tracing::warn!("Entity {:?} cannot say without Named and Location.", actor);
+                tracing::warn!("entity {:?} cannot say without Named and Location.", actor);
                 continue;
             };
 
@@ -183,6 +186,7 @@ impl From<SendMessage> for Action {
     }
 }
 
+#[tracing::instrument(name = "send system", skip_all)]
 pub fn send_system(
     mut action_reader: EventReader<Action>,
     players: Res<Players>,
@@ -199,7 +203,7 @@ pub fn send_system(
             let name = if let Ok(named) = saying_query.get(*actor) {
                 named.as_str()
             } else {
-                tracing::warn!("Nameless entity {:?} cannot send a message.", actor);
+                tracing::warn!("nameless entity {:?} cannot send a message.", actor);
                 continue;
             };
 

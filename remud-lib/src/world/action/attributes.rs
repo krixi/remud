@@ -19,6 +19,7 @@ pub struct Stats {
 
 into_action!(Stats);
 
+#[tracing::instrument(name = "stats system", skip_all)]
 pub fn stats_system(
     mut action_reader: EventReader<Action>,
     mut stats_query: Query<(&Health, &Attributes)>,

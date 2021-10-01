@@ -86,8 +86,8 @@ async fn main() -> anyhow::Result<()> {
 
     let cors: Vec<&str> = matches
         .value_of("cors")
-        .map(|domains| domains.split(",").collect())
-        .unwrap_or_else(|| Vec::new());
+        .map(|domains| domains.split(',').collect())
+        .unwrap_or_else(Vec::new);
 
     let tls = parse_tls(&matches)?;
     let web = WebOptions::new(web, keys, cors, tls);
@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_db<'a>(matches: &'a ArgMatches) -> anyhow::Result<Option<&'a str>> {
+fn parse_db(matches: &ArgMatches) -> anyhow::Result<Option<&str>> {
     if matches.is_present("in-memory") {
         Ok(None)
     } else {
@@ -142,7 +142,7 @@ fn parse_db<'a>(matches: &'a ArgMatches) -> anyhow::Result<Option<&'a str>> {
     }
 }
 
-fn parse_keys<'a>(matches: &'a ArgMatches) -> anyhow::Result<&'a Path> {
+fn parse_keys(matches: &ArgMatches) -> anyhow::Result<&Path> {
     let path_str = matches.value_of("keys").unwrap();
 
     let path = Path::new(path_str);
@@ -170,7 +170,7 @@ fn parse_port(port: &str) -> anyhow::Result<u16> {
     Ok(port)
 }
 
-fn parse_tls<'a>(matches: &'a ArgMatches) -> anyhow::Result<Option<TlsOptions<'a>>> {
+fn parse_tls(matches: &ArgMatches) -> anyhow::Result<Option<TlsOptions>> {
     match (matches.value_of("tls"), matches.value_of("email")) {
         (Some(domain), Some(email)) => Ok(Some(TlsOptions::new(domain, email))),
         (None, None) => Ok(None),

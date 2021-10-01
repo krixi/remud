@@ -21,7 +21,7 @@ pub(crate) fn websocket_filters(
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", tag = "type", content = "data")]
 enum WsRequest {
     Input { message: String },
 }
@@ -58,7 +58,7 @@ enum WsRequestParseError {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", tag = "type", content = "data")]
 enum WsResponse {
     Output { message: String },
 }

@@ -149,6 +149,7 @@ pub struct PrototypeCreate {
 
 into_action!(PrototypeCreate);
 
+#[tracing::instrument(name = "create prototype system", skip_all)]
 pub fn prototype_create_system(
     mut commands: Commands,
     mut action_reader: EventReader<Action>,
@@ -195,6 +196,7 @@ pub struct PrototypeInfo {
 
 into_action!(PrototypeInfo);
 
+#[tracing::instrument(name = "prototype info system", skip_all)]
 pub fn prototype_info_system(
     mut action_reader: EventReader<Action>,
     prototypes: Res<Prototypes>,
@@ -242,12 +244,12 @@ pub fn prototype_info_system(
                 for ScriptHook { trigger, script } in hooks.hooks().iter() {
                     message.push_str(format!("\r\n    {:?} -> {}", trigger, script).as_str());
                 }
-
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(message);
-                }
             } else {
                 message.push_str(" none");
+            }
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                messages.queue(message);
             }
         }
     }

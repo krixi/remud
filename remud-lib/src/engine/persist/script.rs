@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx;
+use tracing::Instrument;
 
 use crate::{
     engine::persist::Persist,
@@ -9,6 +10,7 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 pub struct Attach {
     target: Id,
     script: ScriptName,
@@ -34,6 +36,7 @@ impl Attach {
 
 #[async_trait]
 impl Persist for Attach {
+    #[tracing::instrument(name = "script attach", skip(pool))]
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         let trigger = self.trigger.to_string();
 
@@ -48,6 +51,7 @@ impl Persist for Attach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Prototype(id) => {
@@ -60,6 +64,7 @@ impl Persist for Attach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Object(id) => {
@@ -70,11 +75,13 @@ impl Persist for Attach {
                     )
                     .bind(prototype)
                     .execute(pool)
+                    .in_current_span()
                     .await?;
 
                     sqlx::query("UPDATE objects SET inherit_scripts = false WHERE id = ?")
                         .bind(id)
                         .execute(pool)
+                        .in_current_span()
                         .await?;
                 }
 
@@ -87,6 +94,7 @@ impl Persist for Attach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Room(id) => {
@@ -98,6 +106,7 @@ impl Persist for Attach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
         };
@@ -106,6 +115,7 @@ impl Persist for Attach {
     }
 }
 
+#[derive(Debug)]
 pub struct Create {
     name: String,
     trigger: String,
@@ -124,18 +134,21 @@ impl Create {
 
 #[async_trait]
 impl Persist for Create {
+    #[tracing::instrument(name = "script create", skip(pool))]
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO scripts (name, trigger, code) VALUES (?, ?, ?)")
             .bind(self.name.as_str())
             .bind(self.trigger.to_string())
             .bind(self.code.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct Detach {
     target: Id,
     script: ScriptName,
@@ -161,6 +174,7 @@ impl Detach {
 
 #[async_trait]
 impl Persist for Detach {
+    #[tracing::instrument(name = "script detach", skip(pool))]
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         let trigger = self.trigger.to_string();
 
@@ -175,6 +189,7 @@ impl Persist for Detach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Prototype(id) => {
@@ -187,6 +202,7 @@ impl Persist for Detach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Object(id) => {
@@ -197,11 +213,13 @@ impl Persist for Detach {
                     )
                     .bind(prototype)
                     .execute(pool)
+                    .in_current_span()
                     .await?;
 
                     sqlx::query("UPDATE objects SET inherit_scripts = false WHERE id = ?")
                         .bind(id)
                         .execute(pool)
+                        .in_current_span()
                         .await?;
                 }
 
@@ -214,6 +232,7 @@ impl Persist for Detach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
             Id::Room(id) => {
@@ -226,6 +245,7 @@ impl Persist for Detach {
                 .bind(self.script.to_string())
                 .bind(trigger)
                 .execute(pool)
+                .in_current_span()
                 .await?;
             }
         };
@@ -234,6 +254,7 @@ impl Persist for Detach {
     }
 }
 
+#[derive(Debug)]
 pub struct Remove {
     name: String,
 }
@@ -246,16 +267,19 @@ impl Remove {
 
 #[async_trait]
 impl Persist for Remove {
+    #[tracing::instrument(name = "remove script", skip(pool))]
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM scripts WHERE name = ?")
             .bind(self.name.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct Update {
     name: String,
     trigger: String,
@@ -274,12 +298,14 @@ impl Update {
 
 #[async_trait]
 impl Persist for Update {
+    #[tracing::instrument(name = "remove script", skip(pool))]
     async fn enact(&self, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         sqlx::query("UPDATE scripts SET trigger = ?, code = ? WHERE name = ?")
             .bind(self.trigger.to_string())
             .bind(self.code.as_str())
             .bind(self.name.as_str())
             .execute(pool)
+            .in_current_span()
             .await?;
 
         Ok(())
