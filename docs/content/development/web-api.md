@@ -199,7 +199,8 @@ The websocket endpoint. Supports upgrading properly formed client requests to we
 
 ```
 {
-  "input": {
+  "type": "input",
+  "data": {
     "message": String
   }
 }
@@ -209,7 +210,8 @@ The websocket endpoint. Supports upgrading properly formed client requests to we
 
 ```
 {
-  "output": {
+  "type": "output",
+  "data": {
     "message": String
   }
 }
