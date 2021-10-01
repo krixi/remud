@@ -23,12 +23,15 @@ impl Create {
 impl Persist for Create {
     #[tracing::instrument(name = "create object", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO objects (id, prototype_id) VALUES (?, ?)")
-            .bind(self.id)
-            .bind(self.prototype)
-            .execute(pool)
-            .in_current_span()
-            .await?;
+        sqlx::query(
+            "INSERT INTO objects (id, prototype_id, inherit_scripts, name) VALUES (?, ?, ?, NULL)",
+        )
+        .bind(self.id)
+        .bind(self.prototype)
+        .bind(true)
+        .execute(pool)
+        .in_current_span()
+        .await?;
 
         Ok(())
     }

@@ -330,7 +330,7 @@ pub fn update_description_system(
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated description for {}.", target));
+                messages.queue(format!("Updated {} description.", target));
             }
         }
     }
@@ -410,7 +410,7 @@ pub fn update_name_system(
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated name for {}.", target));
+                messages.queue(format!("Updated {} name.", target));
             }
         }
     }

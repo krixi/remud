@@ -35,6 +35,15 @@ pub enum ObjectOrPrototype {
     Prototype(PrototypeId),
 }
 
+impl fmt::Display for ObjectOrPrototype {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ObjectOrPrototype::Object(id) => write!(f, "object {}", id),
+            ObjectOrPrototype::Prototype(id) => write!(f, "prototype {}", id),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Prototype {
     id: PrototypeId,

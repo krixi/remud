@@ -601,11 +601,12 @@ pub fn update_object_flags(
                 }
                 ObjectOrPrototype::Prototype(id) => {
                     updates.persist(persist::prototype::Flags::new(*id, flags.get_flags()));
+                    updates.reload(*id);
                 }
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated {:?} flags.", id));
+                messages.queue(format!("Updated {} flags.", id));
             }
         }
     }

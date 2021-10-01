@@ -12,7 +12,7 @@ mod world;
 
 use std::{collections::HashMap, fmt, sync::atomic::AtomicUsize};
 
-use futures::{executor::block_on, future::join_all};
+use futures::future::join_all;
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -59,12 +59,12 @@ pub async fn run_remud(
     web: WebOptions<'_>,
     ready_tx: Option<mpsc::Sender<()>>,
 ) -> Result<(), RemudError> {
+    let db = Db::new(db_path).await.map_err(engine::Error::from)?;
+
     'program: loop {
         let (client_tx, client_rx) = mpsc::channel(256);
         let (engine_tx, mut engine_rx) = mpsc::channel(16);
         let (web_tx, web_rx) = mpsc::channel(16);
-
-        let db = Db::new(db_path).await.map_err(engine::Error::from)?;
 
         let mut engine = Engine::new(db.clone(), client_rx, engine_tx, web_rx).await?;
         let engine_handle = tokio::spawn(async move {
@@ -74,9 +74,10 @@ pub async fn run_remud(
         let telnet_address = format!("0.0.0.0:{}", telnet_port);
         let telnet = telnet::Server::new(telnet_address.as_str()).await?;
 
-        let web_handle = run_web_server(&web, db, web_tx, client_tx.clone()).await?;
+        let web_handle = run_web_server(&web, db.clone(), web_tx, client_tx.clone()).await?;
 
         if let Some(tx) = ready_tx.clone() {
+            tracing::info!("server ready");
             tx.send(()).await.ok();
         }
 
@@ -119,11 +120,13 @@ pub async fn run_remud(
         }
 
         // Join all telnet connections - they should be shutting down as the server channel shuts down
+        tracing::info!("joining client handles");
         join_all(join_handles.values_mut()).await;
 
         // Make sure everything is shutdown before restarting
+        tracing::info!("aborting web server");
         web_handle.abort();
-        match block_on(web_handle) {
+        match web_handle.await {
             Ok(_) => (),
             Err(e) => {
                 if !e.is_cancelled() {
@@ -132,7 +135,8 @@ pub async fn run_remud(
             }
         };
 
-        match block_on(engine_handle) {
+        tracing::info!("joining engine");
+        match engine_handle.await {
             Ok(_) => (),
             Err(e) => tracing::error!("error halting engine: {}", e),
         }

@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub const DEFAULT_PROTOTYPE_KEYWORD: &str = "object";
-pub const DEFAULT_PROTOTYPE_NAME: &str = "an object";
+pub const DEFAULT_PROTOTYPE_NAME: &str = "object";
 pub const DEFAULT_PROTOTYPE_DESCRIPTION: &str = "A nondescript object. Completely uninteresting.";
 
 pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, String> {

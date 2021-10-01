@@ -11,6 +11,7 @@ use std::{
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError, WebOptions};
 use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
+use tokio::time::timeout;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
@@ -25,6 +26,7 @@ pub struct Server {
     web: u16,
     #[allow(dead_code)]
     runtime: tokio::runtime::Runtime,
+    ready: Option<tokio::sync::mpsc::Receiver<()>>,
 }
 
 impl Server {
@@ -34,6 +36,24 @@ impl Server {
 
     pub fn web(&self) -> u16 {
         self.web
+    }
+
+    pub fn ready(&mut self) {
+        let mut ready = self.ready.take().unwrap();
+
+        let (result, ready) = self.runtime.block_on(async move {
+            let result = timeout(Duration::from_secs(5), ready.recv()).await;
+            (result, ready)
+        });
+
+        self.ready = Some(ready);
+
+        match result {
+            Ok(_) => (),
+            Err(e) => {
+                panic!("server failed to restart: {}", e);
+            }
+        }
     }
 }
 
@@ -54,15 +74,15 @@ impl Default for Server {
             let mut telnet_port ;
             let mut web_port ;
 
-            'connect_loop: loop {
+            let ready_rx = 'connect_loop: loop {
                 telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
                 web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
 
                 let web = WebOptions::new(web_port, Path::new("./keys"), vec!["http://localhost"], None);
-                let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+                let (ready_tx, mut ready_rx) = tokio::sync::mpsc::channel(16);
 
                 let spawn = tokio::spawn(async move {
-                    run_remud(None, telnet_port, web, Some(tx)).await
+                    run_remud(None, telnet_port, web, Some(ready_tx)).await
                 });
 
                 tokio::select! {
@@ -85,16 +105,16 @@ impl Default for Server {
                             }
                         }
                     }
-                    _ = rx.recv() => {
-                        break 'connect_loop
+                    _ = ready_rx.recv() => {
+                        break 'connect_loop ready_rx
                     }
                 }
-            }
+            };
 
-            external_tx.send((telnet_port, web_port)).unwrap_or_else(|e| panic!("failed to start server: {}", e));
+            external_tx.send((telnet_port, web_port, ready_rx)).unwrap_or_else(|e| panic!("failed to start server: {}", e));
         });
 
-        let (telnet, web) = rx
+        let (telnet, web, ready_rx) = rx
             .recv_timeout(Duration::from_secs(5))
             .unwrap_or_else(|e| panic!("failed to receive server init message: {}", e));
 
@@ -102,6 +122,7 @@ impl Default for Server {
             telnet,
             web,
             runtime,
+            ready: Some(ready_rx),
         }
     }
 }
@@ -188,6 +209,10 @@ impl TelnetClient {
         self.recv_contains(">");
     }
 
+    pub fn run<S1: AsRef<str>>(&mut self, command: S1) {
+        self.send(command.as_ref());
+    }
+
     pub fn create_user(&mut self, name: &str, password: &str) {
         self.info("create user");
         self.recv_contains("Name?");
@@ -195,6 +220,17 @@ impl TelnetClient {
         self.recv_contains("Password?");
         self.send(password);
         self.recv_contains("Verify?");
+        self.send(password);
+        self.recv_contains("Welcome to City Six.");
+        self.recv(); // ignore the look that happens when we log in
+        self.recv_prompt();
+    }
+
+    pub fn login_user(&mut self, name: &str, password: &str) {
+        self.info("create user");
+        self.recv_contains("Name?");
+        self.send(name);
+        self.recv_contains("Password?");
         self.send(password);
         self.recv_contains("Welcome to City Six.");
         self.recv(); // ignore the look that happens when we log in

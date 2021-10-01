@@ -14,9 +14,8 @@ use tokio::{
 };
 use warp::{Filter, Rejection};
 
-pub static JWT_KEY: OnceCell<ES256KeyPair> = OnceCell::new();
-
 static JWT_KEY_FILE: &str = "jwt_key";
+static JWT_KEY: OnceCell<ES256KeyPair> = OnceCell::new();
 
 #[derive(Debug, Error)]
 pub enum CertificateError {
@@ -74,14 +73,13 @@ pub async fn retrieve_jwt_key(path: &Path) -> Result<(), JwtError> {
     } else {
         tracing::info!("generating new JWT key");
         let key = ES256KeyPair::generate();
+        create_dir_all(path.parent().unwrap())?;
         let mut key_file = File::create(path).await?;
         key_file.write_all(key.to_bytes().as_slice()).await?;
         key
     };
 
-    if JWT_KEY.set(key).is_err() {
-        panic!("unable to set JWT key, key already set");
-    };
+    JWT_KEY.get_or_init(|| key);
 
     Ok(())
 }
