@@ -2,9 +2,10 @@ import {
   BehaviorSubject,
   delay,
   distinctUntilChanged,
+  filter,
   Observable,
   retryWhen,
-  tap,
+  share,
 } from "rxjs";
 import {
   webSocket,
@@ -34,21 +35,10 @@ export const NewSocketService = (uri: string): SocketService => {
   };
 
   // create the connection
-
   const subject: WebSocketSubject<any> = webSocket(conf);
-  subject
-    .pipe(
-      retryWhen((errors) =>
-        errors.pipe(
-          tap((err) => console.log("error connecting: ", err)),
-          delay(5000)
-        )
-      )
-    )
-    // subscribe required for connection to be established.
-    .subscribe({
-      error: (err) => console.log(err),
-    });
+  subject.pipe(retryWhen((errors) => errors.pipe(delay(5000))));
+  // note: we deliberately don't subscribe here; we'll only subscribe when someone calls .on(...), which
+  // makes it so that the components don't lose messages
 
   return {
     connectionStatus: connected.asObservable().pipe(distinctUntilChanged()),
@@ -57,10 +47,9 @@ export const NewSocketService = (uri: string): SocketService => {
       connected.complete();
     },
     on<T>(eventName: string): Observable<T> {
-      return subject.multiplex(
-        () => ({ type: "sub", data: { topic: eventName } }),
-        () => ({ type: "unsub", data: { topic: eventName } }),
-        (message) => message.type === "output"
+      return subject.asObservable().pipe(
+        share(),
+        filter((x) => x.type === eventName)
       );
     },
     emit<T>(eventName: string, data: T): void {
