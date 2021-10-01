@@ -101,10 +101,16 @@ impl Regions {
         self.list.clone()
     }
 
-    pub fn remove(&mut self, region: &str) {
+    pub fn set_list(&mut self, list: Vec<String>) {
+        self.list = list;
+    }
+
+    pub fn remove(&mut self, region: &str) -> Option<String> {
         if let Some(position) = self.list.iter().position(|r| r.as_str() == region) {
-            self.list.remove(position);
+            return Some(self.list.remove(position));
         }
+
+        None
     }
 }
 

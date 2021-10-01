@@ -1,4 +1,6 @@
-pub fn word_list(mut words: Vec<String>) -> String {
+pub fn sorted_word_list(mut words: Vec<String>) -> String {
+    words.sort();
+
     if words.is_empty() {
         String::new()
     } else if words.len() == 1 {

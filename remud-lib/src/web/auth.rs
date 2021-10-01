@@ -1,7 +1,8 @@
 use std::{collections::HashSet, convert::TryFrom};
 
 use jwt_simple::prelude::{
-    Claims, Duration, ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, VerificationOptions,
+    Claims, Duration, ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, ES256KeyPair,
+    VerificationOptions,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ use warp::{reject, Filter, Rejection};
 
 use crate::{
     engine::db::AuthDb,
-    web::{security::JWT_KEY, with_db, InternalError, Player},
+    web::{security::with_jwt_key, with_db, InternalError, Player},
 };
 
 pub const SCOPE_SCRIPTS: &str = "scripts";
@@ -91,6 +92,7 @@ where
 {
     warp::header::<String>("Authorization")
         .and(with_db(db))
+        .and(with_jwt_key())
         .and(with_scopes(scopes))
         .and_then(handle_verify_access)
 }
@@ -102,6 +104,7 @@ where
     warp::path("login")
         .and(json_login())
         .and(with_db(db))
+        .and(with_jwt_key())
         .and_then(handle_login)
 }
 
@@ -112,6 +115,7 @@ where
     warp::path("refresh")
         .and(json_refresh())
         .and(with_db(db))
+        .and(with_jwt_key())
         .and_then(handle_refresh)
 }
 
@@ -125,10 +129,11 @@ where
         .and_then(handle_logout)
 }
 
-#[tracing::instrument(name = "verify access", skip(db))]
+#[tracing::instrument(name = "verify access", skip(db, jwt_key))]
 async fn handle_verify_access<DB: AuthDb>(
     auth_header: String,
     db: DB,
+    jwt_key: &ES256KeyPair,
     scopes: Vec<String>,
 ) -> Result<Player, Rejection> {
     let token = match auth_header.split_whitespace().nth(1) {
@@ -140,18 +145,14 @@ async fn handle_verify_access<DB: AuthDb>(
     };
 
     // Verify the token signature, issuer, and audience
-    let claims = match JWT_KEY
-        .get()
-        .unwrap()
-        .public_key()
-        .verify_token::<TokenData>(
-            token,
-            Some(VerificationOptions {
-                allowed_issuers: Some(TOKEN_ISSUERS.clone()),
-                allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
-                ..Default::default()
-            }),
-        ) {
+    let claims = match jwt_key.public_key().verify_token::<TokenData>(
+        token,
+        Some(VerificationOptions {
+            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
+            ..Default::default()
+        }),
+    ) {
         Ok(claims) => claims,
         Err(e) => {
             tracing::warn!("token could not be verified: {}", e);
@@ -201,10 +202,11 @@ async fn handle_verify_access<DB: AuthDb>(
     })
 }
 
-#[tracing::instrument(name = "login", skip(db))]
+#[tracing::instrument(name = "login", skip(db, jwt_key))]
 async fn handle_login<DB: AuthDb>(
     request: JsonTokenRequest,
     db: DB,
+    jwt_key: &ES256KeyPair,
 ) -> Result<impl warp::Reply, Rejection> {
     let player = request.username.as_str();
 
@@ -226,7 +228,7 @@ async fn handle_login<DB: AuthDb>(
     };
 
     let (access_token, access_issued_secs, refresh_token, refresh_issued_secs) =
-        match generate_tokens(player, immortal) {
+        match generate_tokens(jwt_key, player, immortal) {
             Ok(result) => result,
             Err(err) => {
                 tracing::error!("failed to generate tokens: {}", err);
@@ -250,23 +252,20 @@ async fn handle_login<DB: AuthDb>(
     Ok(warp::reply::json(&response))
 }
 
-#[tracing::instrument(name = "refresh", skip(db))]
+#[tracing::instrument(name = "refresh", skip(db, jwt_key))]
 async fn handle_refresh<DB: AuthDb>(
     request: JsonRefreshRequest,
     db: DB,
+    jwt_key: &ES256KeyPair,
 ) -> Result<impl warp::Reply, Rejection> {
-    let claims = match JWT_KEY
-        .get()
-        .unwrap()
-        .public_key()
-        .verify_token::<TokenData>(
-            request.refresh_token.as_str(),
-            Some(VerificationOptions {
-                allowed_issuers: Some(TOKEN_ISSUERS.clone()),
-                allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
-                ..Default::default()
-            }),
-        ) {
+    let claims = match jwt_key.public_key().verify_token::<TokenData>(
+        request.refresh_token.as_str(),
+        Some(VerificationOptions {
+            allowed_issuers: Some(TOKEN_ISSUERS.clone()),
+            allowed_audiences: Some(TOKEN_AUDIENCES.clone()),
+            ..Default::default()
+        }),
+    ) {
         Ok(claims) => claims,
         Err(e) => {
             tracing::warn!("token could not be verified: {}", e);
@@ -316,7 +315,7 @@ async fn handle_refresh<DB: AuthDb>(
     };
 
     let (access_token, access_issued_secs, refresh_token, refresh_issued_secs) =
-        match generate_tokens(player, immortal) {
+        match generate_tokens(jwt_key, player, immortal) {
             Ok(result) => result,
             Err(err) => {
                 tracing::error!("failed to generate tokens: {}", err);
@@ -349,7 +348,11 @@ async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::
     Ok(warp::reply())
 }
 
-fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64, String, i64)> {
+fn generate_tokens(
+    jwt_key: &ES256KeyPair,
+    player: &str,
+    immortal: bool,
+) -> anyhow::Result<(String, i64, String, i64)> {
     let mut scopes = vec![SCOPE_ACCESS.to_string()];
 
     if immortal {
@@ -362,7 +365,7 @@ fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64,
         .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let access_issued = access_claims.issued_at.unwrap();
-    let access_token = JWT_KEY.get().unwrap().sign(access_claims)?;
+    let access_token = jwt_key.sign(access_claims)?;
 
     let refresh_data = TokenData {
         scopes: vec![SCOPE_REFRESH.to_string()],
@@ -372,7 +375,7 @@ fn generate_tokens(player: &str, immortal: bool) -> anyhow::Result<(String, i64,
         .with_audience(TOKEN_AUDIENCE)
         .with_subject(player);
     let refresh_issued = refresh_claims.issued_at.unwrap();
-    let refresh_token = JWT_KEY.get().unwrap().sign(refresh_claims)?;
+    let refresh_token = jwt_key.sign(refresh_claims)?;
 
     let access_issued_secs = i64::try_from(access_issued.as_secs())?;
     let refresh_issued_secs = i64::try_from(refresh_issued.as_secs())?;

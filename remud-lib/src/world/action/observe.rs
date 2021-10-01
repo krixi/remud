@@ -5,7 +5,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
 use crate::{
-    text::{word_list, Tokenizer},
+    text::{sorted_word_list, Tokenizer},
     world::{
         action::{into_action, Action},
         types::{
@@ -112,7 +112,7 @@ pub fn look_system(
 
                 let singular = present_names.len() == 1;
 
-                let mut player_list = word_list(present_names);
+                let mut player_list = sorted_word_list(present_names);
                 if singular {
                     player_list.push_str(" is here.");
                 } else {
@@ -131,7 +131,7 @@ pub fn look_system(
 
             if !objects.is_empty() {
                 message.push_str("\r\nYou see ");
-                message.push_str(word_list(objects).as_str());
+                message.push_str(sorted_word_list(objects).as_str());
                 message.push('.');
             }
 
@@ -213,7 +213,7 @@ pub fn look_at_system(
             } else {
                 format!(
                     "You find nothing called \"{}\" to look at.",
-                    word_list(keywords.clone())
+                    sorted_word_list(keywords.clone())
                 )
             };
 
@@ -258,9 +258,9 @@ pub fn exits_system(
             let message = if exits.is_empty() {
                 "This room has no obvious exits.".to_string()
             } else if exits.len() == 1 {
-                format!("There is an exit {}.", word_list(exits))
+                format!("There is an exit {}.", sorted_word_list(exits))
             } else {
-                format!("There are exits {}.", word_list(exits))
+                format!("There are exits {}.", sorted_word_list(exits))
             };
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {

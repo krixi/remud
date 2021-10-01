@@ -38,8 +38,9 @@ use crate::{
 };
 
 pub(crate) enum EngineMessage {
-    Shutdown,
     Disconnect(ClientId),
+    Restart,
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,13 @@ impl Engine {
 
                     // Shutdown if requested
                     if self.game_world.should_shutdown(){
+                        self.engine_tx.send(EngineMessage::Shutdown).await.ok();
+                        break
+                    }
+
+                    // Restart if requested
+                    if self.game_world.should_restart(){
+                        self.engine_tx.send(EngineMessage::Restart).await.ok();
                         break
                     }
 
@@ -158,8 +166,6 @@ impl Engine {
                 }
             }
         }
-
-        self.engine_tx.send(EngineMessage::Shutdown).await.ok();
     }
 
     #[tracing::instrument(name = "send messages", skip_all)]
@@ -538,9 +544,8 @@ impl Engine {
                     match self.commands.parse(*player, &input, !immortal) {
                         Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
-                            client
-                                .send(format!("{}\r\n|white|> ", message).into())
-                                .await
+                            client.send(format!("{}\r\n", message).into()).await;
+                            client.send("|white|> ".to_string().into()).await;
                         }
                     }
                 }

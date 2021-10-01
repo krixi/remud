@@ -54,6 +54,7 @@ async fn load_configuration(pool: &SqlitePool, world: &mut World) -> DbResult<()
     .map_err(|_| Error::Deserialize("spawn room Room ID"))?;
 
     let configuration = Configuration {
+        restart: false,
         shutdown: false,
         spawn_room,
     };

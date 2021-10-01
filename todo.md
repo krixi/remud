@@ -31,7 +31,3 @@
 - add change password command
 
 - add persist feedback for immortal commands
-
-- add object/prototype keywords add/remove
-
-- add room regions add/remove

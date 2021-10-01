@@ -48,9 +48,78 @@ impl ColorSupport {
     }
 }
 
-pub fn colorize(message: &str, color_support: ColorSupport) -> String {
+pub fn colorize_web(message: &str) -> String {
+    let mut open = 0;
+    let replacer = WebReplacer::new(&mut open);
+    let mut message = COLOR_TAG_MATCHER.replace_all(message, replacer).to_string();
+    while open > 0 {
+        message.push_str("</span>");
+        open -= 1;
+    }
+    message
+}
+
+struct WebReplacer<'a> {
+    stack: Vec<ColorTrue>,
+    open: &'a mut i32,
+}
+
+impl<'a> WebReplacer<'a> {
+    fn new(open: &'a mut i32) -> Self {
+        WebReplacer {
+            stack: Vec::new(),
+            open,
+        }
+    }
+}
+
+impl<'a> Replacer for WebReplacer<'a> {
+    fn replace_append(&mut self, caps: &regex::Captures<'_>, dst: &mut String) {
+        if caps.name("escape").is_some() {
+            dst.push('|')
+        } else if let Some(m) = caps.name("byte") {
+            if let Ok(color) = Color256::from_str(m.as_str()) {
+                let color = ColorTrue::from(color);
+                self.stack.push(color);
+                *self.open += 1;
+                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
+            } else {
+                tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
+            }
+        } else if let Some(m) = caps.name("true") {
+            if let Ok(color) = ColorTrue::from_str(m.as_str()) {
+                self.stack.push(color);
+                *self.open += 1;
+                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
+            } else {
+                tracing::warn!("failed to capture matched true color: {}", m.as_str());
+            }
+        } else if let Some(name) = caps.name("name") {
+            if let Some(index) = COLOR_NAME_MAP.get(name.as_str().to_lowercase().as_str()) {
+                let color = ColorTrue::from(Color256::new(*index));
+                self.stack.push(color);
+                *self.open += 1;
+                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
+            }
+        } else if caps.name("clear").is_some() {
+            if !self.stack.is_empty() {
+                self.stack.pop();
+                *self.open -= 1;
+                dst.push_str("</span>");
+            }
+        } else {
+            let capture = caps
+                .iter()
+                .flat_map(|m| m.map(|m| format!("'{}'", m.as_str())))
+                .join(", ");
+            tracing::warn!("unknown color tag(s) captured: {}", capture);
+        }
+    }
+}
+
+pub fn colorize_telnet(message: &str, color_support: ColorSupport) -> String {
     let mut closed = true;
-    let replacer = ColorReplacer::new(color_support, &mut closed);
+    let replacer = TelnetReplacer::new(color_support, &mut closed);
     let mut message = COLOR_TAG_MATCHER.replace_all(message, replacer).to_string();
     if !closed {
         message.push_str(CLEAR_COLOR)
@@ -58,15 +127,15 @@ pub fn colorize(message: &str, color_support: ColorSupport) -> String {
     message
 }
 
-struct ColorReplacer<'a> {
+struct TelnetReplacer<'a> {
     color_support: ColorSupport,
     stack: Vec<Option<Color>>,
     closed: &'a mut bool,
 }
 
-impl<'a> ColorReplacer<'a> {
+impl<'a> TelnetReplacer<'a> {
     fn new(color_support: ColorSupport, closed: &'a mut bool) -> Self {
-        ColorReplacer {
+        TelnetReplacer {
             color_support,
             stack: Vec::new(),
             closed,
@@ -74,7 +143,7 @@ impl<'a> ColorReplacer<'a> {
     }
 }
 
-impl<'a> Replacer for ColorReplacer<'a> {
+impl<'a> Replacer for TelnetReplacer<'a> {
     fn replace_append(&mut self, caps: &regex::Captures<'_>, dst: &mut String) {
         if caps.name("escape").is_some() {
             dst.push('|')
@@ -184,6 +253,10 @@ pub struct ColorTrue {
 impl ColorTrue {
     fn new(r: u8, g: u8, b: u8) -> Self {
         ColorTrue { r, g, b }
+    }
+
+    pub fn as_hex(&self) -> String {
+        format!("{:02x}{:02x}{:02x}", self.r, self.g, self.b)
     }
 
     /// Create a new gray using a single color
@@ -663,7 +736,7 @@ static COLOR_NAME_MAP: Lazy<HashMap<&'static str, u8>> = Lazy::new(|| {
 mod tests {
     use std::borrow::Cow;
 
-    use crate::color::{ColorReplacer, ColorSupport};
+    use crate::color::{ColorSupport, TelnetReplacer};
 
     use super::COLOR_TAG_MATCHER;
 
@@ -718,7 +791,7 @@ mod tests {
     #[test]
     fn test_replacer_closed_true() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::TrueColor, &mut closed);
         COLOR_TAG_MATCHER.replace_all("|0|text|-|", replacer);
         assert_eq!(closed, true);
     }
@@ -726,7 +799,7 @@ mod tests {
     #[test]
     fn test_replacer_closed_false() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::TrueColor, &mut closed);
         COLOR_TAG_MATCHER.replace("|0|text", replacer);
         assert_eq!(closed, false);
     }
@@ -734,7 +807,7 @@ mod tests {
     #[test]
     fn test_replacer_keeps_true() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::TrueColor, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
         assert_eq!(result, Cow::from("\x1b[38;2;18;52;86mtext"))
     }
@@ -742,7 +815,7 @@ mod tests {
     #[test]
     fn test_replacer_lowers_true_to_256() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::Colors256, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::Colors256, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
         assert_eq!(result, Cow::from("\x1b[38;5;23mtext"))
     }
@@ -750,7 +823,7 @@ mod tests {
     #[test]
     fn test_replacer_lowers_true_to_16() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::Colors16, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|#123456|text", replacer);
         assert_eq!(result, Cow::from("\x1b[36mtext"))
     }
@@ -758,7 +831,7 @@ mod tests {
     #[test]
     fn test_replacer_keeps_256() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::Colors256, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::Colors256, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|48|text", replacer);
         assert_eq!(result, Cow::from("\x1b[38;5;48mtext"))
     }
@@ -766,7 +839,7 @@ mod tests {
     #[test]
     fn test_replacer_lowers_256_to_16() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::Colors16, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::Colors16, &mut closed);
         let result = COLOR_TAG_MATCHER.replace("|48|text", replacer);
         assert_eq!(result, Cow::from("\x1b[92mtext"))
     }
@@ -774,7 +847,7 @@ mod tests {
     #[test]
     fn test_replacer_removes_color() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::None, &mut closed);
         let result = COLOR_TAG_MATCHER.replace_all("|#123456|t|200|e|Red1|x|-|t", replacer);
         assert_eq!(result, Cow::from("text"));
     }
@@ -782,7 +855,7 @@ mod tests {
     #[test]
     fn test_replacer_translates_escape() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::None, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::None, &mut closed);
         let result = COLOR_TAG_MATCHER.replace_all("||text||", replacer);
         assert_eq!(result, Cow::from("|text|"));
     }
@@ -790,7 +863,7 @@ mod tests {
     #[test]
     fn test_replacer_nesting() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::TrueColor, &mut closed);
         let result =
             COLOR_TAG_MATCHER.replace_all("|#654321|some |#123456|pretty|-| text|-|", replacer);
         assert_eq!(
@@ -804,7 +877,7 @@ mod tests {
     #[test]
     fn test_replacer_extra_close() {
         let mut closed = true;
-        let replacer = ColorReplacer::new(ColorSupport::TrueColor, &mut closed);
+        let replacer = TelnetReplacer::new(ColorSupport::TrueColor, &mut closed);
         let result = COLOR_TAG_MATCHER.replace_all("|#654321|text|-| |-|", replacer);
         assert_eq!(result, Cow::from("\x1b[38;2;101;67;33mtext\x1b[m "))
     }

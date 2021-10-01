@@ -197,6 +197,7 @@ impl Index<usize> for Contents {
 
 // Resources
 pub struct Configuration {
+    pub restart: bool,
     pub shutdown: bool,
     pub spawn_room: RoomId,
 }

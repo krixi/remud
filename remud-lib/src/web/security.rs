@@ -14,10 +14,8 @@ use tokio::{
 };
 use warp::{Filter, Rejection};
 
-pub static JWT_KEY: OnceCell<ES256KeyPair> = OnceCell::new();
-pub static TLS_CERT: OnceCell<Certificate> = OnceCell::new();
-
 static JWT_KEY_FILE: &str = "jwt_key";
+static JWT_KEY: OnceCell<ES256KeyPair> = OnceCell::new();
 
 #[derive(Debug, Error)]
 pub enum CertificateError {
@@ -40,22 +38,30 @@ pub async fn retrieve_certificate(
     key_path: &Path,
     domain: &str,
     email: &str,
-) -> Result<(), CertificateError> {
-    if !load_certificate(key_path, domain)? {
-        let challenge_server = build_acme_challenge_server();
-        let challenge_handle =
-            tokio::spawn(async move { challenge_server.run(([0, 0, 0, 0], 80)).await });
+) -> Result<Certificate, CertificateError> {
+    let certificate = match load_certificate(key_path, domain)? {
+        Some(certificate) => certificate,
+        None => {
+            let challenge_server = build_acme_challenge_server();
+            let challenge_handle =
+                tokio::spawn(async move { challenge_server.run(([0, 0, 0, 0], 80)).await });
 
-        request_certificate(key_path, domain, email).await?;
+            let certificate = request_certificate(key_path, domain, email).await?;
 
-        challenge_handle.abort();
-    }
+            challenge_handle.abort();
+            certificate
+        }
+    };
 
-    Ok(())
+    Ok(certificate)
 }
 
 #[tracing::instrument(name = "retrieve jwt key", skip_all, fields(key_file = JWT_KEY_FILE))]
 pub async fn retrieve_jwt_key(path: &Path) -> Result<(), JwtError> {
+    if JWT_KEY.get().is_some() {
+        return Ok(());
+    }
+
     let path = path.join(JWT_KEY_FILE);
 
     let key = if path.exists() {
@@ -67,14 +73,13 @@ pub async fn retrieve_jwt_key(path: &Path) -> Result<(), JwtError> {
     } else {
         tracing::info!("generating new JWT key");
         let key = ES256KeyPair::generate();
+        create_dir_all(path.parent().unwrap())?;
         let mut key_file = File::create(path).await?;
         key_file.write_all(key.to_bytes().as_slice()).await?;
         key
     };
 
-    if JWT_KEY.set(key).is_err() {
-        panic!("unable to set JWT key, key already set");
-    };
+    JWT_KEY.get_or_init(|| key);
 
     Ok(())
 }
@@ -92,7 +97,10 @@ fn build_acme_challenge_server(
 }
 
 #[tracing::instrument(name = "load certificate", skip_all)]
-fn load_certificate(key_path: &Path, domain: &str) -> Result<bool, CertificateError> {
+fn load_certificate(
+    key_path: &Path,
+    domain: &str,
+) -> Result<Option<Certificate>, CertificateError> {
     let url = DirectoryUrl::LetsEncryptStaging;
     let persist = FilePersist::new(key_path);
     let directory = Directory::from_url(persist, url)?;
@@ -100,11 +108,10 @@ fn load_certificate(key_path: &Path, domain: &str) -> Result<bool, CertificateEr
     let account = directory.account("sriler@gmail.com")?;
     if let Some(certificate) = account.certificate(domain)? {
         tracing::info!("loading TLS certificate from disk");
-        TLS_CERT.set(certificate).unwrap();
-        Ok(true)
+        Ok(Some(certificate))
     } else {
         tracing::info!("failed to locate TLS certificate",);
-        Ok(false)
+        Ok(None)
     }
 }
 
@@ -113,7 +120,7 @@ async fn request_certificate(
     key_path: &Path,
     domain: &str,
     email: &str,
-) -> Result<(), CertificateError> {
+) -> Result<Certificate, CertificateError> {
     tracing::info!("requesting new TLS certificate");
     let url = DirectoryUrl::LetsEncrypt;
     let persist = FilePersist::new(key_path);
@@ -141,11 +148,10 @@ async fn request_certificate(
     let order_certificate = order_csr.finalize_pkey(key, 5000)?;
 
     let certificate = order_certificate.download_and_save_cert()?;
-    TLS_CERT.set(certificate).unwrap();
 
     tracing::info!("new certificate signed and saved");
 
-    Ok(())
+    Ok(certificate)
 }
 
 async fn save_token(token: &str, proof: String) -> Result<(), CertificateError> {
@@ -153,4 +159,9 @@ async fn save_token(token: &str, proof: String) -> Result<(), CertificateError> 
     let mut file = File::create(path.join(token)).await?;
     file.write_all(proof.as_bytes()).await?;
     Ok(())
+}
+
+pub fn with_jwt_key(
+) -> impl Filter<Extract = (&'static ES256KeyPair,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || JWT_KEY.get().unwrap())
 }
