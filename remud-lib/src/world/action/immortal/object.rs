@@ -10,7 +10,7 @@ use crate::{
     world::{
         action::{
             immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
-            into_action, Action,
+            into_action, Action, Mode,
         },
         fsm::StateMachine,
         scripting::{
@@ -101,20 +101,35 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                             target: ActionTarget::Object(id),
                         })),
                         "keywords" => {
-                            if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of keywords.".to_string())
-                            } else {
-                                let keywords = tokenizer
-                                    .rest()
-                                    .split(' ')
-                                    .map(|keyword| keyword.trim().to_string())
-                                    .collect_vec();
+                            if let Some(mode) = tokenizer.next() {
+                                let mode = match Mode::from_str(mode) {
+                                    Ok(mode) => mode,
+                                    Err(_) => {
+                                        return Err("Enter a valid keyword alteration mode: add, \
+                                                    remove, or set."
+                                            .to_string())
+                                    }
+                                };
 
-                                Ok(Action::from(UpdateKeywords {
-                                    actor: player,
-                                    id: ObjectOrPrototype::Object(id),
-                                    keywords,
-                                }))
+                                if tokenizer.rest().is_empty() {
+                                    Err("Enter a space separated list of keywords.".to_string())
+                                } else {
+                                    let keywords = tokenizer
+                                        .rest()
+                                        .split(' ')
+                                        .map(|keyword| keyword.trim().to_string())
+                                        .collect_vec();
+
+                                    Ok(Action::from(UpdateKeywords {
+                                        actor: player,
+                                        id: ObjectOrPrototype::Object(id),
+                                        mode,
+                                        keywords,
+                                    }))
+                                }
+                            } else {
+                                Err("Enter a keyword alteration mode: add, remove, or set."
+                                    .to_string())
                             }
                         }
                         "name" => {
@@ -616,6 +631,7 @@ pub fn update_object_flags(
 pub struct UpdateKeywords {
     pub actor: Entity,
     pub id: ObjectOrPrototype,
+    pub mode: Mode,
     pub keywords: Vec<String>,
 }
 
@@ -634,6 +650,7 @@ pub fn update_keywords_system(
         if let Action::UpdateKeywords(UpdateKeywords {
             actor,
             id,
+            mode,
             keywords,
         }) = action
         {
@@ -660,22 +677,38 @@ pub fn update_keywords_system(
                 }
             };
 
-            object_query
-                .get_mut(entity)
-                .unwrap()
-                .set_list(keywords.clone());
+            let keywords = match mode {
+                Mode::Add => {
+                    let mut component = object_query.get_mut(entity).unwrap();
+                    component.add(keywords.clone());
+                    component.get_list()
+                }
+                Mode::Remove => {
+                    let mut component = object_query.get_mut(entity).unwrap();
+                    component.remove(keywords.as_slice());
+                    component.get_list()
+                }
+                Mode::Set => {
+                    object_query
+                        .get_mut(entity)
+                        .unwrap()
+                        .set_list(keywords.clone());
+                    keywords.clone()
+                }
+            };
 
             match id {
                 ObjectOrPrototype::Object(id) => {
-                    updates.persist(persist::object::Keywords::new(*id, keywords.clone()));
+                    updates.persist(persist::object::Keywords::new(*id, keywords));
                 }
                 ObjectOrPrototype::Prototype(id) => {
-                    updates.persist(persist::prototype::Keywords::new(*id, keywords.clone()));
+                    updates.persist(persist::prototype::Keywords::new(*id, keywords));
+                    updates.reload(*id);
                 }
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Updated {:?} keywords.", id));
+                messages.queue(format!("Updated {} keywords.", id));
             }
         }
     }

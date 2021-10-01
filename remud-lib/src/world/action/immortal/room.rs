@@ -6,13 +6,13 @@ use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, UpdateGroup, Updates},
-    text::{word_list, Tokenizer},
+    text::{sorted_word_list, Tokenizer},
     world::{
         action::{
             immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
             into_action,
             observe::Look,
-            Action,
+            Action, Mode,
         },
         scripting::{
             time::Timers, ExecutionErrors, QueuedAction, ScriptData, ScriptHook, ScriptHooks,
@@ -145,12 +145,17 @@ pub fn parse_room(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, St
                         match operation {
                             "add" => Ok(Action::from(RoomUpdateRegions {
                                 actor: player,
-                                remove: false,
+                                mode: Mode::Add,
                                 regions,
                             })),
                             "remove" => Ok(Action::from(RoomUpdateRegions {
                                 actor: player,
-                                remove: true,
+                                mode: Mode::Remove,
+                                regions,
+                            })),
+                            "set" => Ok(Action::from(RoomUpdateRegions {
+                                actor: player,
+                                mode: Mode::Set,
                                 regions,
                             })),
                             _ => Err("Enter a valid region operation: add or remove.".to_string()),
@@ -360,7 +365,7 @@ pub fn room_info_system(
             if regions.is_empty() {
                 message.push_str("none");
             } else {
-                message.push_str(word_list(regions.get_list()).as_str());
+                message.push_str(sorted_word_list(regions.get_list()).as_str());
             }
 
             message.push_str("\r\n  |white|players|-|:");
@@ -685,7 +690,7 @@ pub fn room_unlink_system(
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RoomUpdateRegions {
     pub actor: Entity,
-    pub remove: bool,
+    pub mode: Mode,
     pub regions: Vec<String>,
 }
 
@@ -702,7 +707,7 @@ pub fn room_update_regions_system(
     for action in action_reader.iter() {
         if let Action::RoomUpdateRegions(RoomUpdateRegions {
             actor,
-            remove,
+            mode,
             regions,
         }) = action
         {
@@ -711,29 +716,35 @@ pub fn room_update_regions_system(
                 .map(|location| location.room())
                 .unwrap();
 
-            let mut changed_regions = Vec::new();
             let (room, mut room_regions) = room_query.get_mut(room_entity).unwrap();
-            if *remove {
-                changed_regions = regions.clone();
-                for region in regions {
-                    room_regions.remove(region.as_str());
-                }
-            } else {
-                for region in regions.iter() {
-                    if !room_regions.contains(region) {
-                        room_regions.add(region.to_string());
-                        changed_regions.push(region.to_string());
-                    }
-                }
-            }
 
-            if *remove {
-                updates.persist(persist::room::RemoveRegions::new(
-                    room.id(),
-                    changed_regions,
-                ));
-            } else {
-                updates.persist(persist::room::AddRegions::new(room.id(), changed_regions));
+            match mode {
+                Mode::Add => {
+                    let mut changed_regions = Vec::new();
+                    for region in regions.iter() {
+                        if !room_regions.contains(region) {
+                            room_regions.add(region.to_string());
+                            changed_regions.push(region.to_string());
+                        }
+                    }
+                    updates.persist(persist::room::AddRegions::new(room.id(), changed_regions));
+                }
+                Mode::Remove => {
+                    let mut changed_regions = regions.clone();
+                    for region in regions {
+                        if let Some(region) = room_regions.remove(region.as_str()) {
+                            changed_regions.push(region);
+                        }
+                    }
+                    updates.persist(persist::room::RemoveRegions::new(
+                        room.id(),
+                        changed_regions,
+                    ));
+                }
+                Mode::Set => {
+                    room_regions.set_list(regions.clone());
+                    updates.persist(persist::room::SetRegions::new(room.id(), regions.clone()));
+                }
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {

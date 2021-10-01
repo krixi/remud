@@ -14,7 +14,7 @@ use tokio::{
 use tokio_util::codec::Framed;
 
 use crate::{
-    color::colorize,
+    color::colorize_telnet,
     engine::{ClientMessage, EngineResponse},
     telnet::protocol::{Codec, Frame, Telnet},
     ClientId, CLIENT_ID_COUNTER,
@@ -101,7 +101,7 @@ async fn process(
                 if let Some(message) = maybe_message {
                     match message {
                         EngineResponse::Output(message) => {
-                            let message = colorize(format!("|Gray69|{}", message).as_str(), telnet.color_support());
+                            let message = colorize_telnet(format!("|Gray69|{}", message).as_str(), telnet.color_support());
                             match message.into_ascii_string() {
                                 Ok(str) => {
                                     let bytes: Vec<u8> = str.into();

@@ -6,7 +6,7 @@ use strum::EnumString;
 use thiserror::Error;
 
 use crate::{
-    text::word_list,
+    text::sorted_word_list,
     world::types::{Description, Id, Named},
 };
 
@@ -104,6 +104,16 @@ impl Keywords {
         self.list.clone()
     }
 
+    pub fn remove(&mut self, list: &[String]) {
+        self.list.retain(|k| !list.contains(k));
+    }
+
+    pub fn add(&mut self, list: Vec<String>) {
+        self.list.extend(list.into_iter());
+        self.list.sort_unstable();
+        self.list.dedup();
+    }
+
     pub fn set_list(&mut self, list: Vec<String>) {
         self.list = list
     }
@@ -113,7 +123,7 @@ impl Keywords {
     }
 
     pub fn as_word_list(&self) -> String {
-        word_list(self.list.clone())
+        sorted_word_list(self.list.clone())
     }
 }
 

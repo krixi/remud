@@ -6,14 +6,14 @@ use itertools::Itertools;
 
 use crate::{
     engine::persist::{self, Updates},
-    text::{word_list, Tokenizer},
+    text::{sorted_word_list, Tokenizer},
     world::{
         action::{
             immortal::{
                 object::{UpdateKeywords, UpdateObjectFlags},
                 UpdateDescription, UpdateName,
             },
-            into_action, Action,
+            into_action, Action, Mode,
         },
         scripting::{ScriptHook, ScriptHooks},
         types::{
@@ -45,20 +45,35 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
                     match token {
                         "info" => Ok(Action::from(PrototypeInfo { actor: player, id })),
                         "keywords" => {
-                            if tokenizer.rest().is_empty() {
-                                Err("Enter a space separated list of keywords.".to_string())
-                            } else {
-                                let keywords = tokenizer
-                                    .rest()
-                                    .split(' ')
-                                    .map(|keyword| keyword.trim().to_string())
-                                    .collect_vec();
+                            if let Some(mode) = tokenizer.next() {
+                                let mode = match Mode::from_str(mode) {
+                                    Ok(mode) => mode,
+                                    Err(_) => {
+                                        return Err("Enter a valid keyword alteration mode: add, \
+                                                    remove, or set."
+                                            .to_string())
+                                    }
+                                };
 
-                                Ok(Action::from(UpdateKeywords {
-                                    actor: player,
-                                    id: ObjectOrPrototype::Prototype(id),
-                                    keywords,
-                                }))
+                                if tokenizer.rest().is_empty() {
+                                    Err("Enter a space separated list of keywords.".to_string())
+                                } else {
+                                    let keywords = tokenizer
+                                        .rest()
+                                        .split(' ')
+                                        .map(|keyword| keyword.trim().to_string())
+                                        .collect_vec();
+
+                                    Ok(Action::from(UpdateKeywords {
+                                        actor: player,
+                                        id: ObjectOrPrototype::Prototype(id),
+                                        mode,
+                                        keywords,
+                                    }))
+                                }
+                            } else {
+                                Err("Enter a keyword alteration mode: add, remove, or set."
+                                    .to_string())
                             }
                         }
                         "desc" => {
@@ -234,7 +249,7 @@ pub fn prototype_info_system(
             message.push_str(format!("\r\n  |white|flags|-|: {:?}", flags.get_flags()).as_str());
 
             message.push_str("\r\n  |white|keywords|-|: ");
-            message.push_str(word_list(keywords.get_list()).as_str());
+            message.push_str(sorted_word_list(keywords.get_list()).as_str());
 
             message.push_str("\r\n  |white|script hooks|-|:");
             if let Some(hooks) = hooks {

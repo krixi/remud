@@ -1,4 +1,5 @@
 use crate::{
+    color::colorize_web,
     engine::{ClientMessage, EngineResponse},
     ClientId, CLIENT_ID_COUNTER,
 };
@@ -23,7 +24,7 @@ pub(crate) fn websocket_filters(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type", content = "data")]
 enum WsRequest {
-    Input { message: String },
+    Game { message: String },
 }
 
 impl TryFrom<Message> for WsRequest {
@@ -60,12 +61,12 @@ enum WsRequestParseError {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase", tag = "type", content = "data")]
 enum WsResponse {
-    Output { message: String },
+    Game { message: String },
 }
 
 impl WsResponse {
     fn output(message: String) -> Self {
-        WsResponse::Output { message }
+        WsResponse::Game { message }
     }
 
     fn to_message(&self) -> Message {
@@ -120,7 +121,7 @@ async fn process(
                     match WsRequest::try_from(message) {
                         Ok(request) => {
                             match request {
-                                WsRequest::Input { message } => {
+                                WsRequest::Game { message } => {
                                     if client_tx.send(ClientMessage::Input(client_id, message)).await.is_err() {
                                         break
                                     }
@@ -144,6 +145,7 @@ async fn process(
                 if let Some(message) = maybe_message {
                     match message {
                         EngineResponse::Output(message) => {
+                            let message = colorize_web(message.as_str());
                             let message = WsResponse::output(message);
                             if ws_tx.send(message.to_message()).await.is_err() {
                                 break

@@ -77,7 +77,7 @@ fn test_room_name() {
     t.test(
         "rename the void room",
         "room name Super Happy Fun Palace",
-        vec!["Updated name for current room"],
+        vec!["Updated current room name."],
     );
     t.test(
         "Room now has updated name via room info",
@@ -105,7 +105,7 @@ fn test_room_desc() {
     t.test(
         "change the description of the void room",
         "room desc A waterslide spirals infinitely in every direction.",
-        vec!["Updated description for current room"],
+        vec!["Updated current room description."],
     );
     t.test(
         "Room now has updated desc via room info",

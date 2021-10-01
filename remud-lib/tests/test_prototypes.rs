@@ -58,8 +58,6 @@ fn test_prototype_new() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -133,8 +131,6 @@ fn test_prototype_flags() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -172,8 +168,6 @@ fn test_prototype_flags() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -211,8 +205,6 @@ fn test_prototype_flags() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -266,8 +258,6 @@ fn test_prototype_name() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -305,8 +295,6 @@ fn test_prototype_name() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -344,8 +332,6 @@ fn test_prototype_name() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -399,8 +385,6 @@ fn test_prototype_desc() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -439,7 +423,6 @@ fn test_prototype_desc() {
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
 
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -477,8 +460,6 @@ fn test_prototype_desc() {
 
     server.ready();
     let mut t = TelnetClient::new(server.telnet());
-
-    tracing::info!("logging in");
     t.login_user("shane", "password");
 
     t.test(
@@ -493,7 +474,154 @@ fn test_prototype_desc() {
         vec!["Object 1", "description: An object rests here."],
     );
 }
-fn test_prototype_keywords() {}
+
+#[test]
+fn test_prototype_keywords() {
+    let mut server = Server::default();
+    let mut t = TelnetClient::new(server.telnet());
+
+    t.create_user("shane", "password");
+
+    t.test(
+        "create a prototype",
+        "prototype new",
+        vec!["Created prototype 1."],
+    );
+
+    t.test(
+        "create an object",
+        "object new 1",
+        vec!["Created object 1."],
+    );
+
+    t.test(
+        "set prototype keywords",
+        "prototype 1 keywords set dirty boots",
+        vec!["Updated prototype 1 keywords."],
+    );
+
+    t.test(
+        "prototype keywords updated",
+        "prototype 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.test(
+        "object keywords updated",
+        "object 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.send("restart");
+    drop(t);
+
+    server.ready();
+    let mut t = TelnetClient::new(server.telnet());
+    t.login_user("shane", "password");
+
+    t.test(
+        "prototype keywords haven't changed",
+        "prototype 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.test(
+        "object keywords haven't changed",
+        "object 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.test(
+        "update object keywords",
+        "object 1 keywords remove dirty",
+        vec!["Updated object 1 keywords."],
+    );
+
+    t.test(
+        "prototype keywords haven't changed",
+        "prototype 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.test(
+        "object keywords are updated",
+        "object 1 info",
+        vec!["keywords: boots"],
+    );
+
+    t.send("restart");
+    drop(t);
+
+    server.ready();
+    let mut t = TelnetClient::new(server.telnet());
+    t.login_user("shane", "password");
+
+    t.test(
+        "prototype keywords haven't changed after restart",
+        "prototype 1 info",
+        vec!["keywords: boots and dirty"],
+    );
+
+    t.test(
+        "object keywords haven't changed after restart",
+        "object 1 info",
+        vec!["keywords: boots"],
+    );
+
+    t.test(
+        "change prototype keywords - check object inheritence",
+        "prototype 1 keywords add black",
+        vec!["Updated prototype 1 keywords."],
+    );
+
+    t.test(
+        "prototype keywords are updated",
+        "prototype 1 info",
+        vec!["keywords: black, boots, and dirty"],
+    );
+
+    t.test(
+        "object keywords haven't changed",
+        "object 1 info",
+        vec!["keywords: boots"],
+    );
+
+    t.send("restart");
+    drop(t);
+
+    server.ready();
+    let mut t = TelnetClient::new(server.telnet());
+    t.login_user("shane", "password");
+
+    t.test(
+        "prototype keywords haven't changed after restart",
+        "prototype 1 info",
+        vec!["keywords: black, boots, and dirty"],
+    );
+
+    t.test(
+        "object keywords haven't changed after restart",
+        "object 1 info",
+        vec!["keywords: boots"],
+    );
+}
+
+#[test]
 fn test_prototype_remove() {
-    // make sure this doesn't work
+    let server = Server::default();
+    let mut t = TelnetClient::new(server.telnet());
+
+    t.create_user("shane", "password");
+
+    t.test(
+        "create a prototype",
+        "prototype new",
+        vec!["Created prototype 1."],
+    );
+
+    t.test(
+        "cannot remove prototype",
+        "prototype 1 remove",
+        vec!["Enter a valid prototype subcommand"],
+    );
 }

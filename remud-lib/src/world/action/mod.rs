@@ -8,6 +8,7 @@ pub mod observe;
 pub mod system;
 
 use bevy_ecs::prelude::*;
+use strum::EnumString;
 
 use crate::{
     ecs::{Ecs, Phase, Plugin, Step},
@@ -51,6 +52,16 @@ use crate::{
         scripting::QueuedAction,
     },
 };
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, EnumString)]
+pub enum Mode {
+    #[strum(serialize = "add")]
+    Add,
+    #[strum(serialize = "remove")]
+    Remove,
+    #[strum(serialize = "set")]
+    Set,
+}
 
 macro_rules! into_action {
     ($action:tt) => {

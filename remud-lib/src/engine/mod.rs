@@ -544,9 +544,8 @@ impl Engine {
                     match self.commands.parse(*player, &input, !immortal) {
                         Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
-                            client
-                                .send(format!("{}\r\n|white|> ", message).into())
-                                .await
+                            client.send(format!("{}\r\n", message).into()).await;
+                            client.send("|white|> ".to_string().into()).await;
                         }
                     }
                 }

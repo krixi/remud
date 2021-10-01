@@ -6,7 +6,7 @@ use regex::Replacer;
 
 use crate::{
     macros::regex,
-    text::{word_list, Tokenizer},
+    text::{sorted_word_list, Tokenizer},
     world::{
         action::{
             attributes::parse_stats,
@@ -83,7 +83,7 @@ impl Commands {
         if matches.len() > 1 {
             Err(format!(
                 "Be more specific: {} could match.",
-                word_list(
+                sorted_word_list(
                     matches
                         .into_iter()
                         .map(|name| name.to_string())
@@ -105,7 +105,7 @@ impl Commands {
 
     fn help(&self, mut tokenizer: Tokenizer, restricted: bool) -> String {
         if tokenizer.rest().is_empty() {
-            let topics = word_list(
+            let topics = sorted_word_list(
                 self.commands
                     .iter()
                     .filter(|(_, command)| !restricted || !command.restricted)
@@ -235,7 +235,7 @@ impl fmt::Display for Help {
             write!(
                 f,
                 "\r\n\r\n|white|Subtopics:|-| {}",
-                word_list(
+                sorted_word_list(
                     self.subhelp
                         .keys()
                         .map(|k| k.to_string())
@@ -429,12 +429,14 @@ fn default_commands() -> Vec<Command> {
             .with_subhelp(
                 "keywords",
                 Help::new(
-                    "object <id> keywords <keyword> [<keyword>..]",
-                    "Sets an object's keywords. Keywords are the primary way players interact \
-                     with objects and should be obvious from the object's name. Extra keywords \
-                     can be added for disambiguation.",
+                    "object <id> keywords (add||remove||set) <keyword> [<keyword>..]",
+                    "Changes a object's keywords. The add command adds keywords to the set, \
+                     remove removes, and set changes the keywords to be only the passed in \
+                     values. Keywords are the primary way players interact with objects and \
+                     should be obvious from the object's name. Extra keywords can be added for \
+                     disambiguation.",
                 )
-                .with_example("object 2 keywords fuzzy bear"),
+                .with_example("object 2 keywords set fuzzy wuzzy bear"),
             )
             .with_subhelp(
                 "new",
@@ -571,12 +573,14 @@ fn default_commands() -> Vec<Command> {
             .with_subhelp(
                 "keywords",
                 Help::new(
-                    "prototype <id> keywords <keyword> [<keyword>..]",
-                    "Sets an prototype's keywords. Keywords are the primary way players interact \
-                     with prototypes and should be obvious from the prototype's name. Extra \
-                     keywords can be added for disambiguation.",
+                    "prototype <id> keywords (add||remove||set) <keyword> [<keyword>..]",
+                    "Changes a prototype's keywords. The add command adds keywords to the set, \
+                     remove removes, and set changes the keywords to be only the passed in \
+                     values. Keywords are the primary way players interact with objects and \
+                     should be obvious from the object's name. Extra keywords can be added for \
+                     disambiguation.",
                 )
-                .with_example("prototype 2 keywords fuzzy bear"),
+                .with_example("prototype 2 keywords set fuzzy bear"),
             )
             .with_subhelp(
                 "name",
@@ -696,11 +700,12 @@ fn default_commands() -> Vec<Command> {
             .with_subhelp(
                 "regions",
                 Help::new(
-                    "room regions <region> [<region..>]",
-                    "Sets the regions for the current room. Regions are akin to room tags, and \
+                    "room regions (add||remove||set) <region> [<region..>]",
+                    "Manipulates the regions for the current room. Add adds, remove removes, and \
+                     set overwrites the entire region list. Regions are akin to room tags, and \
                      can be used to group or categorize rooms.",
                 )
-                .with_example("room regions city street"),
+                .with_example("room regions set city street"),
             )
             .with_subhelp(
                 "remove",

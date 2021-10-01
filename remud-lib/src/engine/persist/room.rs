@@ -298,6 +298,50 @@ impl Persist for RemoveRegions {
     #[tracing::instrument(name = "remove room regions", skip(pool))]
     async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         for region in self.regions.iter() {
+            if let Some(region_row) = sqlx::query("SELECT id FROM regions WHERE name = ?")
+                .bind(region)
+                .fetch_optional(pool)
+                .in_current_span()
+                .await?
+            {
+                let region_id: i64 = region_row.get("id");
+
+                sqlx::query("DELETE FROM room_regions WHERE room_id = ? AND region_id = ?")
+                    .bind(self.id)
+                    .bind(region_id)
+                    .execute(pool)
+                    .in_current_span()
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SetRegions {
+    id: RoomId,
+    regions: Vec<String>,
+}
+
+impl SetRegions {
+    pub fn new(id: RoomId, regions: Vec<String>) -> Box<Self> {
+        Box::new(SetRegions { id, regions })
+    }
+}
+
+#[async_trait]
+impl Persist for SetRegions {
+    #[tracing::instrument(name = "set room regions", skip(pool))]
+    async fn enact(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM room_regions WHERE room_id = ?")
+            .bind(self.id)
+            .execute(pool)
+            .in_current_span()
+            .await?;
+
+        for region in self.regions.iter() {
             let region_id: i64 = if let Some(region_row) =
                 sqlx::query("SELECT id FROM regions WHERE name = ?")
                     .bind(region)
@@ -315,7 +359,7 @@ impl Persist for RemoveRegions {
                     .get("id")
             };
 
-            sqlx::query("DELETE FROM room_regions WHERE room_id = ? AND region_id = ?")
+            sqlx::query("INSERT INTO room_regions(room_id, region_id) VALUES(?, ?)")
                 .bind(self.id)
                 .bind(region_id)
                 .execute(pool)
