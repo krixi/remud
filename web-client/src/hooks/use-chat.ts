@@ -43,22 +43,19 @@ export const useChat = (): Chat => {
     if (!socket) {
       return;
     }
-    const s: Subscription = socket
-      ?.on<Message<ChatMessage>>("output")
-      .subscribe({
-        next: (value) => {
-          dispatch({ sent: value.data });
-        },
-        error: (err) => console.log(" got err ", err),
-      });
+    const s: Subscription = socket?.on<Message<ChatMessage>>("game").subscribe({
+      next: (value) => {
+        dispatch({ sent: value.data });
+      },
+      error: (err) => console.log(" got err ", err),
+    });
     return () => s.unsubscribe();
   }, [socket]);
 
   const send = useCallback(
     (msg: ChatMessage): void => {
       if (socket) {
-        socket.emit<ChatMessage>("input", msg); // TODO: event name should be "chat"?
-        // TODO: edit the last message in the list to include this input.
+        socket.emit<ChatMessage>("game", msg);
         dispatch({ sent: msg });
       }
     },

@@ -1,4 +1,10 @@
-import React, { FormEvent, useCallback, useRef, useState } from "react";
+import React, {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useChat } from "../hooks/use-chat";
 import { ConnectionStatus } from "./connection-status";
 
@@ -8,10 +14,12 @@ export const Terminal: React.FC = () => {
 
   // scroll to the bottom of chat.
   const chatList = useRef(null);
-  if (chatList.current) {
-    const chatListElement = chatList.current as HTMLElement;
-    chatListElement.scrollTop = chatListElement.scrollHeight;
-  }
+  useEffect(() => {
+    if (chatList.current) {
+      const chatListElement = chatList.current as HTMLElement;
+      chatListElement.scrollTop = chatListElement.scrollHeight;
+    }
+  }, [messages]);
 
   const onSubmit = useCallback(
     (e: FormEvent, cmd: string) => {
@@ -37,24 +45,58 @@ export const Terminal: React.FC = () => {
           style={{ height: "75vh" }}
         >
           {messages.map((m, i) => (
-            <pre key={i}>{m.message}</pre>
+            <div
+              key={i}
+              className="font-mono whitespace-pre-wrap"
+              dangerouslySetInnerHTML={{ __html: m.message }}
+            />
           ))}
         </div>
       </div>
       <form
-        className="container max-w-6xl mx-auto text-black rounded m-2"
+        className="container max-w-6xl m-2 mx-auto"
         onSubmit={(e) => onSubmit(e, command)}
       >
         <div className="flex flex-row justify-between">
+          <div className="w-3/4 flex flex-row text-white bg-black rounded mx-1">
+            <div className="font-mono p-2">
+              <Prompt />
+            </div>
+            <input
+              className="w-full p-1 bg-black text-white rounded focus:outline-none"
+              autoFocus
+              type="text"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+            />
+          </div>
           <input
-            className="w-3/4 p-1"
-            type="text"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            className="w-1/4 p-1 mx-1 cursor-pointer bg-soft-gray btn"
+            type="submit"
+            value={"Send"}
           />
-          <input className="w-1/4 p-1 ml-1" type="submit" value={"Send"} />
         </div>
       </form>
     </>
+  );
+};
+
+const Prompt: React.FC = () => {
+  // from https://heroicons.com/ (MIT)
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
+    </svg>
   );
 };
