@@ -4,6 +4,8 @@
 
 - add object quantity and associated manipulation commands
 
+- add object stats (by script? store in db?)
+
 - add combat
 
 - add reputation
@@ -11,6 +13,8 @@
 - add hp to prompt
 
 - add customizable prompts
+
+- add script state to state machine
 
 - add a resolve step for events to resolve targets so scripts have access to target information (get, drop, look at as examples)
 

@@ -55,6 +55,72 @@ impl Server {
             }
         }
     }
+
+    pub fn new_connect<S1: AsRef<str>, S2: AsRef<str>>(
+        player: S1,
+        password: S2,
+    ) -> (Server, TelnetPlayer) {
+        let mut server = Server::default();
+        let telnet = server.create_user(player, password);
+        (server, telnet)
+    }
+
+    pub fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
+        client.send("restart");
+        let (player, password) = (client.player.clone(), client.password.clone());
+        drop(client);
+
+        self.ready();
+        self.login_user(player, password)
+    }
+
+    pub fn create_user<S1: AsRef<str>, S2: AsRef<str>>(
+        &mut self,
+        player: S1,
+        password: S2,
+    ) -> TelnetPlayer {
+        let mut connection = TelnetConnection::new(self.telnet());
+
+        connection.info("create user");
+        connection.recv_contains("Name?");
+        connection.send(player.as_ref());
+        connection.recv_contains("Password?");
+        connection.send(password.as_ref());
+        connection.recv_contains("Verify?");
+        connection.send(password.as_ref());
+        connection.recv_contains("Welcome to City Six.");
+        connection.recv(); // ignore the look that happens when we log in
+        connection.recv_prompt();
+
+        TelnetPlayer {
+            player: player.as_ref().to_string(),
+            password: password.as_ref().to_string(),
+            connection,
+        }
+    }
+
+    pub fn login_user<S1: AsRef<str>, S2: AsRef<str>>(
+        &mut self,
+        player: S1,
+        password: S2,
+    ) -> TelnetPlayer {
+        let mut connection = TelnetConnection::new(self.telnet());
+
+        connection.info("create user");
+        connection.recv_contains("Name?");
+        connection.send(player.as_ref());
+        connection.recv_contains("Password?");
+        connection.send(password.as_ref());
+        connection.recv_contains("Welcome to City Six.");
+        connection.recv(); // ignore the look that happens when we log in
+        connection.recv_prompt();
+
+        TelnetPlayer {
+            player: player.as_ref().to_string(),
+            password: password.as_ref().to_string(),
+            connection,
+        }
+    }
 }
 
 impl Default for Server {
@@ -127,13 +193,13 @@ impl Default for Server {
     }
 }
 
-pub struct TelnetClient {
+pub struct TelnetConnection {
     connection: Telnet,
 }
 
-impl TelnetClient {
+impl TelnetConnection {
     // Creates a new client and performs initial TELNET options negotiation.
-    pub fn new(port: u16) -> Self {
+    fn new(port: u16) -> Self {
         // set up connection
         let mut connection =
             Telnet::connect(("127.0.0.1", port), 1024).expect("failed to connect to ReMUD");
@@ -147,7 +213,19 @@ impl TelnetClient {
             panic!("received unexpected message waiting for DO TTYPE");
         }
 
-        TelnetClient { connection }
+        TelnetConnection { connection }
+    }
+
+    pub fn info<S: AsRef<str>>(&mut self, text: S) {
+        if !text.as_ref().is_empty() {
+            tracing::info!("---------- {} ----------", text.as_ref());
+        }
+    }
+
+    pub fn send<S: AsRef<str>>(&mut self, line: S) {
+        self.connection
+            .write(format!("{}\r\n", line.as_ref()).as_bytes())
+            .unwrap_or_else(|_| panic!("failed to send '{}'", line.as_ref()));
     }
 
     pub fn recv(&mut self) -> String {
@@ -199,50 +277,32 @@ impl TelnetClient {
         }
     }
 
-    pub fn send<S: AsRef<str>>(&mut self, line: S) {
-        self.connection
-            .write(format!("{}\r\n", line.as_ref()).as_bytes())
-            .unwrap_or_else(|_| panic!("failed to send '{}'", line.as_ref()));
-    }
-
     pub fn recv_prompt(&mut self) {
         self.recv_contains(">");
     }
+}
 
-    pub fn run<S1: AsRef<str>>(&mut self, command: S1) {
-        self.send(command.as_ref());
+pub struct TelnetPlayer {
+    player: String,
+    password: String,
+    connection: TelnetConnection,
+}
+
+impl std::ops::Deref for TelnetPlayer {
+    type Target = TelnetConnection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connection
     }
+}
 
-    pub fn create_user(&mut self, name: &str, password: &str) {
-        self.info("create user");
-        self.recv_contains("Name?");
-        self.send(name);
-        self.recv_contains("Password?");
-        self.send(password);
-        self.recv_contains("Verify?");
-        self.send(password);
-        self.recv_contains("Welcome to City Six.");
-        self.recv(); // ignore the look that happens when we log in
-        self.recv_prompt();
+impl std::ops::DerefMut for TelnetPlayer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
     }
+}
 
-    pub fn login_user(&mut self, name: &str, password: &str) {
-        self.info("create user");
-        self.recv_contains("Name?");
-        self.send(name);
-        self.recv_contains("Password?");
-        self.send(password);
-        self.recv_contains("Welcome to City Six.");
-        self.recv(); // ignore the look that happens when we log in
-        self.recv_prompt();
-    }
-
-    pub fn info<S: AsRef<str>>(&mut self, text: S) {
-        if !text.as_ref().is_empty() {
-            tracing::info!("---------- {} ----------", text.as_ref());
-        }
-    }
-
+impl TelnetPlayer {
     pub fn test<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
         &mut self,
         scenario: S1,
