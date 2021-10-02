@@ -1,7 +1,7 @@
-use remud_test::{Server, TelnetClient};
+use remud_test::{Server, TelnetPlayer};
 
 // Validate a room connection
-fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32, &str)) {
+fn assert_there_and_back_again(t: &mut TelnetPlayer, from: (u32, &str), to: (u32, &str)) {
     let (from_id, there) = from;
     let (to_id, back) = to;
 
@@ -41,10 +41,7 @@ fn assert_there_and_back_again(t: &mut TelnetClient, from: (u32, &str), to: (u32
 // Tests the room immortal commands
 #[test]
 fn test_room_new() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("krixi", "password");
+    let (_server, mut t) = Server::new_connect("krixi", "password");
 
     t.test("create a new room", "room new", vec!["Created room 1"]);
     t.test("teleport to it", "teleport 1", vec!["An empty room"]);
@@ -65,10 +62,8 @@ fn test_room_new() {
 
 #[test]
 fn test_room_name() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
+    let (_server, mut t) = Server::new_connect("krixi", "password");
 
-    t.create_user("krixi", "password");
     t.test(
         "Check that we are in The Void room before changing",
         "room info",
@@ -93,10 +88,8 @@ fn test_room_name() {
 
 #[test]
 fn test_room_desc() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
+    let (_server, mut t) = Server::new_connect("krixi", "password");
 
-    t.create_user("krixi", "password");
     t.test(
         "Check that we are in The Void room before changing",
         "room info",
@@ -119,7 +112,7 @@ fn test_room_desc() {
     );
 }
 
-fn assert_link_and_unlink(t: &mut TelnetClient, there: &str, back: &str) {
+fn assert_link_and_unlink(t: &mut TelnetPlayer, there: &str, back: &str) {
     // assume room 0 (void room) and room 1 (new room).
 
     // Test links and movement thru them
@@ -178,10 +171,8 @@ fn assert_link_and_unlink(t: &mut TelnetClient, there: &str, back: &str) {
 
 #[test]
 fn test_room_link_and_unlink() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
+    let (_server, mut t) = Server::new_connect("krixi", "password");
 
-    t.create_user("krixi", "password");
     t.test("create a new room", "room new", vec!["Created room 1"]);
     assert_link_and_unlink(&mut t, "north", "south");
     assert_link_and_unlink(&mut t, "east", "west");
@@ -190,10 +181,8 @@ fn test_room_link_and_unlink() {
 
 #[test]
 fn test_room_region() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
+    let (_server, mut t) = Server::new_connect("krixi", "password");
 
-    t.create_user("krixi", "password");
     t.test(
         "adding one region",
         "room regions add space",
@@ -218,4 +207,6 @@ fn test_room_region() {
 }
 
 #[test]
-fn test_room_remove() {}
+fn test_room_remove() {
+    let (_server, mut _t) = Server::new_connect("krixi", "password");
+}

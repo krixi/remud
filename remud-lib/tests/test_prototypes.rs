@@ -1,13 +1,10 @@
 #![allow(dead_code)]
 
-use remud_test::{Server, TelnetClient};
+use remud_test::Server;
 
 #[test]
 fn test_prototype_new() {
-    let mut server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (mut server, mut t) = Server::new_connect("shane", "password");
 
     t.test(
         "create a prototype",
@@ -53,12 +50,7 @@ fn test_prototype_new() {
         ],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "created prototype has expected attributes after restart",
@@ -95,10 +87,7 @@ fn test_prototype_new() {
 
 #[test]
 fn test_prototype_flags() {
-    let mut server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (mut server, mut t) = Server::new_connect("shane", "some^gibberish$password");
 
     t.test(
         "create a prototype",
@@ -126,12 +115,7 @@ fn test_prototype_flags() {
         vec!["Object 1", "flags: SUBTLE"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype has correct flags",
@@ -163,12 +147,7 @@ fn test_prototype_flags() {
         vec!["Object 1", "flags: FIXED | SUBTLE"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype flags haven't changed after restart",
@@ -200,12 +179,7 @@ fn test_prototype_flags() {
         vec!["Object 1", "flags: FIXED | SUBTLE"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype flags didn't change after restart",
@@ -222,10 +196,7 @@ fn test_prototype_flags() {
 
 #[test]
 fn test_prototype_name() {
-    let mut server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -253,12 +224,7 @@ fn test_prototype_name() {
         vec!["Object 1", "name: jar of peanut butter"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype has correct name",
@@ -290,12 +256,7 @@ fn test_prototype_name() {
         vec!["Object 1", "name: jar of jelly"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype name hasn't changed after restart",
@@ -327,12 +288,7 @@ fn test_prototype_name() {
         vec!["Object 1", "name: jar of jelly"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype name didn't change after restart",
@@ -349,10 +305,7 @@ fn test_prototype_name() {
 
 #[test]
 fn test_prototype_desc() {
-    let mut server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -380,12 +333,7 @@ fn test_prototype_desc() {
         vec!["Object 1", "description: A prototype rests here."],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype has correct desc",
@@ -417,13 +365,7 @@ fn test_prototype_desc() {
         vec!["Object 1", "description: An object rests here."],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype desc hasn't changed after restart",
@@ -455,12 +397,7 @@ fn test_prototype_desc() {
         vec!["Object 1", "description: An object rests here."],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype desc didn't change after restart",
@@ -477,10 +414,7 @@ fn test_prototype_desc() {
 
 #[test]
 fn test_prototype_keywords() {
-    let mut server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -512,12 +446,7 @@ fn test_prototype_keywords() {
         vec!["keywords: boots and dirty"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype keywords haven't changed",
@@ -549,12 +478,7 @@ fn test_prototype_keywords() {
         vec!["keywords: boots"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype keywords haven't changed after restart",
@@ -586,12 +510,7 @@ fn test_prototype_keywords() {
         vec!["keywords: boots"],
     );
 
-    t.send("restart");
-    drop(t);
-
-    server.ready();
-    let mut t = TelnetClient::new(server.telnet());
-    t.login_user("shane", "password");
+    t = server.restart(t);
 
     t.test(
         "prototype keywords haven't changed after restart",
@@ -608,10 +527,7 @@ fn test_prototype_keywords() {
 
 #[test]
 fn test_prototype_remove() {
-    let server = Server::default();
-    let mut t = TelnetClient::new(server.telnet());
-
-    t.create_user("shane", "password");
+    let (_server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
