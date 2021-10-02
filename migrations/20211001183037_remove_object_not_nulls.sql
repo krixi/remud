@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS 'new_objects'
       ON DELETE CASCADE
 );
 
-INSERT INTO 'new_objects' SELECT * FROM 'objects';
+INSERT INTO 'new_objects' (id, prototype_id, inherit_scripts, name, description, flags, keywords) SELECT id, prototype_id, inherit_scripts, name, description, flags, keywords FROM 'objects';
 
 CREATE TABLE IF NOT EXISTS 'new_player_objects'
 (
