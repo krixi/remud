@@ -15,7 +15,8 @@ export const TerminalPage: React.FC = () => {
         ) : (
           <div className="text-center mt-10">
             <button
-              className="btn text-3xl font-mono"
+              autoFocus
+              className="btn text-3xl font-mono outline-none focus:border-blue-500 animate-pulse"
               onClick={(e) => setClicked(true)}
             >
               Connect

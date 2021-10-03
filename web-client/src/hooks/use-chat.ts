@@ -56,7 +56,6 @@ export const useChat = (): Chat => {
   const send = useCallback(
     (msg: ChatMessage): void => {
       if (socket) {
-        console.log('send: ', msg)
         socket.emit<ChatMessage>("game", msg);
         dispatch({ sent: msg, append: true });
       }
