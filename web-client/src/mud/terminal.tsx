@@ -119,10 +119,7 @@ export const Terminal: React.FC = () => {
 
   return (
     <>
-      <div
-        className="container bg-black text-gray-69 mx-auto rounded p-5 flex flex-col-reverse items-stretch"
-        style={{ height: "90vh" }}
-      >
+      <div className="container bg-black text-gray-69 mx-auto mt-1 rounded p-5 flex flex-col-reverse items-stretch vh-85 md:vh-90">
         <div className="flex flex-row-reverse">
           <ConnectionStatus isConnected={isConnected} />
         </div>
