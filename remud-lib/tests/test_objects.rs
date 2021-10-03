@@ -21,11 +21,6 @@ fn test_object_keywords() {
         vec!["Updated prototype 1 name."],
     );
     t.test(
-        "with a description",
-        "prototype 1 desc A cat snoozing noisily in her basket.",
-        vec!["Updated prototype 1 description."],
-    );
-    t.test(
         "including keywords",
         "prototype 1 keywords set chonky cat",
         vec!["Updated prototype 1 keywords."],

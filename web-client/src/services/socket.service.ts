@@ -36,7 +36,6 @@ export const NewSocketService = (uri: string): SocketService => {
 
   // create the connection
   const subject: WebSocketSubject<any> = webSocket(conf);
-  subject.pipe(retryWhen((errors) => errors.pipe(delay(5000))));
   // note: we deliberately don't subscribe here; we'll only subscribe when someone calls .on(...), which
   // makes it so that the components don't lose messages
 
@@ -49,7 +48,8 @@ export const NewSocketService = (uri: string): SocketService => {
     on<T>(eventName: string): Observable<T> {
       return subject.asObservable().pipe(
         share(),
-        filter((x) => x.type === eventName)
+        filter((x) => x.type === eventName),
+        retryWhen((errors) => errors.pipe(delay(5000)))
       );
     },
     emit<T>(eventName: string, data: T): void {

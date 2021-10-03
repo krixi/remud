@@ -4,22 +4,53 @@ import { useObservable } from "./use-observable";
 import { Message } from "../models/ws-api";
 import { Subscription } from "rxjs";
 
-export interface ChatMessage {
-  message: string;
+export interface ChatSent {
+  text: string;
+}
+export const isMessage = (segment: MessageSegment): boolean => {
+  return segment.t === "m";
+};
+export const getMessage = (segment: MessageSegment): string => {
+  return isMessage(segment) ? (segment.d as ChatSent).text : "";
+};
+
+export interface ChatColorStart {
+  color: string;
+}
+export const isColorStart = (segment: MessageSegment): boolean => {
+  return segment.t === "cs";
+};
+export const getColor = (segment: MessageSegment): string => {
+  return isColorStart(segment) ? (segment.d as ChatColorStart).color : "";
+};
+
+export interface ChatColorEnd {}
+export const isColorEnd = (segment: MessageSegment): boolean => {
+  return segment.t === "ce";
+};
+
+export interface MessageSegment {
+  t: string;
+  d: ChatSent | ChatColorStart | ChatColorEnd;
+}
+export interface ChatLine {
+  segments?: MessageSegment[];
+  prompt?: boolean;
+  message?: string;
 }
 
 interface ChatAction {
   append?: boolean;
-  sent: ChatMessage;
+  sent: ChatLine;
 }
 interface ChatState {
-  messages: ChatMessage[];
+  messages: ChatLine[];
 }
 
 export interface Chat {
-  messages: ChatMessage[];
+  messages: ChatLine[];
   isConnected: boolean;
-  send: (msg: ChatMessage) => void;
+  send: (msg: ChatLine) => void;
 }
 
 const reducer = (state: ChatState, action: ChatAction): ChatState => {
@@ -44,7 +75,7 @@ export const useChat = (): Chat => {
     if (!socket) {
       return;
     }
-    const s: Subscription = socket?.on<Message<ChatMessage>>("game").subscribe({
+    const s: Subscription = socket?.on<Message<ChatLine>>("game").subscribe({
       next: (value) => {
         dispatch({ sent: value.data });
       },
@@ -54,9 +85,9 @@ export const useChat = (): Chat => {
   }, [socket]);
 
   const send = useCallback(
-    (msg: ChatMessage): void => {
+    (msg: ChatLine): void => {
       if (socket) {
-        socket.emit<ChatMessage>("game", msg);
+        socket.emit<ChatLine>("game", msg);
         dispatch({ sent: msg, append: true });
       }
     },
