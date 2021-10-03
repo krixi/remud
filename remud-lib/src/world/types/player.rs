@@ -123,8 +123,7 @@ impl Messages {
         self.queue.is_empty()
     }
 
-    pub fn queue(&mut self, mut message: String) {
-        message.push_str("\r\n");
+    pub fn queue(&mut self, message: String) {
         self.queue.push_back(message);
     }
 

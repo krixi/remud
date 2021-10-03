@@ -15,7 +15,7 @@ use tokio::time::timeout;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
-static TRACING: Lazy<()> = Lazy::new(|| {
+pub static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "remud_test=info,remud_lib=debug".to_string();
 
     init_subscriber(default_filter_level, TestWriter::default());
@@ -82,12 +82,19 @@ impl Server {
         let mut connection = TelnetConnection::new(self.telnet());
 
         connection.info("create user");
+        connection.recv_contains("Connected to");
         connection.recv_contains("Name?");
+        connection.recv_prompt();
         connection.send(player.as_ref());
+        connection.recv_contains("New user detected.");
         connection.recv_contains("Password?");
+        connection.recv_prompt();
         connection.send(password.as_ref());
+        connection.recv_contains("Password accepted.");
         connection.recv_contains("Verify?");
+        connection.recv_prompt();
         connection.send(password.as_ref());
+        connection.recv_contains("Password verified.");
         connection.recv_contains("Welcome to City Six.");
         connection.recv(); // ignore the look that happens when we log in
         connection.recv_prompt();
@@ -107,10 +114,15 @@ impl Server {
         let mut connection = TelnetConnection::new(self.telnet());
 
         connection.info("create user");
+        connection.recv_contains("Connected to");
         connection.recv_contains("Name?");
+        connection.recv_prompt();
         connection.send(player.as_ref());
+        connection.recv_contains("User located.");
         connection.recv_contains("Password?");
+        connection.recv_prompt();
         connection.send(password.as_ref());
+        connection.recv_contains("Password verified.");
         connection.recv_contains("Welcome to City Six.");
         connection.recv(); // ignore the look that happens when we log in
         connection.recv_prompt();

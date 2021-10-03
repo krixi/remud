@@ -1,7 +1,7 @@
 mod auth;
 pub mod scripts;
 mod security;
-mod ws;
+pub mod ws;
 
 use std::{convert::Infallible, fmt, path::Path};
 

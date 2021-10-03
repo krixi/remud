@@ -2,6 +2,8 @@ mod client;
 pub mod db;
 pub mod persist;
 
+use std::{borrow::Cow, collections::VecDeque};
+
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use futures::future::join_all;
 use itertools::Itertools;
@@ -62,10 +64,59 @@ impl ClientMessage {
     }
 }
 
+// creators of engine response produce one or more messages terminated
+// by a prompt type
+
+// consumers of engine response colorize the messages and prompt (?)
+
 #[derive(Debug)]
 pub enum EngineResponse {
-    Output(String),
-    EndOutput,
+    Output(VecDeque<Output>),
+}
+
+impl EngineResponse {
+    pub fn with_message<'a>(message: Cow<'a, str>) -> Self {
+        Output::Message(message.to_owned().to_string()).into()
+    }
+
+    pub fn from_messages<'a>(messages: impl IntoIterator<Item = Cow<'a, str>>) -> Self {
+        EngineResponse::Output(
+            messages
+                .into_iter()
+                .map(|message| Output::Message(message.to_owned().to_string()))
+                .chain(std::iter::once(Output::Prompt("> ".to_string())))
+                .collect(),
+        )
+    }
+
+    pub fn from_messages_noprompt<'a>(messages: impl IntoIterator<Item = Cow<'a, str>>) -> Self {
+        EngineResponse::Output(
+            messages
+                .into_iter()
+                .map(|message| Output::Message(message.to_owned().to_string()))
+                .collect(),
+        )
+    }
+}
+
+impl From<Output> for EngineResponse {
+    fn from(value: Output) -> Self {
+        let is_prompt = matches!(value, Output::Prompt(_));
+        let mut vec = VecDeque::new();
+        vec.push_back(value);
+
+        if !is_prompt {
+            vec.push_back(Output::Prompt(" >".to_string()));
+        }
+
+        EngineResponse::Output(vec)
+    }
+}
+
+#[derive(Debug)]
+pub enum Output {
+    Message(String),
+    Prompt(String),
 }
 
 pub struct Engine {
@@ -171,10 +222,11 @@ impl Engine {
     #[tracing::instrument(name = "send messages", skip_all)]
     pub async fn send_messages(&mut self) {
         // Dispatch all queued messages to players
-        for (player, mut messages) in self.game_world.messages() {
+        for (player, messages) in self.game_world.messages() {
             if let Some(client) = self.clients.by_player(player) {
-                messages.push_back("|white|> ".to_string());
-                client.send_batch(self.tick, messages).await;
+                client
+                    .send_batch(self.tick, messages.into_iter().map(Into::into))
+                    .await;
             } else {
                 tracing::error!(
                     "attempting to send messages to player without client: {:?}",
@@ -242,12 +294,18 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("[{}] {} ready", self.tick, client_id);
 
-                let message = String::from(
-                    "\r\n|SteelBlue3|Connected to|-| \
-                     |white|ucs://uplink.six.city|-|\r\n\r\n|SteelBlue3|Name?\r\n|-||white|> ",
-                );
                 if let Some(client) = self.clients.get(client_id) {
-                    client.send(message.into()).await;
+                    client
+                        .send_batch(
+                            self.tick,
+                            vec![
+                                Cow::from(
+                                    "|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n",
+                                ),
+                                Cow::from("|SteelBlue3|Name?|-|"),
+                            ],
+                        )
+                        .await;
                 } else {
                     tracing::error!("received message from unknown client: {:?}", message);
                 }
@@ -350,10 +408,12 @@ impl Engine {
                             Err(e) => {
                                 tracing::error!("player presence check error: {}", e);
                                 client
-                                    .send(
-                                        "|Red1|Error retrieving \
-                                         user.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
-                                            .into(),
+                                    .send_batch(
+                                        self.tick,
+                                        vec![
+                                            Cow::from("|Red1|Error retrieving user.|-|"),
+                                            Cow::from("|SteelBlue3|Name?|-|"),
+                                        ],
                                     )
                                     .await;
                                 return;
@@ -363,17 +423,23 @@ impl Engine {
                         if has_user {
                             if self.game_world.player_online(name) {
                                 client
-                                    .send(
-                                        "|Red1|User currently \
-                                         online.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
-                                            .into(),
+                                    .send_batch(
+                                        self.tick,
+                                        vec![
+                                            Cow::from("|Red1|User currently online.|-|"),
+                                            Cow::from("|SteelBlue3|Name?|-|"),
+                                        ],
                                     )
                                     .await;
                                 return;
                             }
                             client
-                                .send(
-                                    "|SteelBlue3|User located.\r\nPassword?\r\n|-||white|> ".into(),
+                                .send_batch(
+                                    self.tick,
+                                    vec![
+                                        Cow::from("|SteelBlue3|User located.|-|"),
+                                        Cow::from("|SteelBlue3|Password?|-|"),
+                                    ],
                                 )
                                 .await;
                             client.set_state(State::LoginPassword {
@@ -381,10 +447,12 @@ impl Engine {
                             });
                         } else {
                             client
-                                .send(
-                                    "|SteelBlue3|New user \
-                                     detected.|-|\r\n|SteelBlue3|Password?\r\n|-|>"
-                                        .into(),
+                                .send_batch(
+                                    self.tick,
+                                    vec![
+                                        Cow::from("|SteelBlue3|New user detected.|-|"),
+                                        Cow::from("|SteelBlue3|Password?|-|"),
+                                    ],
                                 )
                                 .await;
                             client.set_state(State::CreatePassword {
@@ -393,9 +461,12 @@ impl Engine {
                         }
                     } else {
                         client
-                            .send(
-                                "|Red1|Invalid username.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> "
-                                    .into(),
+                            .send_batch(
+                                self.tick,
+                                vec![
+                                    Cow::from("|SteelBlue3|Invalid username.|-|"),
+                                    Cow::from("|SteelBlue3|Name?|-|"),
+                                ],
                             )
                             .await;
                     }
@@ -405,10 +476,12 @@ impl Engine {
 
                     if input.len() < 5 {
                         client
-                            .send(
-                                "|Red1|Weak password \
-                                 detected.|-|\r\n|SteelBlue3|Password?\r\n|-||white|> "
-                                    .into(),
+                            .send_batch(
+                                self.tick,
+                                vec![
+                                    Cow::from("|Red1|Weak password detected.|-|"),
+                                    Cow::from("|SteelBlue3|Password?|-|"),
+                                ],
                             )
                             .await;
                         return;
@@ -424,9 +497,12 @@ impl Engine {
                         Err(e) => {
                             tracing::error!("create password hash error: {}", e);
                             client
-                                .send(
-                                    "Error computing password hash.\r\nPassword?\r\n|white|> "
-                                        .into(),
+                                .send_batch(
+                                    self.tick,
+                                    vec![
+                                        Cow::from("|Red1|Error computing password hash.|-|"),
+                                        Cow::from("|SteelBlue3|Password?|-|"),
+                                    ],
                                 )
                                 .await;
                             return;
@@ -434,7 +510,13 @@ impl Engine {
                     };
 
                     client
-                        .send("|SteelBlue3|Password accepted.\r\nVerify?\r\n|-||white|> ".into())
+                        .send_batch(
+                            self.tick,
+                            vec![
+                                Cow::from("|SteelBlue3|Password accepted.|-|"),
+                                Cow::from("|SteelBlue3|Verify?|-|"),
+                            ],
+                        )
                         .await;
                     client.set_state(State::VerifyPassword {
                         name: name.clone(),
@@ -450,7 +532,9 @@ impl Engine {
                             if let VerifyError::Unknown(e) = e {
                                 tracing::error!("create verify password failure: {}", e);
                             }
-                            client.verification_failed_creation(name.as_str()).await;
+                            client
+                                .verification_failed_creation(self.tick, name.as_str())
+                                .await;
                             return;
                         }
                     }
@@ -460,7 +544,9 @@ impl Engine {
                         Ok(_) => (),
                         Err(e) => {
                             tracing::error!("user creation error: {}", e);
-                            client.verification_failed_creation(name.as_str()).await;
+                            client
+                                .verification_failed_creation(self.tick, name.as_str())
+                                .await;
                             return;
                         }
                     };
@@ -473,12 +559,12 @@ impl Engine {
                         Ok(player) => (player),
                         Err(e) => {
                             tracing::error!("failed to load player: {}", e);
-                            client.spawn_failed().await;
+                            client.spawn_failed(self.tick).await;
                             return;
                         }
                     };
 
-                    client.verified().await;
+                    client.verified(self.tick).await;
                     client.set_state(State::InGame { player });
 
                     self.game_world
@@ -496,13 +582,13 @@ impl Engine {
                     match self.db.verify_player(name.as_str(), input.as_str()).await {
                         Ok(verified) => {
                             if !verified {
-                                client.verification_failed_login().await;
+                                client.verification_failed_login(self.tick).await;
                                 return;
                             }
                         }
                         Err(e) => {
                             tracing::error!("get user hash error: {}", e);
-                            client.verification_failed_login().await;
+                            client.verification_failed_login(self.tick).await;
                             return;
                         }
                     };
@@ -515,12 +601,12 @@ impl Engine {
                         Ok(player) => (player),
                         Err(e) => {
                             tracing::error!("failed to load player: {}", e);
-                            client.spawn_failed().await;
+                            client.spawn_failed(self.tick).await;
                             return;
                         }
                     };
 
-                    client.verified().await;
+                    client.verified(self.tick).await;
                     client.set_state(State::InGame { player });
 
                     self.game_world
@@ -544,8 +630,7 @@ impl Engine {
                     match self.commands.parse(*player, &input, !immortal) {
                         Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
-                            client.send(format!("{}\r\n", message).into()).await;
-                            client.send("|white|> ".to_string().into()).await;
+                            client.send(self.tick, message.into()).await;
                         }
                     }
                 }

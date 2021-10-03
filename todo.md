@@ -1,8 +1,10 @@
 - consider ways to improve true color -> 256 color degradation (avoiding grays). CIE-LAB space?
 
-- support UTF-8 clients
+- support UTF-8-capable telnet clients
 
 - add object quantity and associated manipulation commands
+
+- add ability to differentiate between objects with similar keywords (?)
 
 - add object stats (by script? store in db?)
 
@@ -15,6 +17,8 @@
 - add customizable prompts
 
 - add script state to state machine
+
+- think about how to make parameterizable scripts for common use cases - or do it in rust
 
 - add a resolve step for events to resolve targets so scripts have access to target information (get, drop, look at as examples)
 
@@ -34,4 +38,6 @@
 
 - add change password command
 
-- add persist feedback for immortal commands
+- add persist feedback for immortal commands (?)
+
+- send messages to websockets as list of objects (color start, color end, text, prompt)

@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::{HashMap, VecDeque},
-};
+use std::{borrow::Cow, collections::HashMap};
 
 use bevy_ecs::prelude::*;
 use tokio::sync::mpsc;
@@ -30,11 +27,11 @@ impl Client {
         }
     }
 
-    pub async fn send(&self, message: Cow<'_, str>) {
-        tracing::debug!("{:?} <- {:?}.", self.id, message);
+    pub async fn send(&self, tick: u64, message: Cow<'_, str>) {
+        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
         if self
             .tx
-            .send(EngineResponse::Output(message.to_string()))
+            .send(EngineResponse::with_message(message))
             .await
             .is_err()
         {
@@ -42,15 +39,27 @@ impl Client {
         }
     }
 
-    pub async fn send_batch(&self, tick: u64, messages: VecDeque<String>) {
-        for message in messages {
-            tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-            if self.tx.send(EngineResponse::Output(message)).await.is_err() {
-                tracing::error!("failed to send message to client {:?}", self.id);
-                break;
-            }
+    pub async fn send_batch<'a>(
+        &self,
+        tick: u64,
+        messages: impl IntoIterator<Item = Cow<'a, str>>,
+    ) {
+        let message = EngineResponse::from_messages(messages);
+        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
+        if self.tx.send(message).await.is_err() {
+            tracing::error!("failed to send message to client {:?}", self.id);
         }
-        if self.tx.send(EngineResponse::EndOutput).await.is_err() {
+    }
+
+    // TODO: do something better here?
+    pub async fn send_batch_noprompt<'a>(
+        &self,
+        tick: u64,
+        messages: impl IntoIterator<Item = Cow<'a, str>>,
+    ) {
+        let message = EngineResponse::from_messages_noprompt(messages);
+        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
+        if self.tx.send(message).await.is_err() {
             tracing::error!("failed to send message to client {:?}", self.id);
         }
     }
@@ -63,31 +72,52 @@ impl Client {
         self.state = new_state;
     }
 
-    pub async fn verification_failed_creation(&mut self, name: &str) {
-        self.send("|Red1|Verification failed.|-|\r\n|SteelBlue3|Password?\r\n|-||white|> ".into())
-            .await;
+    pub async fn verification_failed_creation(&mut self, tick: u64, name: &str) {
+        self.send_batch(
+            tick,
+            vec![
+                Cow::from("|Red1|Verification failed.|-|"),
+                Cow::from("|SteelBlue3|Password?|-|"),
+            ],
+        )
+        .await;
+
         self.set_state(State::CreatePassword {
             name: name.to_string(),
         });
     }
 
-    pub async fn verification_failed_login(&mut self) {
-        self.send("|Red1|Verification failed.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> ".into())
-            .await;
-        self.set_state(State::LoginName {});
-    }
-
-    pub async fn spawn_failed(&mut self) {
-        self.send(
-            "|Red1|User instantiation failed.|-|\r\n|SteelBlue3|Name?\r\n|-||white|> ".into(),
+    pub async fn verification_failed_login(&mut self, tick: u64) {
+        self.send_batch(
+            tick,
+            vec![
+                Cow::from("|Red1|Verification failed.|-|"),
+                Cow::from("|SteelBlue3|Name?|-|"),
+            ],
         )
         .await;
         self.set_state(State::LoginName {});
     }
 
-    pub async fn verified(&mut self) {
-        self.send(
-            "|SteelBlue3|Password verified.|-|\r\n\r\n|white|Welcome to City Six.\r\n\r\n".into(),
+    pub async fn spawn_failed(&mut self, tick: u64) {
+        self.send_batch(
+            tick,
+            vec![
+                Cow::from("|Red1|User instantiation failed.|-|"),
+                Cow::from("|SteelBlue3|Name?|-|"),
+            ],
+        )
+        .await;
+        self.set_state(State::LoginName {});
+    }
+
+    pub async fn verified(&mut self, tick: u64) {
+        self.send_batch_noprompt(
+            tick,
+            vec![
+                Cow::from("|SteelBlue3|Password verified.|-|"),
+                Cow::from("\r\n|white|Welcome to City Six.\r\n"),
+            ],
         )
         .await;
     }
