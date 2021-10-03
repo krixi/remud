@@ -494,6 +494,7 @@ impl TriggerEvent {
             Action::PlayerUpdateFlags(_) => None,
             Action::PrototypeCreate(_) => None,
             Action::PrototypeInfo(_) => None,
+            Action::PrototypeList(_) => None,
             Action::Restart(_) => None,
             Action::RoomCreate(_) => None,
             Action::RoomInfo(_) => None,

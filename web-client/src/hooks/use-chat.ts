@@ -35,7 +35,7 @@ export interface MessageSegment {
 }
 export interface ChatLine {
   segments?: MessageSegment[];
-  prompt?: boolean;
+  is_prompt?: boolean;
   message?: string;
 }
 

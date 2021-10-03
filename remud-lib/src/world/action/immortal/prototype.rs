@@ -35,6 +35,7 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
     if let Some(token) = tokenizer.next() {
         match token {
             "new" => Ok(Action::from(PrototypeCreate { actor: player })),
+            "list" => Ok(Action::from(PrototypeList { actor: player })),
             maybe_id => {
                 let id = match PrototypeId::from_str(maybe_id) {
                     Ok(id) => id,
@@ -153,7 +154,7 @@ pub fn parse_prototype(player: Entity, mut tokenizer: Tokenizer) -> Result<Actio
             }
         }
     } else {
-        Err("Enter a prototype ID or subcommand: new.".to_string())
+        Err("Enter a prototype ID or subcommand: list or new.".to_string())
     }
 }
 
@@ -199,6 +200,32 @@ pub fn prototype_create_system(
             }
 
             prototypes.insert(id, prototype_entity);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct PrototypeList {
+    pub actor: Entity,
+}
+
+into_action!(PrototypeList);
+
+#[tracing::instrument(name = "prototype list system", skip_all)]
+pub fn prototype_list_system(
+    mut action_reader: EventReader<Action>,
+    mut prototypes: ResMut<Prototypes>,
+    prototype_query: Query<(&Prototype, &Named)>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::PrototypeList(PrototypeList { actor }) = action {
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                for (id, entity) in prototypes.as_sorted_list().iter() {
+                    let (_, named) = prototype_query.get(*entity).unwrap();
+                    messages.queue(format!("|white|ID {}|-|\t{}", id, named.escaped().as_str()));
+                }
+            }
         }
     }
 }

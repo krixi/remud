@@ -3,7 +3,6 @@ import {
   ChatLine,
   getColor,
   getMessage,
-  isColorEnd,
   isColorStart,
   isMessage,
   useChat,
@@ -47,8 +46,6 @@ export const Terminal: React.FC = () => {
             {render(m, current + 1, msg)}
           </span>
         );
-      } else if (isColorEnd(segment)) {
-        return msg;
       }
 
       return msg;

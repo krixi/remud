@@ -30,6 +30,10 @@ all of their properties from a prototype, though this can be overridden on a per
 
 Creates a new prototype.
 
+### `prototype list`
+
+Lists all existing prototypes by ID and name.
+
 ### `prototype <id> info`
 
 Displays all available information about the prototype.
