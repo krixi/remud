@@ -765,7 +765,7 @@ pub fn object_remove_system(
             updates.persist(persist::object::Remove::new(*id));
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(format!("Object {} removed.", id));
+                messages.queue(format!("Removed object {}.", id));
             }
         }
     }
