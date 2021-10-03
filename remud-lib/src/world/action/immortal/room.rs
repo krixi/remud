@@ -19,7 +19,7 @@ use crate::{
             ScriptName,
         },
         types::{
-            object::{Container, Object},
+            object::Object,
             player::{Messages, Player},
             room::{Direction, Regions, Room, RoomBundle, RoomId, Rooms},
             ActionTarget, Contents, Description, Id, Location, Named,
@@ -523,14 +523,18 @@ pub fn room_remove_system(
     mut queued_action_writer: EventWriter<QueuedAction>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
-    mut player_query: Query<(&Player, &mut Location)>,
     mut room_query: Query<(&mut Room, &mut Contents)>,
-    mut object_query: Query<(&Object, &mut Container)>,
+    mut set: QuerySet<(
+        //these queries cannot be used at the same time, due to mutability conflict
+        Query<(&Player, &mut Location)>,
+        Query<(&Object, &mut Location)>,
+    )>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomRemove(RoomRemove { actor }) = action {
-            let room_entity = player_query
+            let room_entity = set
+                .q0_mut() // player_query
                 .get_mut(*actor)
                 .map(|(_, location)| location.room())
                 .unwrap();
@@ -563,10 +567,10 @@ pub fn room_remove_system(
 
             for player in players.iter() {
                 if let Ok(mut messages) = messages_query.get_mut(*player) {
-                    messages.queue("The world begins to disintigrate around you.".to_string());
+                    messages.queue("The world begins to disintegrate around you.".to_string());
                 }
 
-                player_query
+                set.q0_mut() // player_query
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
@@ -582,11 +586,11 @@ pub fn room_remove_system(
             }
 
             for object in objects.iter() {
-                object_query
+                set.q1_mut() // object_query
                     .get_mut(*object)
-                    .map(|(_, container)| container)
+                    .map(|(_, location)| location)
                     .unwrap()
-                    .set_entity(void_room_entity);
+                    .set_room(void_room_entity);
             }
 
             // Remove the room
@@ -611,7 +615,7 @@ pub fn room_remove_system(
             let present_player_ids = players
                 .iter()
                 .filter_map(|player| {
-                    player_query
+                    set.q0_mut() // player_query
                         .get_mut(*player)
                         .map(|(player, _)| player.id())
                         .ok()
@@ -621,7 +625,7 @@ pub fn room_remove_system(
             let present_object_ids = objects
                 .iter()
                 .filter_map(|object| {
-                    object_query
+                    set.q1_mut() // object_query
                         .get_mut(*object)
                         .map(|(object, _)| object.id())
                         .ok()
@@ -635,7 +639,10 @@ pub fn room_remove_system(
             }
 
             for id in present_object_ids {
-                updates.persist(persist::room::AddObject::new(*VOID_ROOM_ID, id));
+                updates.persist(UpdateGroup::new(vec![
+                    persist::room::RemoveObject::new(room_id, id),
+                    persist::room::AddObject::new(*VOID_ROOM_ID, id),
+                ]));
             }
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {

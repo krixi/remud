@@ -32,6 +32,7 @@ use crate::{
                 },
                 prototype::{
                     prototype_create_system, prototype_info_system, PrototypeCreate, PrototypeInfo,
+                    PrototypeList,
                 },
                 room::{
                     room_create_system, room_info_system, room_link_system, room_remove_system,
@@ -73,6 +74,7 @@ macro_rules! into_action {
     };
 }
 
+use crate::world::action::immortal::prototype::prototype_list_system;
 pub(crate) use into_action;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -96,6 +98,7 @@ pub enum Action {
     PlayerUpdateFlags(PlayerUpdateFlags),
     PrototypeCreate(PrototypeCreate),
     PrototypeInfo(PrototypeInfo),
+    PrototypeList(PrototypeList),
     Restart(Restart),
     RoomCreate(RoomCreate),
     RoomInfo(RoomInfo),
@@ -140,6 +143,7 @@ impl Action {
             Action::PlayerUpdateFlags(action) => action.actor,
             Action::PrototypeCreate(action) => action.actor,
             Action::PrototypeInfo(action) => action.actor,
+            Action::PrototypeList(action) => action.actor,
             Action::Restart(action) => action.actor,
             Action::RoomCreate(action) => action.actor,
             Action::RoomInfo(action) => action.actor,
@@ -185,6 +189,7 @@ pub enum ActionSystem {
     PlayerUpdateFlags,
     PrototypeCreate,
     PrototypeInfo,
+    PrototypeList,
     Restart,
     RoomCreate,
     RoomInfo,
@@ -323,6 +328,13 @@ impl Plugin for ActionsPlugin {
                 prototype_info_system
                     .system()
                     .label(ActionSystem::PrototypeInfo),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                prototype_list_system
+                    .system()
+                    .label(ActionSystem::PrototypeList),
             )
             .add_system(
                 Step::Main,

@@ -21,20 +21,38 @@ h6 {
   @apply text-xl;
 }
 
-.bg-dark-gray {
-  background-color: rgb(23, 23, 25);
-}
+@layer utilities {
+  @variants responsive {
+    .vh-90 {
+      height: 90vh;
+    }
+    .vh-85 {
+      height: 85vh;
+    }
+    .vh-80 {
+      height: 80vh;
+    }
+  }
 
-.bg-soft-gray {
-  background-color: #303030;
-}
+  .bg-dark-gray {
+    background-color: rgb(23, 23, 25);
+  }
 
-.bg-light-gray {
-  background-color: #505050;
-}
+  .bg-soft-gray {
+    background-color: #303030;
+  }
 
-.success {
-  color: #2cf536;
+  .bg-light-gray {
+    background-color: #505050;
+  }
+
+  .text-gray-69 {
+    color: #afafaf;
+  }
+
+  .success {
+    color: #2cf536;
+  }
 }
 
 .btn {

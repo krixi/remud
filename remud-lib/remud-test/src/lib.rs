@@ -113,7 +113,7 @@ impl Server {
     ) -> TelnetPlayer {
         let mut connection = TelnetConnection::new(self.telnet());
 
-        connection.info("create user");
+        connection.info("login user");
         connection.recv_contains("Connected to");
         connection.recv_contains("Name?");
         connection.recv_prompt();
@@ -322,6 +322,20 @@ impl TelnetPlayer {
         response_contains: Vec<S3>,
     ) {
         self.validate(scenario, command, Validate::Includes(response_contains));
+    }
+
+    pub fn test_many<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str> + Clone>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        response_contains: Vec<Vec<S3>>,
+    ) {
+        self.info(scenario);
+        self.send(command);
+        for expected in response_contains.iter() {
+            self.recv_contains_all(expected.clone());
+        }
+        self.recv_prompt();
     }
 
     pub fn test_exclude<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(

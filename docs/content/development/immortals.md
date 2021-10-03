@@ -30,6 +30,10 @@ all of their properties from a prototype, though this can be overridden on a per
 
 Creates a new prototype.
 
+### `prototype list`
+
+Lists all existing prototypes by ID and name.
+
 ### `prototype <id> info`
 
 Displays all available information about the prototype.
@@ -46,7 +50,7 @@ Changes the description of the prototype. Descriptions are shown when a player l
 at an object. This field is treated as prose, so it should consist of complete sentences
 and may contain paragraphs.
 
-### `prototype <id> keywords <text>`
+### `prototype <id> keywords (set|add|remove) <text>`
 
 Changes the keywords of the prototype. Keywords are how players interact with objects.
 They should be similar to the name and possibly include some useful words from the
@@ -156,7 +160,7 @@ so should consist of complete sentences and may contain paragraphs.
 
 Links the current room to the given room via the given direction.
 
-### `room regions (add|remove) <space separated list>`
+### `room regions (set|add|remove) <space separated list>`
 
 Adds or removes the list of regions to or from the current room, respectively.
 

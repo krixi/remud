@@ -9,6 +9,7 @@ use crate::{
     text::sorted_word_list,
     world::types::{Description, Id, Named},
 };
+use itertools::Itertools;
 
 #[derive(Debug, Bundle)]
 pub struct PrototypeBundle {
@@ -242,7 +243,7 @@ pub struct FlagsParseError {
     invalid_flag: String,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Ord, PartialOrd, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct PrototypeId(i64);
 
@@ -390,5 +391,13 @@ impl Prototypes {
     pub fn next_id(&mut self) -> PrototypeId {
         self.highest_id += 1;
         PrototypeId(self.highest_id)
+    }
+
+    pub fn as_sorted_list(&mut self) -> Vec<(PrototypeId, Entity)> {
+        self.by_id
+            .iter()
+            .sorted_by_key(|(id, _)| **id)
+            .map(|(id, entity)| (*id, *entity))
+            .collect_vec()
     }
 }

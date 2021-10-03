@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use remud_test::Server;
 
 #[test]
@@ -82,6 +80,47 @@ fn test_prototype_new() {
             "timers: none",
             "fsm: none",
         ],
+    );
+}
+
+#[test]
+fn test_prototype_list() {
+    let (mut server, mut t) = Server::new_connect("krixi", "password");
+    t.test(
+        "create a prototype",
+        "prototype new",
+        vec!["Created prototype 1."],
+    );
+    t.test(
+        "give it a name",
+        "prototype 1 name fancy thinger",
+        vec!["Updated prototype 1 name."],
+    );
+    t.test(
+        "check it exists in the list",
+        "prototype list",
+        vec!["ID 1", "fancy thinger"],
+    );
+    t = server.restart(t);
+    t.test(
+        "check it still exists in the list",
+        "prototype list",
+        vec!["ID 1", "fancy thinger"],
+    );
+    t.test(
+        "create a second prototype",
+        "prototype new",
+        vec!["Created prototype 2"],
+    );
+    t.test(
+        "give it a name",
+        "prototype 2 name apple",
+        vec!["Updated prototype 2 name."],
+    );
+    t.test_many(
+        "list should be sorted by id",
+        "prototype list",
+        vec![vec!["ID 1", "fancy thinger"], vec!["ID 2", "apple"]],
     );
 }
 

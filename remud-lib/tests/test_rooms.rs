@@ -181,7 +181,7 @@ fn test_room_link_and_unlink() {
 
 #[test]
 fn test_room_region() {
-    let (_server, mut t) = Server::new_connect("krixi", "password");
+    let (mut server, mut t) = Server::new_connect("krixi", "password");
 
     t.test(
         "adding one region",
@@ -193,20 +193,163 @@ fn test_room_region() {
         "room info",
         vec!["regions: space"],
     );
+
+    // restart to verify persistence
+    t = server.restart(t);
+
+    t.test(
+        "new region appears in room info after restart",
+        "room info",
+        vec!["regions: space"],
+    );
+
     t.test(
         "adding multiple regions",
         "room regions add space void",
         vec!["Updated room 0 regions."],
     );
     t.test(
-        "multiple regions appear in room info",
+        "two regions appear in room info",
         "room info",
         vec!["regions: space and void"],
     );
-    //TODO: remove regions
+
+    t = server.restart(t);
+
+    t.test(
+        "two regions appear in room info after restart",
+        "room info",
+        vec!["regions: space and void"],
+    );
+
+    t.test(
+        "setting the region list",
+        "room regions set one two three",
+        vec!["Updated room 0 regions."],
+    );
+    t.test(
+        "multiple regions appear in room info",
+        "room info",
+        vec!["regions: one, three, and two"],
+    );
+
+    t = server.restart(t);
+
+    t.test(
+        "multiple regions appear in room info after restart",
+        "room info",
+        vec!["regions: one, three, and two"],
+    );
+
+    t.test(
+        "removing regions works",
+        "room regions remove two",
+        vec!["Updated room 0 regions."],
+    );
+    t.test(
+        "room info shows remaining regions",
+        "room info",
+        vec!["regions: one and three"],
+    );
+
+    t = server.restart(t);
+
+    t.test(
+        "room info shows remaining regions after restart",
+        "room info",
+        vec!["regions: one and three"],
+    );
+
+    t.test(
+        "removing all regions works",
+        "room regions remove one three",
+        vec!["Updated room 0 regions."],
+    );
+    t.test(
+        "room info shows no regions",
+        "room info",
+        vec!["regions: none"],
+    );
+
+    t = server.restart(t);
+
+    t.test(
+        "room info shows no regions after restart",
+        "room info",
+        vec!["regions: none"],
+    );
+
+    t.test(
+        "setting regions requires at least one",
+        "room regions set",
+        vec!["Enter one or more space separated regions"],
+    )
 }
 
 #[test]
 fn test_room_remove() {
-    let (_server, mut _t) = Server::new_connect("krixi", "password");
+    let (mut server, mut t) = Server::new_connect("krixi", "password");
+
+    t.test(
+        "create a new room",
+        "room new north",
+        vec!["Created room 1"],
+    );
+    t.test("move to it", "north", vec!["An empty room"]);
+    t.test(
+        "make a prototype",
+        "prototype new",
+        vec!["Created prototype 1."],
+    );
+    t.test("make an items", "object new 1", vec!["Created object 1."]);
+    t.test("check it", "room info", vec!["Room 1", "krixi", "object 1"]);
+
+    t = server.restart(t);
+
+    t.test(
+        "check it after restart",
+        "room info",
+        vec!["Room 1", "krixi", "object 1"],
+    );
+
+    t.test("inspect object", "object 1 info", vec!["container: room 1"]);
+
+    t.test_many(
+        "removing the room transports you and all items in it to the void room",
+        "room remove",
+        vec![
+            // sent to all players when the room is destroyed
+            vec!["The world begins to disintegrate around you."],
+            // confirmation
+            vec!["Room 1 removed."],
+        ],
+    );
+
+    // you automatically look when entering the void
+    t.recv(); // ignore the random \r\n for now // TODO
+    t.recv_contains_all(vec![
+        "A dark void extends infinitely in all directions",
+        "You see object",
+    ]);
+    t.recv_prompt();
+
+    t.test(
+        "check void room",
+        "room info",
+        vec!["Room 0", "krixi", "object 1"],
+    );
+
+    t = server.restart(t);
+
+    t.test(
+        "check void room after restart",
+        "room info",
+        vec!["Room 0", "krixi", "object 1"],
+    );
+
+    t.test(
+        "teleporting to removed room doesn't work",
+        "teleport 1",
+        vec!["Room 1 doesn't exist"],
+    );
 }
