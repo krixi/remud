@@ -9,7 +9,7 @@ import { Toolbar } from "./toolbar/toolbar";
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <div className="bg-soft-gray w-full h-screen text-white">
+      <div className="bg-soft-gray w-full h-screen max-h-screen text-white">
         <Toolbar />
         <Switch>
           <Route path="/scripts/:name">

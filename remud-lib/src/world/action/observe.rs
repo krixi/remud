@@ -157,12 +157,12 @@ pub fn look_at_system(
     room_query: Query<&Room>,
     contents_query: Query<&Contents>,
     player_query: Query<(&Named, &Description)>,
-    object_query: Query<(&Description, &Keywords)>,
+    object_query: Query<(&Named, &Description, &Keywords)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::LookAt(LookAt { actor, keywords }) = action {
-            let description = looker_query
+            let target_info = looker_query
                 .get(*actor)
                 .ok()
                 .map(|location| location.room())
@@ -173,7 +173,7 @@ pub fn look_at_system(
                             .iter()
                             .filter_map(|player| player_query.get(*player).ok())
                             .find(|(name, _)| keywords[0].as_str() == name.as_str())
-                            .map(|(_, description)| description.as_str())
+                            .map(|(name, description)| (name.as_str(), description.as_str()))
                     } else {
                         None
                     }
@@ -189,10 +189,10 @@ pub fn look_at_system(
                                 .objects()
                                 .iter()
                                 .filter_map(|object| object_query.get(*object).ok())
-                                .find(|(_, object_keywords)| {
+                                .find(|(_, _, object_keywords)| {
                                     object_keywords.contains_all(keywords.as_slice())
                                 })
-                                .map(|(description, _)| description.as_str())
+                                .map(|(name, description, _)| (name.as_str(), description.as_str()))
                         })
                 })
                 .or_else(|| {
@@ -201,24 +201,26 @@ pub fn look_at_system(
                             .objects()
                             .iter()
                             .filter_map(|object| object_query.get(*object).ok())
-                            .find(|(_, object_keywords)| {
+                            .find(|(_, _, object_keywords)| {
                                 object_keywords.contains_all(keywords.as_slice())
                             })
-                            .map(|(description, _)| description.as_str())
+                            .map(|(name, description, _)| (name.as_str(), description.as_str()))
                     })
                 });
 
-            let message = if let Some(description) = description {
-                description.to_string()
+            let resp: Vec<String> = if let Some((name, description)) = target_info {
+                vec![format!("|white|{}|-|", name), format!("{}", description)]
             } else {
-                format!(
+                vec![format!(
                     "You find nothing called \"{}\" to look at.",
                     sorted_word_list(keywords.clone())
-                )
+                )]
             };
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                messages.queue(message);
+                for message in resp {
+                    messages.queue(message);
+                }
             }
         }
     }

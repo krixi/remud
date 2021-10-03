@@ -6,8 +6,8 @@ export const TerminalPage: React.FC = () => {
   const [clicked, setClicked] = useState(false);
   return (
     <SocketContextProvider>
-      <div className="w-full">
-        <div className="text-center m-2 font-mono italic">
+      <div className="flex flex-col justify-between w-full">
+        <div className="text-center m-2 font-mono italic hidden md:block">
           uplink.city-six.com web console
         </div>
         {clicked ? (

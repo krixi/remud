@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use remud_test::Server;
 
 #[test]

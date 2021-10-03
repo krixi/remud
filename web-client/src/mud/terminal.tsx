@@ -33,16 +33,15 @@ export const Terminal: React.FC = () => {
   return (
     <>
       <div
-        className="container max-w-6xl bg-black text-white mx-auto rounded p-5"
-        style={{ height: "80vh" }}
+        className="container bg-black text-gray-69 mx-auto rounded p-5 flex flex-col-reverse items-stretch"
+        style={{ height: "90vh" }}
       >
         <div className="flex flex-row-reverse">
           <ConnectionStatus isConnected={isConnected} />
         </div>
         <div
           ref={chatList}
-          className="overflow-auto"
-          style={{ height: "75vh" }}
+          className="overflow-y-auto"
         >
           {messages.map((m, i) => (
             <div
@@ -53,12 +52,15 @@ export const Terminal: React.FC = () => {
           ))}
         </div>
       </div>
+
+
+      <div className="fixed bottom-2 left-0 w-full">
       <form
-        className="container max-w-6xl m-2 mx-auto"
+        className="container mt-1 mx-auto"
         onSubmit={(e) => onSubmit(e, command)}
       >
         <div className="flex flex-row justify-between">
-          <div className="w-3/4 flex flex-row text-white bg-black rounded mx-1">
+          <div className="w-3/4 flex flex-row text-white bg-black rounded">
             <div className="font-mono p-2">
               <Prompt />
             </div>
@@ -77,6 +79,7 @@ export const Terminal: React.FC = () => {
           />
         </div>
       </form>
+      </div>
     </>
   );
 };
