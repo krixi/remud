@@ -15,7 +15,7 @@ use tokio_util::codec::Framed;
 
 use crate::{
     color::colorize_telnet,
-    engine::{ClientMessage, EngineResponse},
+    engine::{ClientMessage, EngineResponse, Output},
     telnet::protocol::{Codec, Frame, Telnet},
     ClientId, CLIENT_ID_COUNTER,
 };
@@ -100,23 +100,22 @@ async fn process(
             maybe_message = engine_rx.recv() => {
                 if let Some(message) = maybe_message {
                     match message {
-                        EngineResponse::Output(message) => {
-                            let message = colorize_telnet(format!("|Gray69|{}", message).as_str(), telnet.color_support());
-                            match message.into_ascii_string() {
-                                Ok(str) => {
-                                    let bytes: Vec<u8> = str.into();
-                                    if framed.send(Frame::Data(Bytes::from(bytes))).await.is_err() {
-                                        break
-                                    }
-                                },
-                                Err(e) => tracing::error!("Engine returned non-ASCII string: \"{}\"", e),
-                            }
-                        }
-                        EngineResponse::EndOutput => {
-                            if !input_buffer.is_empty() && framed.send(
-                                Frame::Data(Bytes::copy_from_slice(input_buffer.as_bytes()))
-                            ).await.is_err() {
-                                break
+                        EngineResponse::Output(outputs) => {
+                            for output in outputs {
+                                let message = match output {
+                                    Output::Message(message) => colorize_telnet(format!("|Gray69|{}|-|\r\n", message.as_str()).as_str(), telnet.color_support()),
+                                    Output::Prompt(prompt) => colorize_telnet(format!("|Gray69|{}|-|", prompt.as_str()).as_str(), telnet.color_support()),
+                                };
+
+                                match message.into_ascii_string() {
+                                    Ok(str) => {
+                                        let bytes: Vec<u8> = str.into();
+                                        if framed.send(Frame::Data(Bytes::from(bytes))).await.is_err() {
+                                            break
+                                        }
+                                    },
+                                    Err(e) => tracing::error!("Engine returned non-ASCII string: \"{}\"", e),
+                                }
                             }
                         }
                     }

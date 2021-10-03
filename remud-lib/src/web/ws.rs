@@ -1,11 +1,12 @@
 use crate::{
-    color::colorize_web,
-    engine::{ClientMessage, EngineResponse},
+    color::{Color256, ColorTrue, COLOR_NAME_MAP, COLOR_TAG_MATCHER},
+    engine::{ClientMessage, EngineResponse, Output},
     ClientId, CLIENT_ID_COUNTER,
 };
 use futures::{SinkExt, StreamExt};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{convert::TryFrom, sync::atomic::Ordering};
+use std::{borrow::Cow, convert::TryFrom, str::FromStr, sync::atomic::Ordering};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use warp::{filters::ws::WebSocket, ws::Message, Filter, Rejection};
@@ -61,16 +62,57 @@ enum WsRequestParseError {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase", tag = "type", content = "data")]
 enum WsResponse {
-    Game { message: String },
+    Game {
+        segments: Vec<WsMessageSegment>,
+        is_prompt: bool,
+    },
 }
 
 impl WsResponse {
-    fn output(message: String) -> Self {
-        WsResponse::Game { message }
-    }
-
     fn to_message(&self) -> Message {
         Message::text(serde_json::to_string(self).unwrap())
+    }
+}
+
+impl From<Output> for WsResponse {
+    fn from(value: Output) -> Self {
+        let (is_prompt, message) = match value {
+            Output::Message(message) => (false, message),
+            Output::Prompt(message) => (true, message),
+        };
+
+        let segments = colorize_web(message.as_str());
+        WsResponse::Game {
+            segments,
+            is_prompt,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Eq, PartialEq)]
+#[serde(tag = "t", content = "d")]
+pub enum WsMessageSegment {
+    #[serde(rename(serialize = "cs"))]
+    ColorStart { color: ColorTrue },
+    #[serde(rename(serialize = "ce"))]
+    ColorEnd,
+    #[serde(rename(serialize = "t"))]
+    Text { text: String },
+}
+
+impl WsMessageSegment {
+    pub fn color(color: ColorTrue) -> Self {
+        WsMessageSegment::ColorStart { color }
+    }
+
+    pub fn end_color() -> Self {
+        WsMessageSegment::ColorEnd
+    }
+
+    pub fn text(text: Cow<'_, str>) -> Self {
+        WsMessageSegment::Text {
+            text: text.to_owned().to_string(),
+        }
     }
 }
 
@@ -144,18 +186,18 @@ async fn process(
             maybe_message = engine_rx.recv() => {
                 if let Some(message) = maybe_message {
                     match message {
-                        EngineResponse::Output(message) => {
-                            let message = colorize_web(message.as_str());
-                            let message = WsResponse::output(message);
-                            if ws_tx.send(message.to_message()).await.is_err() {
-                                break
+                        EngineResponse::Output(outputs) => {
+                            for output in outputs {
+                                let response = WsResponse::from(output);
+                                if ws_tx.send(response.to_message()).await.is_err() {
+                                    break
+                                }
                             }
                         },
-                        EngineResponse::EndOutput => (),
                     }
                 } else {
-                    let message = WsResponse::output("\r\nServer shutting down. Thanks for playing. <3\r\n".to_string());
-                    if ws_tx.send(Message::text(serde_json::to_string(&message).unwrap())).await.is_err() {
+                    let response = WsResponse::from(Output::Message("\r\nServer shutting down. Thanks for playing. <3\r\n".to_string()));
+                    if ws_tx.send(response.to_message()).await.is_err() {
                         break
                     }
                     break
@@ -168,4 +210,178 @@ async fn process(
         .send(ClientMessage::Disconnect(client_id))
         .await
         .ok();
+}
+
+fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
+    tracing::info!("colorizing web message: {}", message);
+    let mut vec = Vec::new();
+    let mut open = 0;
+    let mut next_start = 0;
+
+    // move through the string one capture at a time, adding the text in between
+    while let Some(captures) = COLOR_TAG_MATCHER.captures(&message[next_start..]) {
+        tracing::info!(
+            "found capture at {}..{}",
+            next_start + captures.get(0).unwrap().start(),
+            next_start + captures.get(0).unwrap().end()
+        );
+        // If we the previous capture ended before this capture started - i.e. there's something in between
+        let capture_start = captures.get(0).unwrap().start();
+        if capture_start > 0 {
+            tracing::info!(
+                "adding text in gap: {}..{}",
+                next_start,
+                next_start + capture_start
+            );
+            vec.push(WsMessageSegment::text(
+                message[next_start..next_start + capture_start].into(),
+            ))
+        }
+
+        // record capture
+        if let Some(m) = captures.name("escape") {
+            tracing::info!("adding | escape, setting end: {}", m.end() + 1);
+            next_start = next_start + m.end() + 1;
+
+            vec.push(WsMessageSegment::text("|".into()))
+        } else if let Some(m) = captures.name("byte") {
+            tracing::info!("adding byte color, setting end: {}", m.end() + 1);
+            next_start = next_start + m.end() + 1;
+
+            if let Ok(color) = Color256::from_str(m.as_str()) {
+                let color = ColorTrue::from(color);
+                open += 1;
+                vec.push(WsMessageSegment::color(color));
+            } else {
+                tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
+            }
+        } else if let Some(m) = captures.name("true") {
+            tracing::info!("adding true color, setting end: {}", m.end() + 1);
+            next_start = next_start + m.end() + 1;
+
+            if let Ok(color) = ColorTrue::from_str(m.as_str()) {
+                open += 1;
+                vec.push(WsMessageSegment::color(color));
+            } else {
+                tracing::warn!("failed to capture matched true color: {}", m.as_str());
+            }
+        } else if let Some(m) = captures.name("name") {
+            tracing::info!("adding named color, setting end: {}", m.end() + 1);
+            next_start = next_start + m.end() + 1;
+
+            if let Some(index) = COLOR_NAME_MAP.get(m.as_str().to_lowercase().as_str()) {
+                let color = ColorTrue::from(Color256::new(*index));
+                open += 1;
+                vec.push(WsMessageSegment::color(color));
+            }
+        } else if let Some(m) = captures.name("clear") {
+            tracing::info!("adding clear color, setting end: {}", m.end() + 1);
+            next_start = next_start + m.end() + 1;
+
+            if open > 0 {
+                open -= 1;
+                vec.push(WsMessageSegment::end_color());
+            }
+        } else {
+            let capture = captures
+                .iter()
+                .flat_map(|m| m.map(|m| format!("'{}'", m.as_str())))
+                .join(", ");
+            tracing::warn!("unknown color tag(s) captured: {}", capture);
+        }
+
+        tracing::info!(
+            "checking for break, next: {}, len: {}",
+            next_start,
+            message.len()
+        );
+        if next_start >= message.len() {
+            break;
+        }
+    }
+
+    // check for end-of-message text
+    if next_start < message.len() {
+        tracing::info!("adding end of message text");
+        vec.push(WsMessageSegment::text(
+            message[next_start..message.len()].into(),
+        ))
+    }
+
+    // close all remaining open tags
+    while open > 0 {
+        tracing::info!("adding close tag");
+        vec.push(WsMessageSegment::end_color());
+        open -= 1;
+    }
+
+    vec
+}
+
+#[cfg(test)]
+mod tests {
+    use once_cell::sync::Lazy;
+    use remud_test::TRACING;
+
+    use crate::{
+        color::ColorTrue,
+        web::ws::{colorize_web, WsMessageSegment},
+    };
+
+    #[test]
+    fn colorize_web_just_text() {
+        let result = colorize_web("some text");
+        assert_eq!(
+            &[WsMessageSegment::text("some text".into())],
+            result.as_slice()
+        );
+    }
+
+    #[test]
+    fn colorize_web_wrapped() {
+        Lazy::force(&TRACING);
+        tracing::info!("wrapped");
+        let result = colorize_web("|white|some text|-|");
+        tracing::info!("wrapped check");
+        assert_eq!(
+            &[
+                WsMessageSegment::color(ColorTrue::new(255, 255, 255)),
+                WsMessageSegment::text("some text".into()),
+                WsMessageSegment::end_color()
+            ],
+            result.as_slice()
+        );
+    }
+
+    #[test]
+    fn colorize_web_auto_close() {
+        let result = colorize_web("|white|some text");
+        assert_eq!(
+            &[
+                WsMessageSegment::color(ColorTrue::new(255, 255, 255)),
+                WsMessageSegment::text("some text".into()),
+                WsMessageSegment::end_color()
+            ],
+            result.as_slice()
+        );
+    }
+
+    #[test]
+    fn colorize_web_auto_close_twice() {
+        Lazy::force(&TRACING);
+        tracing::info!("auto close twice");
+        let result = colorize_web("|white|some |black|text");
+        tracing::info!("auto close twice check");
+        assert_eq!(
+            &[
+                WsMessageSegment::color(ColorTrue::new(255, 255, 255)),
+                WsMessageSegment::text("some ".into()),
+                WsMessageSegment::color(ColorTrue::new(0, 0, 0)),
+                WsMessageSegment::text("text".into()),
+                WsMessageSegment::end_color(),
+                WsMessageSegment::end_color()
+            ],
+            result.as_slice()
+        );
+    }
 }

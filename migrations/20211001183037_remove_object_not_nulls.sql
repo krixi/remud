@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS 'new_player_objects'
       ON UPDATE NO ACTION
       ON DELETE CASCADE,
   FOREIGN KEY (object_id)
-    REFERENCES 'objects' (id)
+    REFERENCES 'new_objects' (id)
       ON UPDATE NO ACTION
       ON DELETE CASCADE
 );
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS 'new_room_objects'
       ON UPDATE NO ACTION
       ON DELETE CASCADE,
   FOREIGN KEY (object_id)
-    REFERENCES 'objects' (id)
+    REFERENCES 'new_objects' (id)
       ON UPDATE NO ACTION
       ON DELETE CASCADE
 );
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS 'new_object_scripts'
   script    TEXT    NOT NULL,
   trigger   TEXT    NOT NULL,
   FOREIGN KEY (object_id)
-    REFERENCES 'objects' (id)
+    REFERENCES 'new_objects' (id)
       ON UPDATE NO ACTION
       ON DELETE CASCADE
 );

@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::{Regex, Replacer};
+use serde::Serialize;
 use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
 // Some code in this module derived from the below link. See link for license.
@@ -8,7 +9,7 @@ use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
 pub const CLEAR_COLOR: &str = "\x1b[m";
 
-static COLOR_TAG_MATCHER: Lazy<Regex> = Lazy::new(|| {
+pub static COLOR_TAG_MATCHER: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r#"(?P<escape>\|\|)|\|(?P<byte>(1?[0-9]{1,2})|(2[0-4][0-9])|(25[0-5]))\||\|#(?P<true>[[:xdigit:]]{6})\||\|(?P<name>[[:alnum:]]+)\||(?P<clear>\|-\|)"#,
     ).unwrap()
@@ -44,75 +45,6 @@ impl ColorSupport {
             ColorSupport::None => None,
             ColorSupport::Colors16 => Some(Color16::from(color).into()),
             ColorSupport::Colors256 | ColorSupport::TrueColor => Some(color.into()),
-        }
-    }
-}
-
-pub fn colorize_web(message: &str) -> String {
-    let mut open = 0;
-    let replacer = WebReplacer::new(&mut open);
-    let mut message = COLOR_TAG_MATCHER.replace_all(message, replacer).to_string();
-    while open > 0 {
-        message.push_str("</span>");
-        open -= 1;
-    }
-    message
-}
-
-struct WebReplacer<'a> {
-    stack: Vec<ColorTrue>,
-    open: &'a mut i32,
-}
-
-impl<'a> WebReplacer<'a> {
-    fn new(open: &'a mut i32) -> Self {
-        WebReplacer {
-            stack: Vec::new(),
-            open,
-        }
-    }
-}
-
-impl<'a> Replacer for WebReplacer<'a> {
-    fn replace_append(&mut self, caps: &regex::Captures<'_>, dst: &mut String) {
-        if caps.name("escape").is_some() {
-            dst.push('|')
-        } else if let Some(m) = caps.name("byte") {
-            if let Ok(color) = Color256::from_str(m.as_str()) {
-                let color = ColorTrue::from(color);
-                self.stack.push(color);
-                *self.open += 1;
-                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
-            } else {
-                tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
-            }
-        } else if let Some(m) = caps.name("true") {
-            if let Ok(color) = ColorTrue::from_str(m.as_str()) {
-                self.stack.push(color);
-                *self.open += 1;
-                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
-            } else {
-                tracing::warn!("failed to capture matched true color: {}", m.as_str());
-            }
-        } else if let Some(name) = caps.name("name") {
-            if let Some(index) = COLOR_NAME_MAP.get(name.as_str().to_lowercase().as_str()) {
-                let color = ColorTrue::from(Color256::new(*index));
-                self.stack.push(color);
-                *self.open += 1;
-                dst.push_str(format!(r#"<span style="color: #{};">"#, color.as_hex()).as_str());
-            }
-        } else if caps.name("clear").is_some() {
-            if !self.stack.is_empty() {
-                self.stack.pop();
-                *self.open -= 1;
-                dst.push_str("</span>");
-            }
-        } else {
-            let capture = caps
-                .iter()
-                .flat_map(|m| m.map(|m| format!("'{}'", m.as_str())))
-                .join(", ");
-            tracing::warn!("unknown color tag(s) captured: {}", capture);
         }
     }
 }
@@ -251,7 +183,7 @@ pub struct ColorTrue {
 }
 
 impl ColorTrue {
-    fn new(r: u8, g: u8, b: u8) -> Self {
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
         ColorTrue { r, g, b }
     }
 
@@ -317,12 +249,21 @@ impl ToString for ColorTrue {
     }
 }
 
+impl Serialize for ColorTrue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_hex().as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Color256(u8);
 
 impl Color256 {
     // Create a new 256 color using a specific palette index.
-    fn new(color: u8) -> Self {
+    pub fn new(color: u8) -> Self {
         Color256(color)
     }
 
@@ -471,7 +412,7 @@ const COLORS_256_TO_16: [u8; 256] = [
     7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15,
 ];
 
-static COLOR_NAME_MAP: Lazy<HashMap<&'static str, u8>> = Lazy::new(|| {
+pub static COLOR_NAME_MAP: Lazy<HashMap<&'static str, u8>> = Lazy::new(|| {
     let mut map = HashMap::new();
     map.insert("aqua", 14);
     map.insert("aquamarine1", 79);
