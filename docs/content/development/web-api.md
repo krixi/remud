@@ -195,24 +195,49 @@ Allows spinning up a websocket connection to ReMUD.
 
 The websocket endpoint. Supports upgrading properly formed client requests to websockets.
 
-**Request:**
+**From client to server:**
 
 ```
 {
-  "type": "input",
+  "type": "game",
   "data": {
     "message": String
   }
 }
 ```
 
-**Response:**
+**From server to client:**
 
 ```
 {
-  "type": "output",
+  "type": "game",
   "data": {
-    "message": String
+    "is_prompt": true | false,
+    "segments": [
+        {
+            t: "t",
+            d: {
+                text: "the message",
+            }
+        },
+        {
+            t: "cs",
+            d: {
+                color: "ffffff",
+            }
+        },
+        {
+            t: "ce",
+            d: {},
+        },
+    ]
   }
 }
 ```
+Each message from the server is a line that is to be displayed. It's broken up into segments that represent how to color pieces of the line. 
+`is_prompt` indicates whether the line is meant to be a player prompt - on the client, text is appended to the most recent prompt. 
+
+- `t` segments contain the actual text, including whitespace.
+- `cs` segments are 'color start' indicators and contain the color to apply to the subsequent segments
+- `ce` is the 'color end' segment, and indicates to stop the previously applied color. 
+
