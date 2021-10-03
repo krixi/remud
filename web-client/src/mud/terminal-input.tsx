@@ -5,7 +5,6 @@ import React, {
   useReducer,
 } from "react";
 import { Prompt } from "./prompt";
-import { ChatLine } from "../hooks/use-chat";
 
 enum TerminalActionKind {
   HistoryBack,
@@ -77,7 +76,7 @@ const reducer = (
 };
 
 export interface PublicProps {
-  send: (msg: ChatLine) => void;
+  send: (msg: string) => void;
 }
 
 export const TerminalInput: React.FC<PublicProps> = ({ send }) => {
@@ -90,8 +89,7 @@ export const TerminalInput: React.FC<PublicProps> = ({ send }) => {
   const onSubmit = useCallback(
     (e: FormEvent, cmd: string) => {
       e.preventDefault();
-      //send({ segments: [{t: 'm', d: {text: cmd}}]  });
-      send({ message: cmd });
+      send(cmd);
       dispatch({ kind: TerminalActionKind.Submit, command: cmd });
     },
     [send]

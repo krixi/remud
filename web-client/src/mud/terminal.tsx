@@ -3,6 +3,7 @@ import {
   ChatLine,
   getColor,
   getMessage,
+  isColorEnd,
   isColorStart,
   isMessage,
   useChat,
@@ -22,36 +23,40 @@ export const Terminal: React.FC = () => {
     }
   }, [messages]);
 
-  // render is a recursive function that assembles a JSX element from a chat line.
-  const render = useCallback(
-    (m: ChatLine, current?: number, msg?: JSX.Element): JSX.Element => {
-      if (msg === undefined) {
-        msg = <></>;
-      }
-      if (!m.segments) {
-        return msg;
-      }
-      if (current === undefined) {
-        current = 0;
-      } else if (current >= m.segments.length) {
-        return msg;
-      }
+  // render assembles a JSX element from a chat line.
+  const render = useCallback((m: ChatLine): JSX.Element => {
+    // This supports nested colors by maintaining a color stack
+    let colors: string[] = [];
+    const wrapInColor = (msg: JSX.Element): JSX.Element => {
+      const color = colors.pop();
+      return color ? <span style={{ color: `#${color}` }}>{msg}</span> : msg;
+    };
 
-      let segment = m.segments[current];
+    // Assemble the segments into a line
+    let msg = <></>;
+    let current = 0;
+    while (current < m.segments.length) {
+      const segment = m.segments[current];
       if (isMessage(segment)) {
-        return render(m, current + 1, <>{getMessage(segment)}</>);
-      } else if (isColorStart(segment)) {
-        return (
-          <span style={{ color: `#${getColor(segment)}` }}>
-            {render(m, current + 1, msg)}
-          </span>
+        msg = (
+          <>
+            {msg}
+            {getMessage(segment)}
+          </>
         );
+      } else if (isColorStart(segment)) {
+        colors.push(getColor(segment));
+      } else if (isColorEnd(segment)) {
+        msg = wrapInColor(msg);
       }
+      current++;
+    }
+    while (colors.length > 0) {
+      msg = wrapInColor(msg);
+    }
 
-      return msg;
-    },
-    []
-  );
+    return msg;
+  }, []);
 
   return (
     <>
@@ -59,13 +64,12 @@ export const Terminal: React.FC = () => {
         <div className="flex flex-row-reverse">
           <ConnectionStatus isConnected={isConnected} />
         </div>
-        <div ref={chatList} className="overflow-y-auto">
+        <div
+          ref={chatList}
+          className="overflow-y-auto font-mono whitespace-pre-wrap"
+        >
           {messages.map((m, i) => (
-            <div
-              key={i}
-              className="font-mono whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{ __html: m.message! }}
-            />
+            <div key={i}>{render(m)}</div>
           ))}
         </div>
       </div>
