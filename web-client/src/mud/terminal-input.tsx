@@ -12,6 +12,7 @@ enum TerminalActionKind {
   Reset,
   Input,
   Submit,
+  SubmitSensitive,
 }
 
 interface TerminalAction {
@@ -70,6 +71,11 @@ const reducer = (
         commands: [...state.commands, action.command!],
         input: "",
       };
+    case TerminalActionKind.SubmitSensitive:
+      return {
+        ...state,
+        input: "",
+      };
   }
   console.warn("UNHANDLED reducer action type: ", action.kind);
   return state;
@@ -77,9 +83,10 @@ const reducer = (
 
 export interface PublicProps {
   send: (msg: string) => void;
+  isSensitivePrompt: boolean;
 }
 
-export const TerminalInput: React.FC<PublicProps> = ({ send }) => {
+export const TerminalInput: React.FC<PublicProps> = ({ send , isSensitivePrompt }) => {
   const [state, dispatch] = useReducer(reducer, {
     current: 0,
     commands: [],
@@ -90,9 +97,13 @@ export const TerminalInput: React.FC<PublicProps> = ({ send }) => {
     (e: FormEvent, cmd: string) => {
       e.preventDefault();
       send(cmd);
-      dispatch({ kind: TerminalActionKind.Submit, command: cmd });
+      dispatch({
+        kind: isSensitivePrompt
+          ? TerminalActionKind.SubmitSensitive
+          : TerminalActionKind.Submit, command: cmd
+      });
     },
-    [send]
+    [send, isSensitivePrompt]
   );
 
   const onKeyPressed = useCallback((e: KeyboardEvent) => {
@@ -121,7 +132,7 @@ export const TerminalInput: React.FC<PublicProps> = ({ send }) => {
           <input
             className="w-full p-1 bg-black text-white rounded focus:outline-none"
             autoFocus
-            type="text"
+            type={isSensitivePrompt ? "password" : "text"}
             value={state.input}
             onChange={(e) =>
               dispatch({

@@ -64,8 +64,15 @@ enum WsRequestParseError {
 enum WsResponse {
     Game {
         segments: Vec<WsMessageSegment>,
+        #[serde(skip_serializing_if = "is_false")]
         is_prompt: bool,
+        #[serde(skip_serializing_if = "is_false")]
+        is_sensitive: bool,
     },
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl WsResponse {
@@ -76,15 +83,16 @@ impl WsResponse {
 
 impl From<Output> for WsResponse {
     fn from(value: Output) -> Self {
-        let (is_prompt, message) = match value {
-            Output::Message(message) => (false, message),
-            Output::Prompt(message) => (true, message),
+        let (is_prompt, message, sensitive) = match value {
+            Output::Message(message) => (false, message, false),
+            Output::Prompt { format, sensitive } => (true, format, sensitive),
         };
 
         let segments = colorize_web(message.as_str());
         WsResponse::Game {
             segments,
             is_prompt,
+            is_sensitive: sensitive,
         }
     }
 }

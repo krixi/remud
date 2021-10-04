@@ -217,7 +217,7 @@ impl TelnetConnection {
             Telnet::connect(("127.0.0.1", port), 1024).expect("failed to connect to ReMUD");
 
         if let TelnetEvent::Negotiation(NegotiationAction::Do, TelnetOption::TTYPE) = connection
-            .read_timeout(Duration::from_secs(1))
+            .read_timeout(Duration::from_secs(5))
             .expect("did not receive DO TTYPE")
         {
             connection.negotiate(NegotiationAction::Wont, TelnetOption::TTYPE);

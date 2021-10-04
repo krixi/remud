@@ -36,6 +36,7 @@ export interface MessageSegment {
 export interface ChatLine {
   segments: MessageSegment[];
   is_prompt?: boolean;
+  is_sensitive?: boolean;
 }
 
 export interface PlayerMessage {
@@ -48,11 +49,13 @@ interface ChatAction {
 }
 interface ChatState {
   messages: ChatLine[];
+  isSensitivePrompt: boolean;
 }
 
 export interface Chat {
   messages: ChatLine[];
   isConnected: boolean;
+  isSensitivePrompt: boolean;
   send: (msg: string) => void;
 }
 
@@ -64,18 +67,21 @@ const reducer = (state: ChatState, action: ChatAction): ChatState => {
   if (action.from_server) {
     return {
       ...state,
+      isSensitivePrompt: !!(action.from_server.is_prompt && action.from_server.is_sensitive),
       messages: [...state.messages, action.from_server],
     };
   } else if (action.from_client) {
     // append the input to the last prompt.
     for (let idx = state.messages.length - 1; idx >= 0; idx--) {
       if (state.messages[idx].is_prompt) {
-        state.messages[idx].segments!.push({
-          t: "t",
-          d: {
-            text: action.from_client,
-          },
-        });
+        if (!state.messages[idx].is_sensitive) {
+          state.messages[idx].segments!.push({
+            t: "t",
+            d: {
+              text: action.from_client,
+            },
+          });
+        }
         break;
       }
     }
@@ -90,6 +96,7 @@ const reducer = (state: ChatState, action: ChatAction): ChatState => {
 export const useChat = (): Chat => {
   const [state, dispatch] = useReducer(reducer, {
     messages: [],
+    isSensitivePrompt: false,
   });
   const socket = useWebSocket();
   const isConnected = useObservable(socket?.connectionStatus);
@@ -122,6 +129,7 @@ export const useChat = (): Chat => {
   return {
     messages: state.messages,
     isConnected: !!isConnected,
+    isSensitivePrompt: state.isSensitivePrompt,
     send,
   };
 };

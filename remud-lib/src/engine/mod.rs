@@ -17,7 +17,7 @@ use tokio::{
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
-        client::{Client, Clients, State},
+        client::{Client, Clients, SendPrompt, State},
         db::{verify_password, AuthDb, Db, GameDb, VerifyError},
         persist::PersistPlugin,
     },
@@ -79,12 +79,18 @@ impl EngineResponse {
         Output::Message(message.to_owned().to_string()).into()
     }
 
-    pub fn from_messages<'a>(messages: impl IntoIterator<Item = Cow<'a, str>>) -> Self {
+    pub fn from_messages<'a>(
+        messages: impl IntoIterator<Item = Cow<'a, str>>,
+        sensitive: bool,
+    ) -> Self {
         EngineResponse::Output(
             messages
                 .into_iter()
                 .map(|message| Output::Message(message.to_owned().to_string()))
-                .chain(std::iter::once(Output::Prompt("> ".to_string())))
+                .chain(std::iter::once(Output::Prompt {
+                    format: "> ".to_string(),
+                    sensitive,
+                }))
                 .collect(),
         )
     }
@@ -101,12 +107,15 @@ impl EngineResponse {
 
 impl From<Output> for EngineResponse {
     fn from(value: Output) -> Self {
-        let is_prompt = matches!(value, Output::Prompt(_));
+        let is_prompt = matches!(value, Output::Prompt { .. });
         let mut vec = VecDeque::new();
         vec.push_back(value);
 
         if !is_prompt {
-            vec.push_back(Output::Prompt(" >".to_string()));
+            vec.push_back(Output::Prompt {
+                format: " >".to_string(),
+                sensitive: false,
+            });
         }
 
         EngineResponse::Output(vec)
@@ -116,7 +125,7 @@ impl From<Output> for EngineResponse {
 #[derive(Debug)]
 pub enum Output {
     Message(String),
-    Prompt(String),
+    Prompt { format: String, sensitive: bool },
 }
 
 pub struct Engine {
@@ -185,7 +194,7 @@ impl Engine {
                 _ = self.ticker.tick() => {
                     self.game_world.run();
 
-                    self.send_messages().await;
+                    self.dispatch_engine_messages().await;
 
                     self.persist_updates().await;
 
@@ -219,13 +228,17 @@ impl Engine {
         }
     }
 
-    #[tracing::instrument(name = "send messages", skip_all)]
-    pub async fn send_messages(&mut self) {
+    #[tracing::instrument(name = "dispatch engine messages", skip_all)]
+    pub async fn dispatch_engine_messages(&mut self) {
         // Dispatch all queued messages to players
         for (player, messages) in self.game_world.messages() {
             if let Some(client) = self.clients.by_player(player) {
                 client
-                    .send_batch(self.tick, messages.into_iter().map(Into::into))
+                    .send_batch(
+                        self.tick,
+                        SendPrompt::Prompt,
+                        messages.into_iter().map(Into::into),
+                    )
                     .await;
             } else {
                 tracing::error!(
@@ -298,6 +311,7 @@ impl Engine {
                     client
                         .send_batch(
                             self.tick,
+                        SendPrompt::Prompt,
                             vec![
                                 Cow::from(
                                     "|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n",
@@ -410,6 +424,7 @@ impl Engine {
                                 client
                                     .send_batch(
                                         self.tick,
+                                        SendPrompt::Prompt,
                                         vec![
                                             Cow::from("|Red1|Error retrieving user.|-|"),
                                             Cow::from("|SteelBlue3|Name?|-|"),
@@ -425,6 +440,7 @@ impl Engine {
                                 client
                                     .send_batch(
                                         self.tick,
+                                        SendPrompt::Prompt,
                                         vec![
                                             Cow::from("|Red1|User currently online.|-|"),
                                             Cow::from("|SteelBlue3|Name?|-|"),
@@ -436,6 +452,7 @@ impl Engine {
                             client
                                 .send_batch(
                                     self.tick,
+                                    SendPrompt::SensitivePrompt,
                                     vec![
                                         Cow::from("|SteelBlue3|User located.|-|"),
                                         Cow::from("|SteelBlue3|Password?|-|"),
@@ -449,6 +466,7 @@ impl Engine {
                             client
                                 .send_batch(
                                     self.tick,
+                                    SendPrompt::SensitivePrompt,
                                     vec![
                                         Cow::from("|SteelBlue3|New user detected.|-|"),
                                         Cow::from("|SteelBlue3|Password?|-|"),
@@ -463,6 +481,7 @@ impl Engine {
                         client
                             .send_batch(
                                 self.tick,
+                                SendPrompt::Prompt,
                                 vec![
                                     Cow::from("|SteelBlue3|Invalid username.|-|"),
                                     Cow::from("|SteelBlue3|Name?|-|"),
@@ -478,6 +497,7 @@ impl Engine {
                         client
                             .send_batch(
                                 self.tick,
+                                SendPrompt::SensitivePrompt,
                                 vec![
                                     Cow::from("|Red1|Weak password detected.|-|"),
                                     Cow::from("|SteelBlue3|Password?|-|"),
@@ -499,6 +519,7 @@ impl Engine {
                             client
                                 .send_batch(
                                     self.tick,
+                                    SendPrompt::SensitivePrompt,
                                     vec![
                                         Cow::from("|Red1|Error computing password hash.|-|"),
                                         Cow::from("|SteelBlue3|Password?|-|"),
@@ -512,6 +533,7 @@ impl Engine {
                     client
                         .send_batch(
                             self.tick,
+                            SendPrompt::SensitivePrompt,
                             vec![
                                 Cow::from("|SteelBlue3|Password accepted.|-|"),
                                 Cow::from("|SteelBlue3|Verify?|-|"),
@@ -630,7 +652,7 @@ impl Engine {
                     match self.commands.parse(*player, &input, !immortal) {
                         Ok(action) => self.game_world.player_action(action),
                         Err(message) => {
-                            client.send(self.tick, message.into()).await;
+                            client.send_prompted(self.tick, message.into()).await;
                         }
                     }
                 }

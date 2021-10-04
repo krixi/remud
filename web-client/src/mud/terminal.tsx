@@ -12,7 +12,7 @@ import { ConnectionStatus } from "./connection-status";
 import { TerminalInput } from "./terminal-input";
 
 export const Terminal: React.FC = () => {
-  const { isConnected, messages, send } = useChat();
+  const { isConnected, isSensitivePrompt, messages, send } = useChat();
 
   // scroll to the bottom of chat.
   const chatList = useRef(null);
@@ -75,7 +75,7 @@ export const Terminal: React.FC = () => {
       </div>
 
       <div className="fixed bottom-2 left-0 w-full">
-        <TerminalInput send={send} />
+        <TerminalInput send={send} isSensitivePrompt={isSensitivePrompt} />
       </div>
     </>
   );

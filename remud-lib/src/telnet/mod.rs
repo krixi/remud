@@ -104,7 +104,8 @@ async fn process(
                             for output in outputs {
                                 let message = match output {
                                     Output::Message(message) => colorize_telnet(format!("|Gray69|{}|-|\r\n", message.as_str()).as_str(), telnet.color_support()),
-                                    Output::Prompt(prompt) => colorize_telnet(format!("|Gray69|{}|-|", prompt.as_str()).as_str(), telnet.color_support()),
+                                    // what to do to make telnet hide this input when sensitive?
+                                    Output::Prompt{format, ..} => colorize_telnet(format!("|Gray69|{}|-|", format.as_str()).as_str(), telnet.color_support()),
                                 };
 
                                 match message.into_ascii_string() {

@@ -13,6 +13,12 @@ pub enum State {
     InGame { player: Entity },
 }
 
+pub enum SendPrompt {
+    None,
+    Prompt,
+    SensitivePrompt,
+}
+
 pub struct Client {
     id: ClientId,
     tx: mpsc::Sender<EngineResponse>,
@@ -27,7 +33,7 @@ impl Client {
         }
     }
 
-    pub async fn send(&self, tick: u64, message: Cow<'_, str>) {
+    pub async fn send_prompted(&self, tick: u64, message: Cow<'_, str>) {
         tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
         if self
             .tx
@@ -42,22 +48,14 @@ impl Client {
     pub async fn send_batch<'a>(
         &self,
         tick: u64,
+        prompt: SendPrompt,
         messages: impl IntoIterator<Item = Cow<'a, str>>,
     ) {
-        let message = EngineResponse::from_messages(messages);
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-        if self.tx.send(message).await.is_err() {
-            tracing::error!("failed to send message to client {:?}", self.id);
-        }
-    }
-
-    // TODO: do something better here?
-    pub async fn send_batch_noprompt<'a>(
-        &self,
-        tick: u64,
-        messages: impl IntoIterator<Item = Cow<'a, str>>,
-    ) {
-        let message = EngineResponse::from_messages_noprompt(messages);
+        let message = match prompt {
+            SendPrompt::None => EngineResponse::from_messages_noprompt(messages),
+            SendPrompt::Prompt => EngineResponse::from_messages(messages, false),
+            SendPrompt::SensitivePrompt => EngineResponse::from_messages(messages, true),
+        };
         tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
         if self.tx.send(message).await.is_err() {
             tracing::error!("failed to send message to client {:?}", self.id);
@@ -75,6 +73,7 @@ impl Client {
     pub async fn verification_failed_creation(&mut self, tick: u64, name: &str) {
         self.send_batch(
             tick,
+            SendPrompt::SensitivePrompt,
             vec![
                 Cow::from("|Red1|Verification failed.|-|"),
                 Cow::from("|SteelBlue3|Password?|-|"),
@@ -90,6 +89,7 @@ impl Client {
     pub async fn verification_failed_login(&mut self, tick: u64) {
         self.send_batch(
             tick,
+            SendPrompt::Prompt,
             vec![
                 Cow::from("|Red1|Verification failed.|-|"),
                 Cow::from("|SteelBlue3|Name?|-|"),
@@ -102,6 +102,7 @@ impl Client {
     pub async fn spawn_failed(&mut self, tick: u64) {
         self.send_batch(
             tick,
+            SendPrompt::Prompt,
             vec![
                 Cow::from("|Red1|User instantiation failed.|-|"),
                 Cow::from("|SteelBlue3|Name?|-|"),
@@ -112,11 +113,14 @@ impl Client {
     }
 
     pub async fn verified(&mut self, tick: u64) {
-        self.send_batch_noprompt(
+        self.send_batch(
             tick,
+            SendPrompt::None,
             vec![
                 Cow::from("|SteelBlue3|Password verified.|-|"),
-                Cow::from("\r\n|white|Welcome to City Six.\r\n"),
+                Cow::from(""),
+                Cow::from("|white|Welcome to City Six."),
+                Cow::from(""),
             ],
         )
         .await;
