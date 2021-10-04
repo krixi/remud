@@ -279,11 +279,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
             tracing::warn!("unknown color tag(s) captured: {}", capture);
         }
 
-        tracing::info!(
-            "checking for break, next: {}, len: {}",
-            next_start,
-            message.len()
-        );
         if next_start >= message.len() {
             break;
         }
@@ -291,11 +286,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
     // check for end-of-message text
     if next_start < message.len() {
-        tracing::info!(
-            "adding end of message text: {}..{}",
-            next_start,
-            message.len()
-        );
         vec.push(WsMessageSegment::text(
             message[next_start..message.len()].into(),
         ))
@@ -303,7 +293,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
     // close all remaining open tags
     while open > 0 {
-        tracing::info!("adding close tag");
         vec.push(WsMessageSegment::end_color());
         open -= 1;
     }
