@@ -2,9 +2,13 @@ import React, {
   FormEvent,
   KeyboardEvent,
   useCallback,
+  useEffect,
   useReducer,
+  useRef,
 } from "react";
 import { Prompt } from "./prompt";
+import { Observable } from "rxjs";
+import { useObservable } from "../hooks/use-observable";
 
 enum TerminalActionKind {
   HistoryBack,
@@ -84,17 +88,31 @@ const reducer = (
 export interface PublicProps {
   send: (msg: string) => void;
   isSensitivePrompt: boolean;
+  refocus: Observable<boolean>;
+  focusComplete: () => void;
 }
 
 export const TerminalInput: React.FC<PublicProps> = ({
   send,
   isSensitivePrompt,
+  refocus,
+  focusComplete,
 }) => {
   const [state, dispatch] = useReducer(reducer, {
     current: 0,
     commands: [],
     input: "",
   });
+  const shouldFocus = useObservable<boolean>(refocus);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (shouldFocus && inputRef.current) {
+      const ele = inputRef.current as HTMLElement;
+      ele.focus();
+      focusComplete();
+    }
+  }, [shouldFocus]);
 
   const onSubmit = useCallback(
     (e: FormEvent, cmd: string) => {
@@ -134,6 +152,7 @@ export const TerminalInput: React.FC<PublicProps> = ({
             <Prompt />
           </div>
           <input
+            ref={inputRef}
             className="w-full p-1 bg-black text-white rounded focus:outline-none"
             autoFocus
             type={isSensitivePrompt ? "password" : "text"}
