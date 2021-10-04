@@ -308,6 +308,8 @@ impl GameDb for Db {
                 .bind(prototype_id)
                 .fetch(&self.pool);
 
+                world.entity_mut(object).remove::<ScriptHooks>();
+
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 

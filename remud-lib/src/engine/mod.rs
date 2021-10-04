@@ -113,7 +113,7 @@ impl From<Output> for EngineResponse {
 
         if !is_prompt {
             vec.push_back(Output::Prompt {
-                format: " >".to_string(),
+                format: "> ".to_string(),
                 sensitive: false,
             });
         }

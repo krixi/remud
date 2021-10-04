@@ -132,7 +132,7 @@ impl Messages {
         std::mem::swap(&mut queue, &mut self.queue);
 
         if !self.received_input {
-            queue.push_front("\r\n".to_string());
+            queue.push_front("  v\r\n".to_string());
         }
 
         self.received_input = false;
