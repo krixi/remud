@@ -37,10 +37,16 @@ pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("init script {} execution error: {}", script, error);
-
-            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
-                errors.insert(script, error)
-            } else {
+            let error = {
+                if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
+                {
+                    errors.insert(script.clone(), error);
+                    None
+                } else {
+                    Some(error)
+                }
+            };
+            if let Some(error) = error {
                 world
                     .write()
                     .unwrap()
@@ -82,13 +88,19 @@ pub fn run_post_event_script(
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("post-event script {} execution error: {}", script, error);
-
-            let mut world = world.write().unwrap();
-
-            if let Some(mut errors) = world.get_mut::<ExecutionErrors>(entity) {
-                errors.insert(script, error)
-            } else {
+            let error = {
+                if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
+                {
+                    errors.insert(script.clone(), error);
+                    None
+                } else {
+                    Some(error)
+                }
+            };
+            if let Some(error) = error {
                 world
+                    .write()
+                    .unwrap()
                     .get_entity_mut(entity)
                     .unwrap()
                     .insert(ExecutionErrors::new_with_error(script, error));
@@ -128,10 +140,16 @@ pub fn run_pre_event_script(
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("pre-event script {} execution error: {}", script, error);
-
-            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
-                errors.insert(script, error)
-            } else {
+            let error = {
+                if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
+                {
+                    errors.insert(script.clone(), error);
+                    None
+                } else {
+                    Some(error)
+                }
+            };
+            if let Some(error) = error {
                 world
                     .write()
                     .unwrap()
@@ -169,9 +187,16 @@ pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) 
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("timed script {} execution error: {}", script, error);
-            if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity) {
-                errors.insert(script, error)
-            } else {
+            let error = {
+                if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
+                {
+                    errors.insert(script.clone(), error);
+                    None
+                } else {
+                    Some(error)
+                }
+            };
+            if let Some(error) = error {
                 world
                     .write()
                     .unwrap()

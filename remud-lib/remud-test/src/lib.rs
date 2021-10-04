@@ -95,7 +95,9 @@ impl Server {
         connection.recv_prompt();
         connection.send(password.as_ref());
         connection.recv_contains("Password verified.");
+        connection.recv(); // blank line 1
         connection.recv_contains("Welcome to City Six.");
+        connection.recv(); // blank line 2
         connection.recv(); // ignore the look that happens when we log in
         connection.recv_prompt();
 
@@ -123,7 +125,9 @@ impl Server {
         connection.recv_prompt();
         connection.send(password.as_ref());
         connection.recv_contains("Password verified.");
+        connection.recv(); // blank line 1
         connection.recv_contains("Welcome to City Six.");
+        connection.recv(); // blank line 2
         connection.recv(); // ignore the look that happens when we log in
         connection.recv_prompt();
 
