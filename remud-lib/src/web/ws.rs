@@ -221,26 +221,15 @@ async fn process(
 }
 
 fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
-    tracing::info!("colorizing web message: {}", message);
     let mut vec = Vec::new();
     let mut open = 0;
     let mut next_start = 0;
 
     // move through the string one capture at a time, adding the text in between
     while let Some(captures) = COLOR_TAG_MATCHER.captures(&message[next_start..]) {
-        tracing::info!(
-            "found capture at {}..{}",
-            next_start + captures.get(0).unwrap().start(),
-            next_start + captures.get(0).unwrap().end()
-        );
         // If the previous capture ended before this capture started - i.e. there's something in between
         let capture_start = captures.get(0).unwrap().start();
         if capture_start > 0 {
-            tracing::info!(
-                "adding text in gap: {}..{}",
-                next_start,
-                next_start + capture_start
-            );
             vec.push(WsMessageSegment::text(
                 message[next_start..next_start + capture_start].into(),
             ))
@@ -248,18 +237,10 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
         // record capture
         if let Some(m) = captures.name("escape") {
-            tracing::info!(
-                "adding | escape, setting next_start: {}",
-                next_start + m.end()
-            );
             next_start = next_start + m.end();
             vec.push(WsMessageSegment::text("|".into()))
         } else if let Some(m) = captures.name("byte") {
-            tracing::info!(
-                "adding byte color, setting end: {}",
-                next_start + m.end() + 1
-            );
-            next_start = next_start + m.end() + 1;
+            next_start = next_start + captures.get(0).unwrap().end();
             if let Ok(color) = Color256::from_str(m.as_str()) {
                 let color = ColorTrue::from(color);
                 open += 1;
@@ -268,11 +249,7 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
                 tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
             }
         } else if let Some(m) = captures.name("true") {
-            tracing::info!(
-                "adding true color, setting end: {}",
-                next_start + m.end() + 1
-            );
-            next_start = next_start + m.end() + 1;
+            next_start = next_start + captures.get(0).unwrap().end();
             if let Ok(color) = ColorTrue::from_str(m.as_str()) {
                 open += 1;
                 vec.push(WsMessageSegment::color(color));
@@ -280,18 +257,15 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
                 tracing::warn!("failed to capture matched true color: {}", m.as_str());
             }
         } else if let Some(m) = captures.name("name") {
-            tracing::info!(
-                "adding named color, setting end: {}",
-                next_start + m.end() + 1
-            );
-            next_start = next_start + m.end() + 1;
+            next_start = next_start + captures.get(0).unwrap().end();
             if let Some(index) = COLOR_NAME_MAP.get(m.as_str().to_lowercase().as_str()) {
                 let color = ColorTrue::from(Color256::new(*index));
                 open += 1;
                 vec.push(WsMessageSegment::color(color));
+            } else {
+                tracing::warn!("failed to match color name: {}", m.as_str());
             }
         } else if let Some(m) = captures.name("clear") {
-            tracing::info!("adding clear color, setting end: {}", next_start + m.end());
             next_start = next_start + m.end();
             if open > 0 {
                 open -= 1;
@@ -305,11 +279,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
             tracing::warn!("unknown color tag(s) captured: {}", capture);
         }
 
-        tracing::info!(
-            "checking for break, next: {}, len: {}",
-            next_start,
-            message.len()
-        );
         if next_start >= message.len() {
             break;
         }
@@ -317,11 +286,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
     // check for end-of-message text
     if next_start < message.len() {
-        tracing::info!(
-            "adding end of message text: {}..{}",
-            next_start,
-            message.len()
-        );
         vec.push(WsMessageSegment::text(
             message[next_start..message.len()].into(),
         ))
@@ -329,7 +293,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
     // close all remaining open tags
     while open > 0 {
-        tracing::info!("adding close tag");
         vec.push(WsMessageSegment::end_color());
         open -= 1;
     }
