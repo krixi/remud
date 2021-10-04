@@ -114,7 +114,6 @@ pub struct FlagsParseError {
 
 #[derive(Default)]
 pub struct Messages {
-    received_input: bool,
     queue: VecDeque<String>,
 }
 
@@ -131,17 +130,7 @@ impl Messages {
         let mut queue = VecDeque::new();
         std::mem::swap(&mut queue, &mut self.queue);
 
-        if !self.received_input {
-            queue.push_front("  v\r\n".to_string());
-        }
-
-        self.received_input = false;
-
         queue
-    }
-
-    pub fn set_received_input(&mut self) {
-        self.received_input = true;
     }
 }
 

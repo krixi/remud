@@ -139,11 +139,6 @@ impl GameWorld {
         let world = self.ecs.world_mut();
 
         world
-            .get_mut::<Messages>(action.actor())
-            .unwrap()
-            .set_received_input();
-
-        world
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
             .send(QueuedAction { action });

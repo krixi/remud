@@ -84,6 +84,7 @@ async fn process(
     let mut framed = Framed::new(socket, Codec);
     let mut telnet = Telnet::new();
     let mut ready = false;
+    let mut awaiting_input = false;
 
     // Send initial telnet negotiation frames to the client to kick off negotiation
     for frame in telnet.initiate() {
@@ -101,18 +102,30 @@ async fn process(
                 if let Some(message) = maybe_message {
                     match message {
                         EngineResponse::Output(outputs) => {
+                            // If awaiting input, add a newline to move past prompt
+                            if awaiting_input {
+                                awaiting_input = false;
+                                if framed.send(Frame::Data(Bytes::from("\r\n"))).await.is_err() {
+                                    break;
+                                }
+                            }
+
+                            // Send all output to the client
                             for output in outputs {
                                 let message = match output {
                                     Output::Message(message) => colorize_telnet(format!("|Gray69|{}|-|\r\n", message.as_str()).as_str(), telnet.color_support()),
                                     // what to do to make telnet hide this input when sensitive?
-                                    Output::Prompt{format, ..} => colorize_telnet(format!("|Gray69|{}|-|", format.as_str()).as_str(), telnet.color_support()),
+                                    Output::Prompt{format, ..} => {
+                                        awaiting_input = true;
+                                        colorize_telnet(format!("|Gray69|{}|-|", format.as_str()).as_str(), telnet.color_support())
+                                    }
                                 };
 
                                 match message.into_ascii_string() {
                                     Ok(str) => {
                                         let bytes: Vec<u8> = str.into();
                                         if framed.send(Frame::Data(Bytes::from(bytes))).await.is_err() {
-                                            break
+                                            break;
                                         }
                                     },
                                     Err(e) => tracing::error!("Engine returned non-ASCII string: \"{}\"", e),
@@ -174,6 +187,7 @@ async fn process(
                     if ready {
                         // send input and do things
                         for input in inputs.drain(..) {
+                            awaiting_input = false;
                             if client_tx.send(ClientMessage::Input(client_id, input.to_string())).await.is_err() {
                                 break
                             }
