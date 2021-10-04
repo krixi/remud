@@ -20,7 +20,7 @@ use crate::world::{
         },
         player::{Player, PlayerFlags},
         room::RoomId,
-        Contents, Description, Id, Named,
+        Contents, Description, Id, Location, Named,
     },
 };
 
@@ -270,7 +270,7 @@ impl GameDb for Db {
         prototype_id: PrototypeId,
     ) -> anyhow::Result<()> {
         let mut results = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
+            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS location,
                         COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
                         COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
                     FROM objects
@@ -291,15 +291,23 @@ impl GameDb for Db {
             let inherit_scripts = object_row.inherit_scripts;
 
             let object_id = ObjectId::try_from(object_row.id)?;
-            let object = world
+            let object_entity = world
                 .get_resource::<Objects>()
                 .unwrap()
                 .by_id(object_id)
                 .unwrap();
 
-            let bundle = object_row.into_object_bundle(prototype)?;
+            let (id, object, named, description, flags, keywords) =
+                object_row.into_components(prototype)?;
 
-            world.entity_mut(object).insert_bundle(bundle);
+            world
+                .entity_mut(object_entity)
+                .insert(id)
+                .insert(object)
+                .insert(named)
+                .insert(description)
+                .insert(flags)
+                .insert(keywords);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -308,15 +316,17 @@ impl GameDb for Db {
                 .bind(prototype_id)
                 .fetch(&self.pool);
 
-                world.entity_mut(object).remove::<ScriptHooks>();
+                world.entity_mut(object_entity).remove::<ScriptHooks>();
 
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object_entity) {
                         hooks.insert(hook);
                     } else {
-                        world.entity_mut(object).insert(ScriptHooks::new(hook));
+                        world
+                            .entity_mut(object_entity)
+                            .insert(ScriptHooks::new(hook));
                     }
                 }
             }
@@ -331,10 +341,10 @@ impl GameDb for Db {
                 .collect_vec()
         };
 
-        for object in player_objects {
-            let id = world.get::<Object>(object).unwrap().id();
+        for object_entity in player_objects {
+            let id = world.get::<Object>(object_entity).unwrap().id();
             let object_row = sqlx::query_as::<_, ObjectRow>(
-            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
+            r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS location,
                         COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
                         COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
                     FROM objects
@@ -353,9 +363,17 @@ impl GameDb for Db {
                 .by_id(PrototypeId::try_from(object_row.prototype_id)?)
                 .unwrap();
 
-            let bundle = object_row.into_object_bundle(prototype)?;
+            let (id, object, named, description, flags, keywords) =
+                object_row.into_components(prototype)?;
 
-            world.entity_mut(object).insert_bundle(bundle);
+            world
+                .entity_mut(object_entity)
+                .insert(id)
+                .insert(object)
+                .insert(named)
+                .insert(description)
+                .insert(flags)
+                .insert(keywords);
 
             if inherit_scripts {
                 let mut results = sqlx::query_as::<_, HookRow>(
@@ -367,10 +385,12 @@ impl GameDb for Db {
                 while let Some(hook_row) = results.try_next().await? {
                     let hook = ScriptHook::try_from(hook_row)?;
 
-                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object) {
+                    if let Some(mut hooks) = world.get_mut::<ScriptHooks>(object_entity) {
                         hooks.insert(hook)
                     } else {
-                        world.entity_mut(object).insert(ScriptHooks::new(hook));
+                        world
+                            .entity_mut(object_entity)
+                            .insert(ScriptHooks::new(hook));
                     }
                 }
             }
@@ -419,7 +439,7 @@ struct ObjectRow {
     id: i64,
     prototype_id: i64,
     inherit_scripts: bool,
-    container: Option<i64>,
+    location: Option<i64>,
     flags: i64,
     name: String,
     keywords: String,
@@ -427,7 +447,7 @@ struct ObjectRow {
 }
 
 impl ObjectRow {
-    fn into_object_bundle(self, prototype: Entity) -> DbResult<ObjectBundle> {
+    fn into_object_bundle(self, prototype: Entity, location: Location) -> DbResult<ObjectBundle> {
         let id = ObjectId::try_from(self.id).map_err(|_| Error::Deserialize("object ID"))?;
 
         Ok(ObjectBundle {
@@ -437,7 +457,24 @@ impl ObjectRow {
             description: Description::from(self.description.clone()),
             flags: ObjectFlags::from(self.flags),
             keywords: Keywords::from(self.keywords()),
+            location,
         })
+    }
+
+    fn into_components(
+        self,
+        prototype: Entity,
+    ) -> DbResult<(Id, Object, Named, Description, ObjectFlags, Keywords)> {
+        let id = ObjectId::try_from(self.id).map_err(|_| Error::Deserialize("object ID"))?;
+
+        Ok((
+            Id::Object(id),
+            Object::new(id, prototype, self.inherit_scripts),
+            Named::from(self.name.clone()),
+            Description::from(self.description.clone()),
+            ObjectFlags::from(self.flags),
+            Keywords::from(self.keywords()),
+        ))
     }
 
     fn keywords(&self) -> Vec<String> {

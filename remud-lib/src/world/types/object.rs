@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     text::sorted_word_list,
-    world::types::{Description, Id, Named},
+    world::types::{Description, Id, Location, Named},
 };
 use itertools::Itertools;
 
@@ -28,6 +28,7 @@ pub struct ObjectBundle {
     pub description: Description,
     pub flags: ObjectFlags,
     pub keywords: Keywords,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -170,27 +171,6 @@ impl From<i64> for ObjectFlags {
         ObjectFlags {
             flags: Flags::from_bits_truncate(value),
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Container {
-    entity: Entity,
-}
-
-impl Container {
-    pub fn entity(&self) -> Entity {
-        self.entity
-    }
-
-    pub fn set_entity(&mut self, entity: Entity) {
-        self.entity = entity;
-    }
-}
-
-impl From<Entity> for Container {
-    fn from(entity: Entity) -> Self {
-        Container { entity }
     }
 }
 

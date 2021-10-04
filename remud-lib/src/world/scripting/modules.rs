@@ -52,7 +52,7 @@ pub mod world_api {
     use crate::{
         ecs::SharedWorld,
         world::types::{
-            object::{Container, Keywords, Object},
+            object::{Keywords, Object},
             player::Player,
             room::Room,
             Contents, Description, Location, Named,
@@ -104,16 +104,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(location) = world.read().unwrap().get::<Location>(entity) {
-            Dynamic::from(location.room())
-        } else {
-            Dynamic::UNIT
-        }
-    }
-
-    #[rhai_fn(pure)]
-    pub fn get_container(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(container) = world.read().unwrap().get::<Container>(entity) {
-            Dynamic::from(container.entity())
+            Dynamic::from(location.location())
         } else {
             Dynamic::UNIT
         }

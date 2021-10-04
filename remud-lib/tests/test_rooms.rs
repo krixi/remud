@@ -312,7 +312,7 @@ fn test_room_remove() {
         vec!["Room 1", "krixi", "object 1"],
     );
 
-    t.test("inspect object", "object 1 info", vec!["container: room 1"]);
+    t.test("inspect object", "object 1 info", vec!["location: room 1"]);
 
     t.test_many(
         "removing the room transports you and all items in it to the void room",

@@ -9,6 +9,7 @@ use crate::{
     text::Tokenizer,
     world::{
         action::{
+            get_room_std,
             immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
             into_action, Action, Mode,
         },
@@ -19,8 +20,8 @@ use crate::{
         },
         types::{
             object::{
-                Container, Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags,
-                ObjectId, ObjectOrPrototype, Objects, Prototype, PrototypeId, Prototypes,
+                Flags, InheritableFields, Keywords, Object, ObjectBundle, ObjectFlags, ObjectId,
+                ObjectOrPrototype, Objects, Prototype, PrototypeId, Prototypes,
             },
             player::{Messages, Player},
             room::Room,
@@ -229,7 +230,7 @@ pub fn object_create_system(
         &Keywords,
         Option<&ScriptHooks>,
     )>,
-    player_query: Query<&Location, With<Player>>,
+    player_query: Query<(Option<&Location>, Option<&Room>)>,
     mut room_query: Query<(&Room, &mut Contents)>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -252,10 +253,7 @@ pub fn object_create_system(
             let (named, description, flags, keywords, hooks) =
                 prototypes_query.get(prototype).unwrap();
 
-            let room_entity = player_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let room_entity = get_room_std(*actor, &player_query);
 
             let id = objects.next_id();
 
@@ -266,9 +264,8 @@ pub fn object_create_system(
                 description: description.clone(),
                 flags: flags.clone(),
                 keywords: keywords.clone(),
+                location: Location::from(room_entity),
             });
-
-            e.insert(Location::from(room_entity));
 
             if let Some(hooks) = hooks {
                 e.insert(hooks.clone());
@@ -321,7 +318,6 @@ pub fn object_info_system(
         &ObjectFlags,
         &Keywords,
         Option<&ScriptHooks>,
-        Option<&Container>,
         Option<&Location>,
         Option<&Timers>,
         Option<&StateMachine>,
@@ -351,7 +347,6 @@ pub fn object_info_system(
                 flags,
                 keywords,
                 hooks,
-                container,
                 location,
                 timers,
                 fsm,
@@ -381,19 +376,17 @@ pub fn object_info_system(
             message.push_str("\r\n  |white|keywords|-|: ");
             message.push_str(keywords.as_word_list().as_str());
 
-            message.push_str("\r\n  |white|container|-|: ");
-            if let Some(container) = container {
-                if let Ok(named) = player_query.get(container.entity()) {
+            message.push_str("\r\n  |white|location|-|: ");
+            if let Some(location) = location {
+                if let Ok(room) = room_query.get(location.location()) {
+                    message.push_str("room ");
+                    message.push_str(room.id().to_string().as_str());
+                } else if let Ok(named) = player_query.get(location.location()) {
                     message.push_str("player ");
                     message.push_str(named.as_str());
                 } else {
                     message.push_str("other ");
-                    message.push_str(format!("{:?}", container.entity()).as_str());
-                }
-            } else if let Some(location) = location {
-                if let Ok(room) = room_query.get(location.room()) {
-                    message.push_str("room ");
-                    message.push_str(room.id().to_string().as_str());
+                    message.push_str(format!("{:?}", location.location()).as_str());
                 }
             }
 
@@ -728,7 +721,6 @@ pub fn object_remove_system(
     mut action_reader: EventReader<Action>,
     mut objects: ResMut<Objects>,
     mut updates: ResMut<Updates>,
-    container_query: Query<&Container>,
     location_query: Query<&Location>,
     mut contents_query: Query<&mut Contents>,
     mut messages_query: Query<&mut Messages>,
@@ -744,21 +736,12 @@ pub fn object_remove_system(
                 continue;
             };
 
-            let container = if let Ok(container) = container_query.get(object_entity) {
-                container.entity()
-            } else if let Ok(location) = location_query.get(object_entity) {
-                location.room()
-            } else {
-                if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                    messages.queue(format!("Object {} not in a location or container.", id));
-                }
-                continue;
-            };
+            let location = location_query.get(object_entity).unwrap().location();
 
             objects.remove(*id);
             commands.entity(object_entity).despawn();
             contents_query
-                .get_mut(container)
+                .get_mut(location)
                 .unwrap()
                 .remove(object_entity);
 

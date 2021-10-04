@@ -4,7 +4,7 @@ use bevy_ecs::prelude::*;
 use crate::{
     text::Tokenizer,
     world::{
-        action::{into_action, Action},
+        action::{get_room_std, into_action, Action},
         types::{
             player::{Messages, Players},
             room::Room,
@@ -35,19 +35,18 @@ into_action!(Emote);
 #[tracing::instrument(name = "emote system", skip_all)]
 pub fn emote_system(
     mut action_reader: EventReader<Action>,
-    emoting_query: Query<(&Named, &Location)>,
-    mut present_query: Query<&mut Messages>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
+    named_query: Query<&Named>,
     room_query: Query<&Room>,
+    mut present_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::Emote(Emote { actor, emote }) = action {
-            let (name, room_entity) = if let Ok((named, location)) = emoting_query.get(*actor) {
-                (named.as_str(), location.room())
+            let room_entity = get_room_std(*actor, &location_query);
+            let name = if let Ok(named) = named_query.get(*actor) {
+                named.as_str()
             } else {
-                tracing::warn!(
-                    "Entity {:?} cannot emote without Named and Location.",
-                    actor
-                );
+                tracing::warn!("Entity {:?} cannot emote without Named.", actor);
                 continue;
             };
 
@@ -77,18 +76,13 @@ into_action!(Message);
 #[tracing::instrument(name = "message system", skip_all)]
 pub fn message_system(
     mut action_reader: EventReader<Action>,
-    messaging_query: Query<&Location>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     mut present_query: Query<&mut Messages>,
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
         if let Action::Message(Message { actor, message }) = action {
-            let room_entity = if let Ok(location) = messaging_query.get(*actor) {
-                location.room()
-            } else {
-                tracing::warn!("entity {:?} cannot message without Location.", actor);
-                continue;
-            };
+            let room_entity = get_room_std(*actor, &location_query);
 
             let room = room_query
                 .get(room_entity)
@@ -125,16 +119,18 @@ into_action!(Say);
 #[tracing::instrument(name = "say system", skip_all)]
 pub fn say_system(
     mut action_reader: EventReader<Action>,
-    saying_query: Query<(&Named, &Location)>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
+    saying_query: Query<&Named>,
     mut present_query: Query<&mut Messages>,
     room_query: Query<&Room>,
 ) {
     for action in action_reader.iter() {
         if let Action::Say(Say { actor, message }) = action {
-            let (name, room_entity) = if let Ok((named, location)) = saying_query.get(*actor) {
-                (named.as_str(), location.room())
+            let room_entity = get_room_std(*actor, &location_query);
+            let name = if let Ok(named) = saying_query.get(*actor) {
+                named.as_str()
             } else {
-                tracing::warn!("entity {:?} cannot say without Named and Location.", actor);
+                tracing::warn!("entity {:?} cannot say without Named.", actor);
                 continue;
             };
 

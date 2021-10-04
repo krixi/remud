@@ -11,7 +11,7 @@ use itertools::Itertools;
 use crate::{
     engine::persist::{self, Updates},
     world::{
-        action::{into_action, Action},
+        action::{get_room_std, into_action, Action},
         fsm::StateMachines,
         scripting::{
             time::Timers, ExecutionErrors, Script, ScriptData, ScriptHooks, ScriptName, ScriptRun,
@@ -42,7 +42,7 @@ pub fn initialize_system(
     players: Res<Players>,
     mut runs: ResMut<ScriptRuns>,
     hooks_query: Query<&ScriptHooks>,
-    location_query: Query<&Location>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -76,16 +76,7 @@ pub fn initialize_system(
                         continue;
                     }
                 }
-                ActionTarget::CurrentRoom => {
-                    if let Ok(location) = location_query.get(*actor) {
-                        location.room()
-                    } else {
-                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                            messages.queue("Current room not found.".to_string());
-                        }
-                        continue;
-                    }
-                }
+                ActionTarget::CurrentRoom => get_room_std(*actor, &location_query),
             };
 
             let mut queued = 0;
@@ -133,7 +124,7 @@ pub fn show_error_system(
     scripts: Res<Scripts>,
     errors_query: Query<&ExecutionErrors>,
     script_query: Query<&Script>,
-    location_query: Query<&Location>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -172,16 +163,7 @@ pub fn show_error_system(
                         continue;
                     }
                 }
-                ActionTarget::CurrentRoom => {
-                    if let Ok(location) = location_query.get(*actor) {
-                        location.room()
-                    } else {
-                        if let Ok(mut messages) = messages_query.get_mut(*actor) {
-                            messages.queue("Current room not found.".to_string());
-                        }
-                        continue;
-                    }
-                }
+                ActionTarget::CurrentRoom => get_room_std(*actor, &location_query),
             };
 
             let script_entity = if let Some(entity) = scripts.by_name(script) {
@@ -250,7 +232,7 @@ pub fn update_description_system(
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
     player_query: Query<&Player>,
-    location_query: Query<&Location>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<&Room>,
     mut description_query: Query<&mut Description>,
     mut messages_query: Query<&mut Messages>,
@@ -264,7 +246,7 @@ pub fn update_description_system(
         {
             let (id, entity) = match target {
                 ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room();
+                    let room = get_room_std(*actor, &location_query);
                     let id = room_query.get(room).unwrap().id();
                     (Id::Room(id), room)
                 }
@@ -351,7 +333,7 @@ pub fn update_name_system(
     objects: Res<Objects>,
     prototypes: Res<Prototypes>,
     mut updates: ResMut<Updates>,
-    location_query: Query<&Location>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<&Room>,
     mut name_query: Query<&mut Named>,
     mut messages_query: Query<&mut Messages>,
@@ -365,7 +347,7 @@ pub fn update_name_system(
         {
             let (id, entity) = match target {
                 ActionTarget::CurrentRoom => {
-                    let room = location_query.get(*actor).unwrap().room();
+                    let room = get_room_std(*actor, &location_query);
                     let id = room_query.get(room).unwrap().id();
                     (Id::Room(id), room)
                 }

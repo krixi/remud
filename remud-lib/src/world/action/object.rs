@@ -9,7 +9,7 @@ use crate::{
     world::{
         action::{into_action, Action},
         types::{
-            object::{Container, Flags, Keywords, Object, ObjectFlags},
+            object::{Flags, Keywords, Object, ObjectFlags},
             player::Messages,
             room::Room,
             Contents, Id, Location, Named,
@@ -67,7 +67,7 @@ pub fn drop_system(
                             })
                             .unwrap_or(false)
                     });
-                    (*id, location.room(), target)
+                    (*id, location.location(), target)
                 } else {
                     tracing::warn!("entity {:?} cannot drop an item without Contents.", actor);
                     continue;
@@ -81,9 +81,15 @@ pub fn drop_system(
                     .unwrap();
 
                 let room_id = {
-                    let (room, mut contents) = room_query
-                        .get_mut(room_entity)
-                        .expect("Location has valid Room");
+                    let (room, mut contents) = if let Ok(room) = room_query.get_mut(room_entity) {
+                        room
+                    } else {
+                        tracing::warn!(
+                            "entity {:?} cannot drop an item without being in a room.",
+                            actor
+                        );
+                        continue;
+                    };
 
                     contents.insert(entity);
                     room.id()
@@ -91,10 +97,7 @@ pub fn drop_system(
 
                 let (object_id, name) = {
                     let (object, named, _) = object_query.get(entity).unwrap();
-                    commands
-                        .entity(entity)
-                        .insert(Location::from(room_entity))
-                        .remove::<Container>();
+                    commands.entity(entity).insert(Location::from(room_entity));
 
                     (object.id(), named.as_str())
                 };
@@ -162,7 +165,7 @@ pub fn get_system(
             // Get the room that entity is in.
             let (entity_id, room_entity) =
                 if let Ok((id, location, _)) = getting_query.get_mut(*actor) {
-                    (*id, location.room())
+                    (*id, location.location())
                 } else {
                     tracing::warn!("entity {:?} without Contents cannot get an item.", actor);
                     continue;
@@ -188,7 +191,15 @@ pub fn get_system(
             let message = if let Some(entity) = target {
                 // Move the object from the room to the entity
                 let (room_id, object_entity) = {
-                    let (room, mut contents) = room_query.get_mut(room_entity).unwrap();
+                    let (room, mut contents) = if let Ok(room) = room_query.get_mut(room_entity) {
+                        room
+                    } else {
+                        tracing::warn!(
+                            "entity {:?} cannot drop an item without being in a room.",
+                            actor
+                        );
+                        continue;
+                    };
 
                     let (_, named, _, flags) = object_query.get(entity).unwrap();
                     if flags.contains(Flags::FIXED) {
@@ -215,8 +226,7 @@ pub fn get_system(
 
                     commands
                         .entity(object_entity)
-                        .insert(Container::from(*actor))
-                        .remove::<Location>();
+                        .insert(Location::from(*actor));
 
                     (object.id(), named.as_str())
                 };

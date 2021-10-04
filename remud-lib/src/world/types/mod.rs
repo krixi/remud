@@ -132,22 +132,22 @@ impl From<String> for Description {
 
 #[derive(Debug)]
 pub struct Location {
-    room: Entity,
+    location: Entity,
 }
 
 impl Location {
-    pub fn set_room(&mut self, room: Entity) {
-        self.room = room;
+    pub fn set_location(&mut self, room: Entity) {
+        self.location = room;
     }
 
-    pub fn room(&self) -> Entity {
-        self.room
+    pub fn location(&self) -> Entity {
+        self.location
     }
 }
 
 impl From<Entity> for Location {
     fn from(room: Entity) -> Self {
-        Location { room }
+        Location { location: room }
     }
 }
 

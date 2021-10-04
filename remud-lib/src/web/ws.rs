@@ -236,11 +236,11 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
         }
 
         // record capture
-        if let Some(m) = captures.name("escape") {
-            next_start = next_start + m.end();
+        if captures.name("escape").is_some() {
+            next_start += captures.get(0).unwrap().end();
             vec.push(WsMessageSegment::text("|".into()))
         } else if let Some(m) = captures.name("byte") {
-            next_start = next_start + captures.get(0).unwrap().end();
+            next_start += captures.get(0).unwrap().end();
             if let Ok(color) = Color256::from_str(m.as_str()) {
                 let color = ColorTrue::from(color);
                 open += 1;
@@ -249,7 +249,7 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
                 tracing::warn!("failed to capture matched 256 color: {}", m.as_str());
             }
         } else if let Some(m) = captures.name("true") {
-            next_start = next_start + captures.get(0).unwrap().end();
+            next_start += captures.get(0).unwrap().end();
             if let Ok(color) = ColorTrue::from_str(m.as_str()) {
                 open += 1;
                 vec.push(WsMessageSegment::color(color));
@@ -257,7 +257,7 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
                 tracing::warn!("failed to capture matched true color: {}", m.as_str());
             }
         } else if let Some(m) = captures.name("name") {
-            next_start = next_start + captures.get(0).unwrap().end();
+            next_start += captures.get(0).unwrap().end();
             if let Some(index) = COLOR_NAME_MAP.get(m.as_str().to_lowercase().as_str()) {
                 let color = ColorTrue::from(Color256::new(*index));
                 open += 1;
@@ -265,8 +265,8 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
             } else {
                 tracing::warn!("failed to match color name: {}", m.as_str());
             }
-        } else if let Some(m) = captures.name("clear") {
-            next_start = next_start + m.end();
+        } else if captures.name("clear").is_some() {
+            next_start += captures.get(0).unwrap().end();
             if open > 0 {
                 open -= 1;
                 vec.push(WsMessageSegment::end_color());

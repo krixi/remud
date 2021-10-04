@@ -6,7 +6,7 @@ use bevy_ecs::{prelude::*, schedule::SystemDescriptor};
 
 use crate::world::{
     scripting::time::Timers,
-    types::{object::Container, room::Room, Location},
+    types::{room::Room, Location},
 };
 
 pub type SharedWorld = Arc<RwLock<World>>;
@@ -157,22 +157,16 @@ impl WorldExt for World {
     }
 
     fn location_of(&self, entity: Entity) -> Entity {
-        if let Some(location) = self.get::<Location>(entity) {
-            location.room()
-        } else if self.entity(entity).contains::<Room>() {
-            entity
-        } else {
-            let mut contained = entity;
+        let mut location = entity;
 
-            while let Some(next_container) = self.get::<Container>(contained) {
-                contained = next_container.entity();
-            }
-
-            if let Some(location) = self.get::<Location>(contained) {
-                location.room()
+        while !self.entity(entity).contains::<Room>() {
+            if let Some(next_location) = self.get::<Location>(location) {
+                location = next_location.location();
             } else {
                 panic!("target entity {:?} not located within a room", entity)
             }
         }
+
+        location
     }
 }

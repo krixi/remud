@@ -49,9 +49,12 @@ pub fn move_system(
                 };
 
             // Retrieve information about the origin/current room.
-            let current_room = room_query
-                .get_mut(location.room())
-                .expect("Location contains a valid room.");
+            let current_room = if let Ok(room) = room_query.get_mut(location.location()) {
+                room
+            } else {
+                tracing::warn!("cannot move {:?} without being in a room.", actor);
+                continue;
+            };
 
             let (destination, origin_players, room_id) =
                 if let Some(destination) = current_room.exit(direction) {
@@ -91,7 +94,7 @@ pub fn move_system(
             let from_direction = destination_room
                 .exits()
                 .iter()
-                .find(|(_, room)| **room == location.room())
+                .find(|(_, room)| **room == location.location())
                 .map(|(direction, _)| direction)
                 .copied();
 
@@ -106,7 +109,7 @@ pub fn move_system(
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.room())
+                        .get_mut(location.location())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
@@ -116,7 +119,7 @@ pub fn move_system(
                 }
                 Id::Object(_) => {
                     contents_query
-                        .get_mut(location.room())
+                        .get_mut(location.location())
                         .unwrap()
                         .remove(*actor);
                     contents_query.get_mut(destination).unwrap().insert(*actor);
@@ -125,7 +128,7 @@ pub fn move_system(
                 Id::Prototype(_) => todo!(),
             }
 
-            location.set_room(destination);
+            location.set_location(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = from_direction.map_or_else(
@@ -219,10 +222,15 @@ pub fn teleport_system(
                     continue;
                 };
 
+            let current_room = if let Ok(room) = room_query.get_mut(location.location()) {
+                room
+            } else {
+                tracing::warn!("cannot teleport {:?} without being in a room.", actor);
+                continue;
+            };
+
             // Retrieve information about the origin/current room.
-            let origin_players = room_query
-                .get_mut(location.room())
-                .expect("Location contains a valid room.")
+            let origin_players = current_room
                 .players()
                 .iter()
                 .filter(|present_player| **present_player != *actor)
@@ -252,7 +260,7 @@ pub fn teleport_system(
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.room())
+                        .get_mut(location.location())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
@@ -265,7 +273,7 @@ pub fn teleport_system(
                 Id::Prototype(_) => todo!(),
             }
 
-            location.set_room(destination);
+            location.set_location(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = format!("{} appears in a flash of light.", name);

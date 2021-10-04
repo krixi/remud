@@ -182,7 +182,7 @@ async fn load_prototypes(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
 #[tracing::instrument(name = "loading room objects")]
 async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> DbResult<()> {
     let mut results = sqlx::query_as::<_, ObjectRow>(
-        r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, room_id AS container,
+        r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, room_id AS location,
                     COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
                     COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
                 FROM objects
@@ -194,7 +194,7 @@ async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> DbResult<()>
     let mut by_id = HashMap::new();
 
     while let Some(object_row) = results.try_next().await? {
-        let room_id = RoomId::try_from(object_row.container.unwrap())
+        let room_id = RoomId::try_from(object_row.location.unwrap())
             .map_err(|_| Error::Deserialize("room ID"))?;
         let room_entity = world
             .get_resource::<Rooms>()
@@ -211,10 +211,8 @@ async fn load_room_objects(pool: &SqlitePool, world: &mut World) -> DbResult<()>
             )
             .ok_or(Error::MissingData("prototype not found"))?;
 
-        let bundle = object_row.into_object_bundle(prototype)?;
-        let location = Location::from(room_entity);
-
-        let object_entity = world.spawn().insert_bundle(bundle).insert(location).id();
+        let bundle = object_row.into_object_bundle(prototype, Location::from(room_entity))?;
+        let object_entity = world.spawn().insert_bundle(bundle).id();
 
         world
             .get_mut::<Contents>(room_entity)

@@ -11,7 +11,7 @@ use crate::{
     world::{
         scripting::{RunInitScript, ScriptHook, ScriptHooks, TriggerKind},
         types::{
-            object::{Container, ObjectId, Objects, PrototypeId, Prototypes},
+            object::{ObjectId, Objects, PrototypeId, Prototypes},
             player::{Messages, Player, PlayerBundle, PlayerFlags, PlayerId, Players},
             room::{Room, RoomId, Rooms},
             Contents, Description, Id, Location, Named,
@@ -91,7 +91,7 @@ async fn load_player_inventory(
     player: Entity,
 ) -> anyhow::Result<()> {
     let mut results = sqlx::query_as::<_, ObjectRow>(
-        r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS container,
+        r#"SELECT objects.id, objects.prototype_id, objects.inherit_scripts, NULL AS location,
                     COALESCE(objects.name, prototypes.name) AS name, COALESCE(objects.description, prototypes.description) AS description,
                     COALESCE(objects.flags, prototypes.flags) AS flags, COALESCE(objects.keywords, prototypes.keywords) AS keywords
                 FROM objects
@@ -118,11 +118,8 @@ async fn load_player_inventory(
                 None => bail!("Prototype {} not found", object_row.prototype_id),
             };
 
-            let bundle = object_row.into_object_bundle(prototype)?;
-
-            let container = Container::from(player);
-
-            let object_entity = world.spawn().insert_bundle(bundle).insert(container).id();
+            let bundle = object_row.into_object_bundle(prototype, Location::from(player))?;
+            let object_entity = world.spawn().insert_bundle(bundle).id();
 
             world
                 .get_mut::<Contents>(player)

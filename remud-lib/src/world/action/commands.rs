@@ -461,7 +461,7 @@ fn default_commands() -> Vec<Command> {
                 Help::new(
                     "object <id> remove",
                     "Removes the object from the game world. This will remove all instances of \
-                     the object from rooms, players, and other containers.",
+                     the object from rooms, players, and other locations.",
                 )
                 .with_example("object 2 remove"),
             )

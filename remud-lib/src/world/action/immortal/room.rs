@@ -9,6 +9,7 @@ use crate::{
     text::{sorted_word_list, Tokenizer},
     world::{
         action::{
+            get_room_std,
             immortal::{Initialize, ShowError, UpdateDescription, UpdateName},
             into_action,
             observe::Look,
@@ -212,21 +213,16 @@ pub fn room_create_system(
     mut action_reader: EventReader<Action>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
-    player_query: Query<&Location, With<Player>>,
-    mut room_query: Query<&mut Room>,
+    mut room_set: QuerySet<(Query<(Option<&Location>, Option<&Room>)>, Query<&mut Room>)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomCreate(RoomCreate { actor, direction }) = action {
-            let current_room_entity = if let Ok(location) = player_query.get(*actor) {
-                location.room()
-            } else {
-                tracing::info!("player {:?} cannot create a room from nowhere.", actor);
-                continue;
-            };
+            let current_room_entity = get_room_std(*actor, &room_set.q0());
 
             if let Some(direction) = direction {
-                if room_query
+                if room_set
+                    .q1_mut()
                     .get_mut(current_room_entity)
                     .unwrap()
                     .exit(direction)
@@ -259,13 +255,14 @@ pub fn room_create_system(
             rooms.insert(new_room_id, new_room_entity);
 
             if let Some(direction) = direction {
-                room_query
+                room_set
+                    .q1_mut()
                     .get_mut(current_room_entity)
                     .unwrap()
                     .insert_exit(*direction, new_room_entity);
             }
 
-            let current_room_id = room_query.get_mut(current_room_entity).unwrap().id();
+            let current_room_id = room_set.q1_mut().get_mut(current_room_entity).unwrap().id();
             let mut update = UpdateGroup::new(vec![persist::room::Create::new(
                 new_room_id,
                 DEFAULT_ROOM_NAME.to_string(),
@@ -308,7 +305,7 @@ into_action!(RoomInfo);
 #[tracing::instrument(name = "room info system", skip_all)]
 pub fn room_info_system(
     mut action_reader: EventReader<Action>,
-    player_query: Query<&Location, With<Player>>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<(
         &Room,
         &Named,
@@ -326,12 +323,7 @@ pub fn room_info_system(
 ) {
     for action in action_reader.iter() {
         if let Action::RoomInfo(RoomInfo { actor }) = action {
-            let room_entity = if let Ok(location) = player_query.get(*actor) {
-                location.room()
-            } else {
-                tracing::info!("player {:?} cannot create a room from nowhere.", actor);
-                continue;
-            };
+            let room_entity = get_room_std(*actor, &location_query);
 
             let (room, named, description, regions, contents, hooks, timers, data, errors) =
                 room_query.get(room_entity).unwrap();
@@ -462,8 +454,7 @@ pub fn room_link_system(
     mut action_reader: EventReader<Action>,
     rooms: Res<Rooms>,
     mut updates: ResMut<Updates>,
-    player_query: Query<&Location, With<Player>>,
-    mut room_query: Query<&mut Room>,
+    mut room_set: QuerySet<(Query<(Option<&Location>, Option<&Room>)>, Query<&mut Room>)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
@@ -482,13 +473,10 @@ pub fn room_link_system(
                 continue;
             };
 
-            let from_room_entity = player_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let from_room_entity = get_room_std(*actor, &room_set.q0());
 
             let from_room_id = {
-                let mut from_room = room_query.get_mut(from_room_entity).unwrap();
+                let mut from_room = room_set.q1_mut().get_mut(from_room_entity).unwrap();
                 from_room.insert_exit(*direction, to_room_entity);
                 from_room.id()
             };
@@ -523,9 +511,9 @@ pub fn room_remove_system(
     mut queued_action_writer: EventWriter<QueuedAction>,
     mut rooms: ResMut<Rooms>,
     mut updates: ResMut<Updates>,
-    mut room_query: Query<(&mut Room, &mut Contents)>,
-    mut set: QuerySet<(
-        //these queries cannot be used at the same time, due to mutability conflict
+    mut room_set: QuerySet<(
+        Query<(Option<&Location>, Option<&Room>)>,
+        Query<(&mut Room, &mut Contents)>,
         Query<(&Player, &mut Location)>,
         Query<(&Object, &mut Location)>,
     )>,
@@ -533,14 +521,10 @@ pub fn room_remove_system(
 ) {
     for action in action_reader.iter() {
         if let Action::RoomRemove(RoomRemove { actor }) = action {
-            let room_entity = set
-                .q0_mut() // player_query
-                .get_mut(*actor)
-                .map(|(_, location)| location.room())
-                .unwrap();
+            let room_entity = get_room_std(*actor, &room_set.q0());
 
             // Retrieve information about the current room.
-            let (room, contents) = room_query.get_mut(room_entity).unwrap();
+            let (room, contents) = room_set.q1_mut().get_mut(room_entity).unwrap();
 
             if room.id() == *VOID_ROOM_ID {
                 if let Ok(mut messages) = messages_query.get_mut(*actor) {
@@ -556,7 +540,7 @@ pub fn room_remove_system(
             // Move all objects and players to the void room.
             let void_room_entity = rooms.by_id(*VOID_ROOM_ID).unwrap();
             {
-                let (mut room, mut contents) = room_query.get_mut(void_room_entity).unwrap();
+                let (mut room, mut contents) = room_set.q1_mut().get_mut(void_room_entity).unwrap();
                 for player in players.iter() {
                     room.insert_player(*player);
                 }
@@ -570,11 +554,12 @@ pub fn room_remove_system(
                     messages.queue("The world begins to disintegrate around you.".to_string());
                 }
 
-                set.q0_mut() // player_query
+                room_set
+                    .q2_mut() // player_query
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
-                    .set_room(void_room_entity);
+                    .set_location(void_room_entity);
 
                 queued_action_writer.send(
                     Action::from(Look {
@@ -586,11 +571,12 @@ pub fn room_remove_system(
             }
 
             for object in objects.iter() {
-                set.q1_mut() // object_query
+                room_set
+                    .q3_mut() // object_query
                     .get_mut(*object)
                     .map(|(_, location)| location)
                     .unwrap()
-                    .set_room(void_room_entity);
+                    .set_location(void_room_entity);
             }
 
             // Remove the room
@@ -598,7 +584,7 @@ pub fn room_remove_system(
             commands.entity(room_entity).despawn();
 
             // Find and remove all exits to the room
-            for (mut room, _) in room_query.iter_mut() {
+            for (mut room, _) in room_set.q1_mut().iter_mut() {
                 let to_remove = room
                     .exits()
                     .iter()
@@ -615,7 +601,8 @@ pub fn room_remove_system(
             let present_player_ids = players
                 .iter()
                 .filter_map(|player| {
-                    set.q0_mut() // player_query
+                    room_set
+                        .q2_mut() // player_query
                         .get_mut(*player)
                         .map(|(player, _)| player.id())
                         .ok()
@@ -625,7 +612,8 @@ pub fn room_remove_system(
             let present_object_ids = objects
                 .iter()
                 .filter_map(|object| {
-                    set.q1_mut() // object_query
+                    room_set
+                        .q3_mut() // object_query
                         .get_mut(*object)
                         .map(|(object, _)| object.id())
                         .ok()
@@ -664,18 +652,14 @@ into_action!(RoomUnlink);
 pub fn room_unlink_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
-    player_query: Query<&Location, With<Player>>,
-    mut room_query: Query<&mut Room>,
+    mut room_set: QuerySet<(Query<(Option<&Location>, Option<&Room>)>, Query<&mut Room>)>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::RoomUnlink(RoomUnlink { actor, direction }) = action {
-            let room_entity = player_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let room_entity = get_room_std(*actor, &room_set.q0());
 
-            let mut room = room_query.get_mut(room_entity).unwrap();
+            let mut room = room_set.q1_mut().get_mut(room_entity).unwrap();
 
             let removed = room.remove_exit(direction).is_some();
 
@@ -707,7 +691,7 @@ into_action!(RoomUpdateRegions);
 pub fn room_update_regions_system(
     mut action_reader: EventReader<Action>,
     mut updates: ResMut<Updates>,
-    player_query: Query<&Location, With<Player>>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     mut room_query: Query<(&Room, &mut Regions)>,
     mut messages_query: Query<&mut Messages>,
 ) {
@@ -718,10 +702,7 @@ pub fn room_update_regions_system(
             regions,
         }) = action
         {
-            let room_entity = player_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let room_entity = get_room_std(*actor, &location_query);
 
             let (room, mut room_regions) = room_query.get_mut(room_entity).unwrap();
 

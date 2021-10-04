@@ -7,7 +7,7 @@ use crate::world::{
         time::Timers, QueuedAction, RunInitScript, ScriptHooks, ScriptRun, ScriptRuns,
         ScriptTrigger, TriggerEvent,
     },
-    types::{object::Container, room::Room, Contents, Location},
+    types::{room::Room, Contents, Location},
 };
 
 pub fn init_script_runs_system(
@@ -41,7 +41,6 @@ pub fn pre_event_script_runs_system(
     mut script_runs: ResMut<ScriptRuns>,
     room_query: Query<&Room>,
     location_query: Query<&Location>,
-    container_query: Query<&Container>,
     contents_query: Query<&Contents>,
     hooks_query: Query<&ScriptHooks>,
 ) {
@@ -57,15 +56,7 @@ pub fn pre_event_script_runs_system(
         let enactor = action.actor();
 
         // Determine the location the action took place. If we can't, we give the action a pass.
-        let room = if let Some(room) =
-            action_room(enactor, &room_query, &location_query, &container_query)
-        {
-            room
-        } else {
-            tracing::warn!("unable to determine location of action {:?}", action);
-            action_writer.send(action.clone());
-            continue;
-        };
+        let room = action_room(enactor, &location_query);
 
         // Check if any scripts need to run for this action
         let runs = get_script_runs(
@@ -89,7 +80,6 @@ pub fn post_action_script_runs_system(
     mut script_runs: ResMut<ScriptRuns>,
     room_query: Query<&Room>,
     location_query: Query<&Location>,
-    container_query: Query<&Container>,
     contents_query: Query<&Contents>,
     hooks_query: Query<&ScriptHooks>,
 ) {
@@ -101,14 +91,7 @@ pub fn post_action_script_runs_system(
 
         let enactor = action.actor();
 
-        let room = if let Some(room) =
-            action_room(enactor, &room_query, &location_query, &container_query)
-        {
-            room
-        } else {
-            tracing::warn!("unable to determine location of action {:?}", action);
-            continue;
-        };
+        let room = action_room(enactor, &location_query);
 
         let runs = get_script_runs(
             ScriptTrigger::PostEvent(trigger_event),
@@ -124,28 +107,14 @@ pub fn post_action_script_runs_system(
     }
 }
 
-fn action_room(
-    enactor: Entity,
-    room_query: &Query<&Room>,
-    location_query: &Query<&Location>,
-    container_query: &Query<&Container>,
-) -> Option<Entity> {
-    if let Ok(location) = location_query.get(enactor) {
-        Some(location.room())
-    } else if room_query.get(enactor).is_ok() {
-        Some(enactor)
-    } else {
-        let mut containing_entity = enactor;
+fn action_room(enactor: Entity, location_query: &Query<&Location>) -> Entity {
+    let mut location = enactor;
 
-        while let Ok(container) = container_query.get(containing_entity) {
-            containing_entity = container.entity();
-        }
-
-        location_query
-            .get(containing_entity)
-            .map(|location| location.room())
-            .ok()
+    while let Ok(next_location) = location_query.get(location) {
+        location = next_location.location();
     }
+
+    location
 }
 
 fn get_script_runs(

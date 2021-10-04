@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::{
     text::{sorted_word_list, Tokenizer},
     world::{
-        action::{into_action, Action},
+        action::{get_room_std, into_action, Action},
         types::{
             object::{Flags, Keywords, ObjectFlags},
             player::{Messages, Player},
@@ -62,7 +62,7 @@ into_action!(Look);
 #[tracing::instrument(name = "look system", skip_all)]
 pub fn look_system(
     mut action_reader: EventReader<Action>,
-    looker_query: Query<&Location, With<Player>>,
+    looker_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<(&Room, &Named, &Description, &Contents)>,
     player_query: Query<&Named>,
     object_query: Query<(&Named, &ObjectFlags)>,
@@ -70,10 +70,7 @@ pub fn look_system(
 ) {
     for action in action_reader.iter() {
         if let Action::Look(Look { actor, direction }) = action {
-            let current_room = looker_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let current_room = get_room_std(*actor, &looker_query);
 
             let target_room = if let Some(direction) = direction {
                 if let Some(room) = room_query
@@ -153,7 +150,7 @@ into_action!(LookAt);
 #[tracing::instrument(name = "look at system", skip_all)]
 pub fn look_at_system(
     mut action_reader: EventReader<Action>,
-    looker_query: Query<&Location, With<Player>>,
+    looker_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<&Room>,
     contents_query: Query<&Contents>,
     player_query: Query<(&Named, &Description)>,
@@ -162,11 +159,10 @@ pub fn look_at_system(
 ) {
     for action in action_reader.iter() {
         if let Action::LookAt(LookAt { actor, keywords }) = action {
-            let target_info = looker_query
-                .get(*actor)
+            let current_room = get_room_std(*actor, &looker_query);
+            let target_info = room_query
+                .get(current_room)
                 .ok()
-                .map(|location| location.room())
-                .and_then(|room| room_query.get(room).ok())
                 .and_then(|room| {
                     if keywords.len() == 1 {
                         room.players()
@@ -179,21 +175,16 @@ pub fn look_at_system(
                     }
                 })
                 .or_else(|| {
-                    looker_query
-                        .get(*actor)
-                        .ok()
-                        .map(|location| location.room())
-                        .and_then(|room| contents_query.get(room).ok())
-                        .and_then(|contents| {
-                            contents
-                                .objects()
-                                .iter()
-                                .filter_map(|object| object_query.get(*object).ok())
-                                .find(|(_, _, object_keywords)| {
-                                    object_keywords.contains_all(keywords.as_slice())
-                                })
-                                .map(|(name, description, _)| (name.as_str(), description.as_str()))
-                        })
+                    contents_query.get(current_room).ok().and_then(|contents| {
+                        contents
+                            .objects()
+                            .iter()
+                            .filter_map(|object| object_query.get(*object).ok())
+                            .find(|(_, _, object_keywords)| {
+                                object_keywords.contains_all(keywords.as_slice())
+                            })
+                            .map(|(name, description, _)| (name.as_str(), description.as_str()))
+                    })
                 })
                 .or_else(|| {
                     contents_query.get(*actor).ok().and_then(|contents| {
@@ -209,7 +200,7 @@ pub fn look_at_system(
                 });
 
             let resp: Vec<String> = if let Some((name, description)) = target_info {
-                vec![format!("|white|{}|-|", name), format!("{}", description)]
+                vec![format!("|white|{}|-|", name), description.to_string()]
             } else {
                 vec![format!(
                     "You find nothing called \"{}\" to look at.",
@@ -236,16 +227,13 @@ into_action!(Exits);
 #[tracing::instrument(name = "exits system", skip_all)]
 pub fn exits_system(
     mut action_reader: EventReader<Action>,
-    exiter_query: Query<&Location, With<Player>>,
+    exiter_query: Query<(Option<&Location>, Option<&Room>)>,
     room_query: Query<&Room>,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::Exits(Exits { actor }) = action {
-            let current_room = exiter_query
-                .get(*actor)
-                .map(|location| location.room())
-                .unwrap();
+            let current_room = get_room_std(*actor, &exiter_query);
 
             let exits = room_query
                 .get(current_room)

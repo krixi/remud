@@ -158,7 +158,7 @@ where
     let cors = if cors.is_empty() {
         warp::cors().allow_any_origin()
     } else {
-        warp::cors().allow_origins(cors.into_iter().map(|c| *c))
+        warp::cors().allow_origins(cors.iter().copied())
     }
     .allow_methods(vec!["POST", "OPTIONS"])
     .allow_headers(vec!["content-type", "x-requested-with", "authorization"]);

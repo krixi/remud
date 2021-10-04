@@ -53,6 +53,7 @@ use crate::{
             system::{login_system, restart_system, shutdown_system, Login, Restart, Shutdown},
         },
         scripting::QueuedAction,
+        types::{room::Room, Location},
     },
 };
 
@@ -74,6 +75,24 @@ macro_rules! into_action {
             }
         }
     };
+}
+
+fn get_room_std(entity: Entity, query: &Query<(Option<&Location>, Option<&Room>)>) -> Entity {
+    let mut entity = entity;
+
+    while let Some(next_entity) = query.get(entity).ok().and_then(|(location, room)| {
+        if room.is_some() {
+            None
+        } else if let Some(location) = location {
+            Some(location.location())
+        } else {
+            panic!("Entity {:?} does not have a location", entity);
+        }
+    }) {
+        entity = next_entity;
+    }
+
+    entity
 }
 
 use crate::world::action::immortal::prototype::prototype_list_system;

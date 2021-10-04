@@ -75,7 +75,7 @@ pub enum EngineResponse {
 }
 
 impl EngineResponse {
-    pub fn with_message<'a>(message: Cow<'a, str>) -> Self {
+    pub fn with_message(message: Cow<str>) -> Self {
         Output::Message(message.to_owned().to_string()).into()
     }
 
