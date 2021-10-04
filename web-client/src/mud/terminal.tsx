@@ -25,37 +25,39 @@ export const Terminal: React.FC = () => {
 
   // render assembles a JSX element from a chat line.
   const render = useCallback((m: ChatLine): JSX.Element => {
-    // This supports nested colors by maintaining a color stack
-    let colors: string[] = [];
-    const wrapInColor = (msg: JSX.Element): JSX.Element => {
+    let result: JSX.Element[] = [];
+    let colors: string[] = []; // stack of colors used
+    const wrapInColor = (msg: string): JSX.Element => {
       const color = colors.pop();
-      return color ? <span style={{ color: `#${color}` }}>{msg}</span> : msg;
+      return color ? (
+        <span style={{ color: `#${color}` }}>{msg}</span>
+      ) : (
+        <>{msg}</>
+      );
     };
 
-    // Assemble the segments into a line
-    let msg = <></>;
     let current = 0;
+    let phrase = "";
     while (current < m.segments.length) {
       const segment = m.segments[current];
       if (isMessage(segment)) {
-        msg = (
-          <>
-            {msg}
-            {getMessage(segment)}
-          </>
-        );
+        phrase = `${phrase}${getMessage(segment)}`;
       } else if (isColorStart(segment)) {
+        // const m = msg[msg.length-1];
+        result.push(<>{phrase}</>);
         colors.push(getColor(segment));
+        phrase = "";
       } else if (isColorEnd(segment)) {
-        msg = wrapInColor(msg);
+        result.push(wrapInColor(phrase));
+        phrase = "";
       }
       current++;
     }
-    while (colors.length > 0) {
-      msg = wrapInColor(msg);
+    if (phrase) {
+      result.push(wrapInColor(phrase));
     }
 
-    return msg;
+    return <>{result.map((m) => m)}</>;
   }, []);
 
   return (

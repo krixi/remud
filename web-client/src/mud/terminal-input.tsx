@@ -86,7 +86,10 @@ export interface PublicProps {
   isSensitivePrompt: boolean;
 }
 
-export const TerminalInput: React.FC<PublicProps> = ({ send , isSensitivePrompt }) => {
+export const TerminalInput: React.FC<PublicProps> = ({
+  send,
+  isSensitivePrompt,
+}) => {
   const [state, dispatch] = useReducer(reducer, {
     current: 0,
     commands: [],
@@ -100,7 +103,8 @@ export const TerminalInput: React.FC<PublicProps> = ({ send , isSensitivePrompt 
       dispatch({
         kind: isSensitivePrompt
           ? TerminalActionKind.SubmitSensitive
-          : TerminalActionKind.Submit, command: cmd
+          : TerminalActionKind.Submit,
+        command: cmd,
       });
     },
     [send, isSensitivePrompt]
