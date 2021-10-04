@@ -26,6 +26,11 @@ export const Terminal: React.FC = () => {
 
   // render assembles a JSX element from a chat line.
   const render = useCallback((m: ChatLine): JSX.Element => {
+    // skip unmodified prompts
+    if (m.is_prompt && !m.is_updated) {
+      return <div>&nbsp;</div>;
+    }
+
     let result: JSX.Element[] = [];
     let colors: string[] = []; // stack of colors used
     const wrapInColor = (msg: string): JSX.Element => {
@@ -58,7 +63,13 @@ export const Terminal: React.FC = () => {
       result.push(wrapInColor(phrase));
     }
 
-    return <>{result.map((m) => m)}</>;
+    return (
+      <>
+        {result.map((m, i) => (
+          <span key={i}>{m}</span>
+        ))}
+      </>
+    );
   }, []);
 
   const focusListener = useMemo(() => {

@@ -112,7 +112,7 @@ export const TerminalInput: React.FC<PublicProps> = ({
       ele.focus();
       focusComplete();
     }
-  }, [shouldFocus]);
+  }, [shouldFocus, focusComplete]);
 
   const onSubmit = useCallback(
     (e: FormEvent, cmd: string) => {

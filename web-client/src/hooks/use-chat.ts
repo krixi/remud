@@ -37,6 +37,7 @@ export interface ChatLine {
   segments: MessageSegment[];
   is_prompt?: boolean;
   is_sensitive?: boolean;
+  is_updated?: boolean; // whether or not this is a prompt that's been updated by the client
 }
 
 export interface PlayerMessage {
@@ -83,6 +84,7 @@ const reducer = (state: ChatState, action: ChatAction): ChatState => {
               text: action.from_client,
             },
           });
+          state.messages[idx].is_updated = true;
         }
         break;
       }
