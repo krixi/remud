@@ -19,6 +19,11 @@ export const TerminalPage: React.FC = () => {
                 autoFocus
                 className="btn text-3xl font-mono outline-none focus:border-blue-500 animate-pulse"
                 onClick={(e) => setClicked(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Space") {
+                    setClicked(true);
+                  }
+                }}
               >
                 Connect
               </button>

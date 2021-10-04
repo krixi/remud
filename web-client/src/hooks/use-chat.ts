@@ -67,7 +67,9 @@ const reducer = (state: ChatState, action: ChatAction): ChatState => {
   if (action.from_server) {
     return {
       ...state,
-      isSensitivePrompt: !!(action.from_server.is_prompt && action.from_server.is_sensitive),
+      isSensitivePrompt: !!(
+        action.from_server.is_prompt && action.from_server.is_sensitive
+      ),
       messages: [...state.messages, action.from_server],
     };
   } else if (action.from_client) {
