@@ -8,7 +8,7 @@ export const ScriptApiBaseUrl = () => {
 
 export const WebsocketBaseUrl = () => {
   if (process.env.NODE_ENV === "production") {
-    return "ws://uplink.city-six.com/ws";
+    return "wss://uplink.city-six.com/ws";
   } else {
     return "ws://localhost:2080/ws";
   }
