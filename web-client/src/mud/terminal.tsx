@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ChatLine,
   getColor,
@@ -10,6 +10,7 @@ import {
 } from "../hooks/use-chat";
 import { ConnectionStatus } from "./connection-status";
 import { TerminalInput } from "./terminal-input";
+import { BehaviorSubject } from "rxjs";
 
 export const Terminal: React.FC = () => {
   const { isConnected, isSensitivePrompt, messages, send } = useChat();
@@ -60,9 +61,22 @@ export const Terminal: React.FC = () => {
     return <>{result.map((m) => m)}</>;
   }, []);
 
+  const focusListener = useMemo(() => {
+    return new BehaviorSubject<boolean>(false);
+  }, []);
+  const focusComplete = useCallback(() => {
+    focusListener.next(false);
+  }, [focusListener]);
+
   return (
     <>
-      <div className="container bg-black text-gray-69 mx-auto mt-1 rounded p-5 flex flex-col-reverse items-stretch vh-85 md:vh-90">
+      <div
+        className="container bg-black text-gray-69 mx-auto mt-1 rounded p-5 flex flex-col-reverse items-stretch vh-85 md:vh-90"
+        onClick={(e) => {
+          e.preventDefault();
+          focusListener.next(true);
+        }}
+      >
         <div className="flex flex-row-reverse">
           <ConnectionStatus isConnected={isConnected} />
         </div>
@@ -77,7 +91,12 @@ export const Terminal: React.FC = () => {
       </div>
 
       <div className="fixed bottom-2 left-0 w-full">
-        <TerminalInput send={send} isSensitivePrompt={isSensitivePrompt} />
+        <TerminalInput
+          send={send}
+          isSensitivePrompt={isSensitivePrompt}
+          refocus={focusListener}
+          focusComplete={focusComplete}
+        />
       </div>
     </>
   );
