@@ -96,7 +96,9 @@ export const Terminal: React.FC = () => {
           className="overflow-y-auto font-mono whitespace-pre-wrap"
         >
           {messages.map((m, i) => (
-            <div key={i}>{render(m)}</div>
+            <div key={i} className={m.is_connected ? "" : "text-red-600"}>
+              {render(m)}
+            </div>
           ))}
         </div>
       </div>
