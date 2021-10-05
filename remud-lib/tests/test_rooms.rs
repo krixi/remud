@@ -41,7 +41,7 @@ fn assert_there_and_back_again(t: &mut TelnetPlayer, from: (u32, &str), to: (u32
 // Tests the room immortal commands
 #[test]
 fn test_room_new() {
-    let (_server, mut t) = Server::new_connect("krixi", "password");
+    let (_server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test("create a new room", "room new", vec!["Created room 1"]);
     t.test("teleport to it", "teleport 1", vec!["An empty room"]);
@@ -62,7 +62,7 @@ fn test_room_new() {
 
 #[test]
 fn test_room_name() {
-    let (_server, mut t) = Server::new_connect("krixi", "password");
+    let (_server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test(
         "Check that we are in The Void room before changing",
@@ -88,7 +88,7 @@ fn test_room_name() {
 
 #[test]
 fn test_room_desc() {
-    let (_server, mut t) = Server::new_connect("krixi", "password");
+    let (_server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test(
         "Check that we are in The Void room before changing",
@@ -171,7 +171,7 @@ fn assert_link_and_unlink(t: &mut TelnetPlayer, there: &str, back: &str) {
 
 #[test]
 fn test_room_link_and_unlink() {
-    let (_server, mut t) = Server::new_connect("krixi", "password");
+    let (_server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test("create a new room", "room new", vec!["Created room 1"]);
     assert_link_and_unlink(&mut t, "north", "south");
@@ -181,7 +181,7 @@ fn test_room_link_and_unlink() {
 
 #[test]
 fn test_room_region() {
-    let (mut server, mut t) = Server::new_connect("krixi", "password");
+    let (mut server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test(
         "adding one region",
@@ -288,7 +288,7 @@ fn test_room_region() {
 
 #[test]
 fn test_room_remove() {
-    let (mut server, mut t) = Server::new_connect("krixi", "password");
+    let (mut server, mut t) = Server::new_create_player("krixi", "password");
 
     t.test(
         "create a new room",

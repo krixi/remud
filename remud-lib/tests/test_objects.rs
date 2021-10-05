@@ -4,7 +4,7 @@ use remud_test::Server;
 // test inventory, get and drop
 #[test]
 fn test_object_keywords() {
-    let (mut server, mut t) = Server::new_connect("krixi", "(*&%(*#&%*&");
+    let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&");
     t.test(
         "create a prototype",
         "prototype new",
@@ -77,7 +77,7 @@ fn test_object_keywords() {
 // test removing an object
 #[test]
 fn test_object_remove() {
-    let (mut server, mut t) = Server::new_connect("krixi", "(*&%(*#&%*&");
+    let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&");
     t.test(
         "create a prototype",
         "prototype new",

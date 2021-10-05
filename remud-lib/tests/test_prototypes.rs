@@ -2,7 +2,7 @@ use remud_test::Server;
 
 #[test]
 fn test_prototype_new() {
-    let (mut server, mut t) = Server::new_connect("shane", "password");
+    let (mut server, mut t) = Server::new_create_player("shane", "password");
 
     t.test(
         "create a prototype",
@@ -85,7 +85,7 @@ fn test_prototype_new() {
 
 #[test]
 fn test_prototype_list() {
-    let (mut server, mut t) = Server::new_connect("krixi", "password");
+    let (mut server, mut t) = Server::new_create_player("krixi", "password");
     t.test(
         "create a prototype",
         "prototype new",
@@ -126,7 +126,7 @@ fn test_prototype_list() {
 
 #[test]
 fn test_prototype_flags() {
-    let (mut server, mut t) = Server::new_connect("shane", "some^gibberish$password");
+    let (mut server, mut t) = Server::new_create_player("shane", "some^gibberish$password");
 
     t.test(
         "create a prototype",
@@ -235,7 +235,7 @@ fn test_prototype_flags() {
 
 #[test]
 fn test_prototype_name() {
-    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
+    let (mut server, mut t) = Server::new_create_player("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -344,7 +344,7 @@ fn test_prototype_name() {
 
 #[test]
 fn test_prototype_desc() {
-    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
+    let (mut server, mut t) = Server::new_create_player("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -453,7 +453,7 @@ fn test_prototype_desc() {
 
 #[test]
 fn test_prototype_keywords() {
-    let (mut server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
+    let (mut server, mut t) = Server::new_create_player("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",
@@ -566,7 +566,7 @@ fn test_prototype_keywords() {
 
 #[test]
 fn test_prototype_remove() {
-    let (_server, mut t) = Server::new_connect("shane", "(*&%(*#&%*&");
+    let (_server, mut t) = Server::new_create_player("shane", "(*&%(*#&%*&");
 
     t.test(
         "create a prototype",

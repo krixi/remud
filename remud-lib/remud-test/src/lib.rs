@@ -56,13 +56,19 @@ impl Server {
         }
     }
 
-    pub fn new_connect<S1: AsRef<str>, S2: AsRef<str>>(
+    pub fn new_create_player<S1: AsRef<str>, S2: AsRef<str>>(
         player: S1,
         password: S2,
     ) -> (Server, TelnetPlayer) {
         let mut server = Server::default();
-        let telnet = server.create_user(player, password);
+        let telnet = server.create_player(player, password);
         (server, telnet)
+    }
+
+    pub fn new_connect() -> (Server, TelnetConnection) {
+        let server = Server::default();
+        let connection = TelnetConnection::new(server.telnet());
+        (server, connection)
     }
 
     pub fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
@@ -71,35 +77,48 @@ impl Server {
         drop(client);
 
         self.ready();
-        self.login_user(player, password)
+        self.login_player(player, password)
     }
 
-    pub fn create_user<S1: AsRef<str>, S2: AsRef<str>>(
+    pub fn connect(&self) -> TelnetConnection {
+        TelnetConnection::new(self.telnet())
+    }
+
+    pub fn create_player<S1: AsRef<str>, S2: AsRef<str>>(
         &mut self,
         player: S1,
         password: S2,
     ) -> TelnetPlayer {
         let mut connection = TelnetConnection::new(self.telnet());
 
-        connection.info("create user");
+        connection.info("create player");
         connection.recv_contains("Connected to");
         connection.recv_contains("Name?");
         connection.recv_prompt();
-        connection.send(player.as_ref());
-        connection.recv_contains("New user detected.");
-        connection.recv_contains("Password?");
-        connection.recv_prompt();
-        connection.send(password.as_ref());
-        connection.recv_contains("Password accepted.");
-        connection.recv_contains("Verify?");
-        connection.recv_prompt();
-        connection.send(password.as_ref());
-        connection.recv_contains("Password verified.");
-        connection.recv(); // blank line 1
-        connection.recv_contains("Welcome to City Six.");
-        connection.recv(); // blank line 2
-        connection.recv(); // ignore the look that happens when we log in
-        connection.recv_prompt();
+
+        connection.test_many(
+            "enter player name",
+            player.as_ref(),
+            vec![vec!["New user detected."], vec!["Password?"]],
+        );
+
+        connection.test_many(
+            "enter password",
+            password.as_ref(),
+            vec![vec!["Password accepted."], vec!["Verify?"]],
+        );
+
+        connection.test_many(
+            "verify password",
+            password.as_ref(),
+            vec![
+                vec!["Password verified."],
+                vec![],
+                vec!["Welcome to City Six."],
+                vec![],
+                vec!["The Void"],
+            ],
+        );
 
         TelnetPlayer {
             player: player.as_ref().to_string(),
@@ -108,28 +127,35 @@ impl Server {
         }
     }
 
-    pub fn login_user<S1: AsRef<str>, S2: AsRef<str>>(
+    pub fn login_player<S1: AsRef<str>, S2: AsRef<str>>(
         &mut self,
         player: S1,
         password: S2,
     ) -> TelnetPlayer {
         let mut connection = TelnetConnection::new(self.telnet());
 
-        connection.info("login user");
+        connection.info("login player");
         connection.recv_contains("Connected to");
         connection.recv_contains("Name?");
         connection.recv_prompt();
-        connection.send(player.as_ref());
-        connection.recv_contains("User located.");
-        connection.recv_contains("Password?");
-        connection.recv_prompt();
-        connection.send(password.as_ref());
-        connection.recv_contains("Password verified.");
-        connection.recv(); // blank line 1
-        connection.recv_contains("Welcome to City Six.");
-        connection.recv(); // blank line 2
-        connection.recv(); // ignore the look that happens when we log in
-        connection.recv_prompt();
+
+        connection.test_many(
+            "enter player name",
+            player.as_ref(),
+            vec![vec!["User located."], vec!["Password?"]],
+        );
+
+        connection.test_many(
+            "enter password",
+            password.as_ref(),
+            vec![
+                vec!["Password verified."],
+                vec![],
+                vec!["Welcome to City Six."],
+                vec![],
+                vec!["The Void"],
+            ],
+        );
 
         TelnetPlayer {
             player: player.as_ref().to_string(),
@@ -296,29 +322,7 @@ impl TelnetConnection {
     pub fn recv_prompt(&mut self) {
         self.recv_contains(">");
     }
-}
 
-pub struct TelnetPlayer {
-    player: String,
-    password: String,
-    connection: TelnetConnection,
-}
-
-impl std::ops::Deref for TelnetPlayer {
-    type Target = TelnetConnection;
-
-    fn deref(&self) -> &Self::Target {
-        &self.connection
-    }
-}
-
-impl std::ops::DerefMut for TelnetPlayer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.connection
-    }
-}
-
-impl TelnetPlayer {
     pub fn test<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
         &mut self,
         scenario: S1,
@@ -373,6 +377,28 @@ impl TelnetPlayer {
         self.recv_prompt();
     }
 }
+
+pub struct TelnetPlayer {
+    player: String,
+    password: String,
+    connection: TelnetConnection,
+}
+
+impl std::ops::Deref for TelnetPlayer {
+    type Target = TelnetConnection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connection
+    }
+}
+
+impl std::ops::DerefMut for TelnetPlayer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
+    }
+}
+
+impl TelnetPlayer {}
 
 enum Validate<S: AsRef<str>> {
     Includes(Vec<S>),
