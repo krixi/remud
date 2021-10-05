@@ -16,7 +16,7 @@ use crate::{
                 room::parse_room, script::parse_script, UpdateDescription,
             },
             movement::{parse_teleport, Move},
-            object::{parse_drop, parse_get, Inventory},
+            object::{parse_drop, parse_get, parse_use, Inventory},
             observe::{parse_look, Exits, Who},
             system::{Restart, Shutdown},
             Action,
@@ -566,7 +566,7 @@ fn default_commands() -> Vec<Command> {
                 "info",
                 Help::new(
                     "prototype <id> info",
-                    "Displays information about an prototype.",
+                    "Displays information about a prototype.",
                 )
                 .with_example("prototype 2 info"),
             )
@@ -581,6 +581,10 @@ fn default_commands() -> Vec<Command> {
                      disambiguation.",
                 )
                 .with_example("prototype 2 keywords set fuzzy bear"),
+            )
+            .with_subhelp(
+                "list",
+                Help::new("prototype list", "Lists all prototypes by name and ID."),
             )
             .with_subhelp(
                 "name",
@@ -864,6 +868,14 @@ fn default_commands() -> Vec<Command> {
             }))
         },
         Help::new("west", "Moves you to the room to the west, if possible."),
+    ));
+    commands.push(Command::new(
+        "use",
+        parse_use,
+        Help::new(
+            "use <keyword> [<keyword>..]",
+            "Uses the item indicated by the specified keyword(s), if possible.",
+        ),
     ));
     commands.push(Command::new(
         "who",

@@ -366,6 +366,15 @@ impl ScriptHooks {
             .map(|hook| hook.script.clone())
             .collect_vec()
     }
+
+    pub fn triggers_on(&self, trigger_event: TriggerEvent) -> bool {
+        self.list.iter().any(|hook| match hook.trigger {
+            ScriptTrigger::PostEvent(event) | ScriptTrigger::PreEvent(event) => {
+                event == trigger_event
+            }
+            _ => false,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -470,6 +479,7 @@ pub enum TriggerEvent {
     Say,
     Send,
     Timer,
+    Use,
 }
 
 impl TriggerEvent {
@@ -514,6 +524,7 @@ impl TriggerEvent {
             Action::UpdateKeywords(_) => None,
             Action::UpdateName(_) => None,
             Action::UpdateObjectFlags(_) => None,
+            Action::Use(_) => Some(TriggerEvent::Use),
             Action::Who(_) => None,
         }
     }
@@ -534,6 +545,7 @@ impl fmt::Display for TriggerEvent {
             TriggerEvent::Say => write!(f, "Say"),
             TriggerEvent::Send => write!(f, "Send"),
             TriggerEvent::Timer => write!(f, "Timer"),
+            TriggerEvent::Use => write!(f, "Use"),
         }
     }
 }

@@ -2,6 +2,7 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::world::scripting::{ScriptHooks, TriggerEvent};
 use crate::{
     engine::persist::{self, Updates},
     text::Tokenizer,
@@ -284,6 +285,95 @@ pub fn inventory_system(
                     message.push_str(named.as_str());
                 }
             }
+
+            if let Ok(mut messages) = messages_query.get_mut(*actor) {
+                messages.queue(message);
+            }
+        }
+    }
+}
+
+pub fn parse_use(player: Entity, tokenizer: Tokenizer) -> Result<Action, String> {
+    if tokenizer.rest().is_empty() {
+        return Err("Use what?".to_string());
+    }
+
+    let keywords = tokenizer
+        .rest()
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect_vec();
+
+    Ok(Action::from(Use {
+        actor: player,
+        keywords,
+    }))
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Use {
+    pub actor: Entity,
+    pub keywords: Vec<String>,
+}
+
+into_action!(Use);
+
+#[tracing::instrument(name = "use system", skip_all)]
+pub fn use_system(
+    mut action_reader: EventReader<Action>,
+    mut using_query: Query<&Location, Without<Room>>,
+    mut room_query: Query<(&Room, &mut Contents), With<Room>>,
+    object_query: Query<(&Object, &Named, &Keywords)>,
+    scripts_query: Query<&ScriptHooks>,
+    mut messages_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::Use(Use { actor, keywords }) = action {
+            // Get the room that entity is in.
+            let room_entity = if let Ok(location) = using_query.get_mut(*actor) {
+                location.room()
+            } else {
+                tracing::warn!("entity {:?} without Contents cannot get an item.", actor);
+                continue;
+            };
+            // Find a matching object in the room.
+            let target = room_query
+                .get_mut(room_entity)
+                .map(|(_, contents)| {
+                    contents.find(|object| {
+                        object_query
+                            .get(object)
+                            .map(|(_, object_named, object_keywords)| {
+                                {
+                                    object_keywords.contains_all(keywords.as_slice())
+                                        || object_named.eq(keywords.join(" "))
+                                }
+                            })
+                            .unwrap_or(false)
+                    })
+                })
+                .expect("Location has a valid room.");
+
+            let message = if let Some(entity) = target {
+                let name = {
+                    let (_, named, _) = object_query.get(entity).unwrap();
+                    named.as_str()
+                };
+                if scripts_query
+                    .get(entity)
+                    .map(|script_hooks| script_hooks.triggers_on(TriggerEvent::Use))
+                    .unwrap_or(false)
+                {
+                    format!("You use {}.", name)
+                } else {
+                    format!("You can't figure out how to use {}.", name)
+                }
+            } else {
+                format!(
+                    "You find no object called \"{}\" to use.",
+                    keywords.join(" ")
+                )
+            };
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue(message);

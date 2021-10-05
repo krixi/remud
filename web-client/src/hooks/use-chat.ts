@@ -38,6 +38,7 @@ export interface ChatLine {
   is_prompt?: boolean;
   is_sensitive?: boolean;
   is_updated?: boolean; // whether or not this is a prompt that's been updated by the client
+  is_connected?: boolean; // whether or not you were connected to the server when sending this
 }
 
 export interface PlayerMessage {
@@ -47,6 +48,7 @@ export interface PlayerMessage {
 interface ChatAction {
   from_server?: ChatLine;
   from_client?: string;
+  is_connected?: boolean;
 }
 interface ChatState {
   messages: ChatLine[];
@@ -59,6 +61,15 @@ export interface Chat {
   isSensitivePrompt: boolean;
   send: (msg: string) => void;
 }
+
+const makeTextSegment = (msg: string): MessageSegment => {
+  return {
+    t: "t",
+    d: {
+      text: msg,
+    },
+  };
+};
 
 const reducer = (state: ChatState, action: ChatAction): ChatState => {
   // only keep recent history
@@ -74,16 +85,30 @@ const reducer = (state: ChatState, action: ChatAction): ChatState => {
       messages: [...state.messages, action.from_server],
     };
   } else if (action.from_client) {
+    if (!action.is_connected) {
+      let update = `//> ${
+        state.isSensitivePrompt ? "**********" : action.from_client
+      } (not connected)`;
+      return {
+        ...state,
+        messages: [
+          ...state.messages,
+          {
+            segments: [makeTextSegment(update)],
+            is_connected: false,
+            is_prompt: true,
+            is_updated: true,
+          },
+        ],
+      };
+    }
     // append the input to the last prompt.
     for (let idx = state.messages.length - 1; idx >= 0; idx--) {
       if (state.messages[idx].is_prompt) {
         if (!state.messages[idx].is_sensitive) {
-          state.messages[idx].segments!.push({
-            t: "t",
-            d: {
-              text: action.from_client,
-            },
-          });
+          state.messages[idx].segments!.push(
+            makeTextSegment(action.from_client)
+          );
           state.messages[idx].is_updated = true;
         }
         break;
@@ -111,7 +136,9 @@ export const useChat = (): Chat => {
     }
     const s: Subscription = socket?.on<Message<ChatLine>>("game").subscribe({
       next: (value) => {
-        dispatch({ from_server: value.data });
+        let from_server = value.data;
+        from_server.is_connected = true;
+        dispatch({ from_server });
       },
       error: (err) => console.log(" got err ", err),
     });
@@ -124,10 +151,11 @@ export const useChat = (): Chat => {
         socket.emit<PlayerMessage>("game", { message: msg });
         dispatch({
           from_client: msg,
+          is_connected: isConnected,
         });
       }
     },
-    [socket]
+    [socket, isConnected]
   );
 
   return {

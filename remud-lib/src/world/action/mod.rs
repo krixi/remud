@@ -44,7 +44,9 @@ use crate::{
                 ShowError, UpdateDescription, UpdateName,
             },
             movement::{move_system, teleport_system, Move, Teleport},
-            object::{drop_system, get_system, inventory_system, Drop, Get, Inventory},
+            object::{
+                drop_system, get_system, inventory_system, use_system, Drop, Get, Inventory, Use,
+            },
             observe::{
                 exits_system, look_at_system, look_system, who_system, Exits, Look, LookAt, Who,
             },
@@ -118,6 +120,7 @@ pub enum Action {
     UpdateKeywords(UpdateKeywords),
     UpdateName(UpdateName),
     UpdateObjectFlags(UpdateObjectFlags),
+    Use(Use),
     Who(Who),
 }
 
@@ -163,6 +166,7 @@ impl Action {
             Action::UpdateKeywords(action) => action.actor,
             Action::UpdateName(action) => action.actor,
             Action::UpdateObjectFlags(action) => action.actor,
+            Action::Use(action) => action.actor,
             Action::Who(action) => action.actor,
         }
     }
@@ -209,6 +213,7 @@ pub enum ActionSystem {
     UpdateKeywords,
     UpdateName,
     UpdateObjectFlags,
+    Use,
     Who,
 }
 
@@ -448,6 +453,11 @@ impl Plugin for ActionsPlugin {
                 update_object_flags
                     .system()
                     .label(ActionSystem::UpdateObjectFlags),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                use_system.system().label(ActionSystem::Use),
             )
             .add_system(
                 Step::Main,

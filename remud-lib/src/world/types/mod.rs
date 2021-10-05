@@ -81,6 +81,10 @@ impl Named {
     pub fn escaped(&self) -> String {
         self.name.replace("|", "||")
     }
+
+    pub fn eq(&self, other: String) -> bool {
+        self.name == other
+    }
 }
 
 impl From<String> for Named {

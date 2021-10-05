@@ -1,10 +1,15 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { LoginButton } from "../auth/login-button";
 import { useAuth } from "../hooks/use-auth";
+import { ScriptApiBaseUrl } from "../env";
 
 export const Toolbar: React.FC = () => {
   const { isScopeAuthorized } = useAuth();
+
+  const isLocal = useMemo(() => {
+    return ScriptApiBaseUrl().includes("localhost")
+  }, [])
 
   return (
     <div className="p-2 bg-dark-gray rounded w-full text-center flex flex-row justify-between">
@@ -22,7 +27,7 @@ export const Toolbar: React.FC = () => {
           <NavLink path="/scripts" text="Scripts" />
         )}
       </nav>
-      <div className="italic">CitySix</div>
+      <div className="italic">{isLocal ? <span className="success">---- LOCALHOST ----</span> : <>CitySix</>}</div>
       <LoginButton />
     </div>
   );
