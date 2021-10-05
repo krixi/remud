@@ -2,6 +2,7 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::world::action::get_room_std;
 use crate::world::scripting::{ScriptHooks, TriggerEvent};
 use crate::{
     engine::persist::{self, Updates},
@@ -331,7 +332,7 @@ into_action!(Use);
 #[tracing::instrument(name = "use system", skip_all)]
 pub fn use_system(
     mut action_reader: EventReader<Action>,
-    mut using_query: Query<&Location, Without<Room>>,
+    location_query: Query<(Option<&Location>, Option<&Room>)>,
     mut room_query: Query<(&Room, &mut Contents), With<Room>>,
     object_query: Query<(&Object, &Named, &Keywords)>,
     scripts_query: Query<&ScriptHooks>,
@@ -340,12 +341,8 @@ pub fn use_system(
     for action in action_reader.iter() {
         if let Action::Use(Use { actor, keywords }) = action {
             // Get the room that entity is in.
-            let room_entity = if let Ok(location) = using_query.get_mut(*actor) {
-                location.room()
-            } else {
-                tracing::warn!("entity {:?} without Contents cannot get an item.", actor);
-                continue;
-            };
+            let room_entity = get_room_std(*actor, &location_query);
+
             // Find a matching object in the room.
             let target = room_query
                 .get_mut(room_entity)
