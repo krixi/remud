@@ -1,4 +1,8 @@
+mod telnet;
+mod web;
+
 use std::{
+    borrow::Cow,
     io::{self},
     path::Path,
     sync::{
@@ -10,9 +14,12 @@ use std::{
 
 use once_cell::sync::Lazy;
 use remud_lib::{run_remud, RemudError, WebOptions};
-use telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
 use tokio::time::timeout;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
+
+pub use crate::telnet::{TelnetConnection, TelnetPlayer};
+pub use crate::web::{AuthenticatedWebClient, WebClient};
+pub use reqwest::StatusCode;
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
 pub static TRACING: Lazy<()> = Lazy::new(|| {
@@ -30,12 +37,29 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn telnet(&self) -> u16 {
-        self.telnet
+    pub fn new_create_player<'a, S1, S2>(player: S1, password: S2) -> (Server, TelnetPlayer)
+    where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        let mut server = Server::default();
+        let telnet = server.create_player(player, password);
+        (server, telnet)
     }
 
-    pub fn web(&self) -> u16 {
-        self.web
+    pub fn new_connect_telnet() -> (Server, TelnetConnection) {
+        let server = Server::default();
+        let connection = TelnetConnection::new(server.telnet());
+        (server, connection)
+    }
+
+    pub fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
+        client.send("restart");
+        let (player, password) = (client.name.clone(), client.password.clone());
+        drop(client);
+
+        self.ready();
+        self.login_player(player, password)
     }
 
     pub fn ready(&mut self) {
@@ -56,40 +80,37 @@ impl Server {
         }
     }
 
-    pub fn new_create_player<S1: AsRef<str>, S2: AsRef<str>>(
-        player: S1,
-        password: S2,
-    ) -> (Server, TelnetPlayer) {
-        let mut server = Server::default();
-        let telnet = server.create_player(player, password);
-        (server, telnet)
+    pub fn telnet(&self) -> u16 {
+        self.telnet
     }
 
-    pub fn new_connect() -> (Server, TelnetConnection) {
-        let server = Server::default();
-        let connection = TelnetConnection::new(server.telnet());
-        (server, connection)
+    pub fn web(&self) -> u16 {
+        self.web
     }
 
-    pub fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
-        client.send("restart");
-        let (player, password) = (client.player.clone(), client.password.clone());
-        drop(client);
-
-        self.ready();
-        self.login_player(player, password)
-    }
-
-    pub fn connect(&self) -> TelnetConnection {
+    pub fn connect_telnet(&self) -> TelnetConnection {
         TelnetConnection::new(self.telnet())
     }
 
-    pub fn create_player<S1: AsRef<str>, S2: AsRef<str>>(
-        &mut self,
-        player: S1,
-        password: S2,
-    ) -> TelnetPlayer {
-        let mut connection = TelnetConnection::new(self.telnet());
+    pub fn connect_web(&self) -> WebClient {
+        WebClient::new(self.web())
+    }
+
+    pub fn login_web(&self, player: &TelnetPlayer) -> AuthenticatedWebClient {
+        let client = self.connect_web();
+        client
+            .login(player.name.as_str(), player.password.as_str())
+            .expect("valid credentials from telnet player")
+    }
+
+    pub fn create_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
+    where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        let player = player.into();
+        let password = password.into();
+        let mut connection = self.connect_telnet();
 
         connection.info("create player");
         connection.recv_contains("Connected to");
@@ -120,19 +141,17 @@ impl Server {
             ],
         );
 
-        TelnetPlayer {
-            player: player.as_ref().to_string(),
-            password: password.as_ref().to_string(),
-            connection,
-        }
+        TelnetPlayer::new(connection, player, password)
     }
 
-    pub fn login_player<S1: AsRef<str>, S2: AsRef<str>>(
-        &mut self,
-        player: S1,
-        password: S2,
-    ) -> TelnetPlayer {
-        let mut connection = TelnetConnection::new(self.telnet());
+    pub fn login_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
+    where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        let player = player.into();
+        let password = password.into();
+        let mut connection = self.connect_telnet();
 
         connection.info("login player");
         connection.recv_contains("Connected to");
@@ -157,11 +176,7 @@ impl Server {
             ],
         );
 
-        TelnetPlayer {
-            player: player.as_ref().to_string(),
-            password: password.as_ref().to_string(),
-            connection,
-        }
+        TelnetPlayer::new(connection, player, password)
     }
 }
 
@@ -233,176 +248,6 @@ impl Default for Server {
             ready: Some(ready_rx),
         }
     }
-}
-
-pub struct TelnetConnection {
-    connection: Telnet,
-}
-
-impl TelnetConnection {
-    // Creates a new client and performs initial TELNET options negotiation.
-    fn new(port: u16) -> Self {
-        // set up connection
-        let mut connection =
-            Telnet::connect(("127.0.0.1", port), 1024).expect("failed to connect to ReMUD");
-
-        if let TelnetEvent::Negotiation(NegotiationAction::Do, TelnetOption::TTYPE) = connection
-            .read_timeout(Duration::from_secs(5))
-            .expect("did not receive DO TTYPE")
-        {
-            connection.negotiate(NegotiationAction::Wont, TelnetOption::TTYPE);
-        } else {
-            panic!("received unexpected message waiting for DO TTYPE");
-        }
-
-        TelnetConnection { connection }
-    }
-
-    pub fn info<S: AsRef<str>>(&mut self, text: S) {
-        if !text.as_ref().is_empty() {
-            tracing::info!("---------- {} ----------", text.as_ref());
-        }
-    }
-
-    pub fn send<S: AsRef<str>>(&mut self, line: S) {
-        self.connection
-            .write(format!("{}\r\n", line.as_ref()).as_bytes())
-            .unwrap_or_else(|_| panic!("failed to send '{}'", line.as_ref()));
-    }
-
-    pub fn recv(&mut self) -> String {
-        let event = self
-            .connection
-            .read_timeout(Duration::from_secs(5))
-            .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
-
-        if let TelnetEvent::Data(data) = event {
-            String::from_utf8(data.to_vec()).expect("server sent invalid UTF-8 string")
-        } else {
-            panic!(
-                "did not receive expected DATA event, got this instead: {:?}",
-                event
-            );
-        }
-    }
-
-    pub fn recv_contains<S: AsRef<str>>(&mut self, text: S) {
-        let message = self.recv();
-        assert!(
-            message.contains(text.as_ref()),
-            "did not find '{}' in message {:?}",
-            text.as_ref(),
-            message,
-        )
-    }
-
-    pub fn recv_contains_all<S: AsRef<str>>(&mut self, msgs: Vec<S>) {
-        let message = self.recv();
-        for text in msgs.iter() {
-            assert!(
-                message.contains(text.as_ref()),
-                "did not find '{}' in message {:?}",
-                text.as_ref(),
-                message,
-            )
-        }
-    }
-    pub fn recv_contains_none<S: AsRef<str>>(&mut self, msgs: Vec<S>) {
-        let message = self.recv();
-        for text in msgs.iter() {
-            assert!(
-                !message.contains(text.as_ref()),
-                "found unwanted '{}' in message {:?}",
-                text.as_ref(),
-                message,
-            )
-        }
-    }
-
-    pub fn recv_prompt(&mut self) {
-        self.recv_contains(">");
-    }
-
-    pub fn test<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
-        &mut self,
-        scenario: S1,
-        command: S2,
-        response_contains: Vec<S3>,
-    ) {
-        self.validate(scenario, command, Validate::Includes(response_contains));
-    }
-
-    pub fn test_many<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str> + Clone>(
-        &mut self,
-        scenario: S1,
-        command: S2,
-        response_contains: Vec<Vec<S3>>,
-    ) {
-        self.info(scenario);
-        self.send(command);
-        for expected in response_contains.iter() {
-            self.recv_contains_all(expected.clone());
-        }
-        self.recv_prompt();
-    }
-
-    pub fn test_exclude<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
-        &mut self,
-        scenario: S1,
-        command: S2,
-        response_excludes: Vec<S3>,
-    ) {
-        self.validate(scenario, command, Validate::Excludes(response_excludes));
-    }
-
-    fn validate<S1: AsRef<str>, S2: AsRef<str>, S3: AsRef<str>>(
-        &mut self,
-        scenario: S1,
-        command: S2,
-        validate: Validate<S3>,
-    ) {
-        self.info(scenario);
-        self.send(command);
-
-        let (is_include, items) = match validate {
-            Validate::Includes(items) => (true, items),
-            Validate::Excludes(items) => (false, items),
-        };
-
-        if is_include {
-            self.recv_contains_all(items);
-        } else {
-            self.recv_contains_none(items);
-        }
-        self.recv_prompt();
-    }
-}
-
-pub struct TelnetPlayer {
-    player: String,
-    password: String,
-    connection: TelnetConnection,
-}
-
-impl std::ops::Deref for TelnetPlayer {
-    type Target = TelnetConnection;
-
-    fn deref(&self) -> &Self::Target {
-        &self.connection
-    }
-}
-
-impl std::ops::DerefMut for TelnetPlayer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.connection
-    }
-}
-
-impl TelnetPlayer {}
-
-enum Validate<S: AsRef<str>> {
-    Includes(Vec<S>),
-    Excludes(Vec<S>),
 }
 
 #[derive(Default)]

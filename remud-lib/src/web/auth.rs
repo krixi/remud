@@ -136,6 +136,7 @@ async fn handle_verify_access<DB: AuthDb>(
     jwt_key: &ES256KeyPair,
     scopes: Vec<String>,
 ) -> Result<Player, Rejection> {
+    tracing::debug!("verifying bearer access token");
     let token = match auth_header.split_whitespace().nth(1) {
         Some(token) => token,
         None => {
@@ -189,8 +190,14 @@ async fn handle_verify_access<DB: AuthDb>(
             return Err(reject::custom(InternalError {}));
         }
     };
-    if claims.issued_at.unwrap().as_secs() as i64 != access_issued {
-        tracing::warn!("client provided an expired token");
+
+    let token_issued = claims.issued_at.unwrap().as_secs() as i64;
+    if token_issued as i64 != access_issued {
+        tracing::warn!(
+            "client provided an expired token - issued: {}, latest: {}",
+            token_issued,
+            access_issued
+        );
         if let Err(e) = db.logout(player).await {
             tracing::error!("failed to log out player: {}", e);
         }
@@ -209,6 +216,7 @@ async fn handle_login<DB: AuthDb>(
     jwt_key: &ES256KeyPair,
 ) -> Result<impl warp::Reply, Rejection> {
     let player = request.username.as_str();
+    tracing::debug!("attempting login for {}", player);
 
     match db.verify_player(player, request.password.as_str()).await {
         Ok(true) => (),
@@ -258,6 +266,7 @@ async fn handle_refresh<DB: AuthDb>(
     db: DB,
     jwt_key: &ES256KeyPair,
 ) -> Result<impl warp::Reply, Rejection> {
+    tracing::debug!("attempting token refresh");
     let claims = match jwt_key.public_key().verify_token::<TokenData>(
         request.refresh_token.as_str(),
         Some(VerificationOptions {
@@ -296,8 +305,13 @@ async fn handle_refresh<DB: AuthDb>(
         }
     };
 
-    if claims.issued_at.unwrap().as_secs() as i64 != refresh_issued {
-        tracing::warn!("client attempting to use expired token");
+    let token_issued = claims.issued_at.unwrap().as_secs() as i64;
+    if token_issued != refresh_issued {
+        tracing::warn!(
+            "client provided an expired token - issued: {}, latest: {}",
+            token_issued,
+            refresh_issued
+        );
         if let Err(err) = db.logout(player).await {
             tracing::error!("failed to log out player using expired token: {}", err);
             return Err(reject::custom(InternalError {}));
@@ -341,6 +355,7 @@ async fn handle_refresh<DB: AuthDb>(
 
 #[tracing::instrument(name = "logout", skip(db))]
 async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::Reply, Rejection> {
+    tracing::debug!("logging out {}", player.name.as_str());
     if let Err(err) = db.logout(player.name.as_str()).await {
         tracing::error!("failed to log out player: {}", err);
         return Err(reject::custom(InternalError {}));
@@ -379,6 +394,14 @@ fn generate_tokens(
 
     let access_issued_secs = i64::try_from(access_issued.as_secs())?;
     let refresh_issued_secs = i64::try_from(refresh_issued.as_secs())?;
+
+    tracing::debug!(
+        "generated tokens. access issued: {}, refresh issued: {}, access: {}, refresh: {}",
+        access_issued_secs,
+        refresh_issued_secs,
+        access_token,
+        refresh_token,
+    );
 
     Ok((
         access_token,

@@ -129,17 +129,21 @@ impl AuthDb for Db {
     async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error> {
         let results = sqlx::query("SELECT password FROM players WHERE username = ?")
             .bind(player)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await?;
 
-        let hash = results.get("password");
+        if let Some(row) = results {
+            let hash = row.get("password");
 
-        match verify_password(hash, password) {
-            Ok(_) => Ok(true),
-            Err(e) => match e {
-                VerifyError::BadPassword => Ok(false),
-                VerifyError::Unknown(s) => Err(Error::PasswordVerification(s)),
-            },
+            match verify_password(hash, password) {
+                Ok(_) => Ok(true),
+                Err(e) => match e {
+                    VerifyError::BadPassword => Ok(false),
+                    VerifyError::Unknown(s) => Err(Error::PasswordVerification(s)),
+                },
+            }
+        } else {
+            Ok(false)
         }
     }
 
@@ -162,7 +166,7 @@ impl AuthDb for Db {
         refresh_issued_secs: i64,
     ) -> Result<(), Error> {
         sqlx::query(
-            r#"INSERT INTO tokens
+            r#"INSERT INTO tokens (player_id, access, refresh)
         SELECT id AS player_id, ? AS access, ? AS refresh
         FROM players WHERE username = ?
         ON CONFLICT(player_id)

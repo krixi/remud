@@ -231,7 +231,7 @@ async fn handle_create(
     script: JsonScript,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("player {} creating script {}", player.name(), script.name());
+    tracing::debug!("player {} creating script {}", player.name(), script.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -270,7 +270,7 @@ async fn handle_read(
     script_name: JsonScriptName,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!(
+    tracing::debug!(
         "player {} reading script {}",
         player.name(),
         script_name.as_str()
@@ -306,7 +306,7 @@ async fn handle_read_all(
     player: Player,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("player {} reading all scripts", player.name());
+    tracing::debug!("player {} reading all scripts", player.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -345,7 +345,7 @@ async fn handle_update(
     script: JsonScript,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!("player {} updating script {}", player.name(), script.name());
+    tracing::debug!("player {} updating script {}", player.name(), script.name());
 
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
@@ -384,7 +384,7 @@ async fn handle_delete(
     script_name: JsonScriptName,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::info!(
+    tracing::debug!(
         "player {} deleting script {}",
         player.name(),
         script_name.as_str()

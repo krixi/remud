@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::time::Duration;
 
 use remud_test::Server;
@@ -11,7 +9,7 @@ fn test_login_create_player() {
 
 #[test]
 fn test_login_create_verify_failed() {
-    let (_server, mut t) = Server::new_connect();
+    let (_server, mut t) = Server::new_connect_telnet();
 
     t.recv_contains("Connected to");
     t.recv_contains("Name?");
@@ -68,7 +66,7 @@ fn test_login_login_player() {
 fn test_login_already_online() {
     let (server, t) = Server::new_create_player("Shane", "some pw");
 
-    let mut t2 = server.connect();
+    let mut t2 = server.connect_telnet();
     t2.recv_contains("Connected to");
     t2.recv_contains("Name?");
     t2.recv_prompt();
@@ -103,7 +101,7 @@ fn test_login_already_online() {
 
 #[test]
 fn test_login_bad_player_name() {
-    let (_server, mut t) = Server::new_connect();
+    let (_server, mut t) = Server::new_connect_telnet();
 
     t.recv_contains("Connected to");
     t.recv_contains("Name?");
@@ -142,7 +140,7 @@ fn test_login_bad_player_name() {
 
 #[test]
 fn test_login_bad_password() {
-    let (_server, mut t) = Server::new_connect();
+    let (_server, mut t) = Server::new_connect_telnet();
 
     t.recv_contains("Connected to");
     t.recv_contains("Name?");
@@ -179,13 +177,14 @@ fn test_login_bad_password() {
     );
 }
 
+#[test]
 fn test_login_verify_failed() {
     let (server, t) = Server::new_create_player("Shane", "password");
 
     drop(t);
     std::thread::sleep(Duration::from_secs(1));
 
-    let mut t = server.connect();
+    let mut t = server.connect_telnet();
     t.recv_contains("Connected to");
     t.recv_contains("Name?");
     t.recv_prompt();
@@ -193,24 +192,24 @@ fn test_login_verify_failed() {
     t.test_many(
         "enter name",
         "Shane",
-        vec![vec!["New user detected."], vec!["Password?"]],
+        vec![vec!["User located."], vec!["Password?"]],
     );
 
     t.test_many(
         "enter bad password",
         "ok",
-        vec![vec!["Verification failed."], vec!["Password?"]],
+        vec![vec!["Verification failed."], vec!["Name?"]],
     );
 
     t.test_many(
-        "enter password",
-        "some pw",
-        vec![vec!["Password accepted."], vec!["Verify?"]],
+        "enter name",
+        "Shane",
+        vec![vec!["User located."], vec!["Password?"]],
     );
 
     t.test_many(
         "verify password",
-        "some pw",
+        "password",
         vec![
             vec!["Password verified."],
             vec![],
