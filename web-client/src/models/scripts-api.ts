@@ -11,6 +11,7 @@ export enum Trigger {
   Say = "Say",
   Send = "Send",
   Timer = "Timer",
+  Use = "Use",
 }
 
 export interface Script {

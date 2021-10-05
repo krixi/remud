@@ -38,6 +38,9 @@ Picks up the first item matched by the specified keywords. The item is placed in
 ## `inventory`
 Lists the items you are currently carrying.
 
+## `use <keywords>`
+Interact with something by using it. Be careful though, not everything likes being used. 
+
 # Movement
 ## `north` / `south` / `east` / `west` / `up` / `down`
 These will cause you to move to the location in the specified direction. 
