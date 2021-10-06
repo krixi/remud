@@ -95,10 +95,13 @@ pub fn initialize_system(
 
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 if queued > 0 {
-                    messages.queue(format!(
-                        "Queued {} init scripts for execution on {}.",
-                        queued, target
-                    ));
+                    let mut message = format!("Initializing {} with {} script", target, queued);
+                    if queued > 1 {
+                        message.push_str("s.");
+                    } else {
+                        message.push('.');
+                    }
+                    messages.queue(message);
                 } else {
                     messages.queue(format!("Found no init scripts for {}.", target));
                 }

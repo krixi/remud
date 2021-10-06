@@ -2006,6 +2006,7 @@ dependencies = [
  "remud-lib",
  "reqwest",
  "serde",
+ "strum",
  "telnet",
  "tokio",
  "tracing",

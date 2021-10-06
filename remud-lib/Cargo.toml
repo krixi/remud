@@ -3,8 +3,6 @@ name = "remud-lib"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 acme-lib = "0.8"
 anyhow = "1.0"
@@ -33,10 +31,10 @@ strum = { version = "0.21", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.10", features = ["macros", "net", "rt-multi-thread", "time", "sync"] }
 tokio-util = { version = "0.6", features = ["codec"] }
-tracing = "0.1"
-warp = { version = "0.3", features = ["tls"] }
+tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-futures = "0.2.5"
 uuid = "0.8.2"
+warp = { version = "0.3", features = ["tls"] }
 
 [dev-dependencies]
 remud-test = { path = "remud-test" }

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -23,16 +23,64 @@ struct JsonRefresh {
     refresh_token: String,
 }
 
+#[derive(Debug, strum::ToString, strum::EnumString)]
+pub enum Trigger {
+    Drop,
+    Emote,
+    Exits,
+    Get,
+    Init,
+    Inventory,
+    Look,
+    LookAt,
+    Move,
+    Say,
+    Send,
+    Timer,
+    Use,
+}
+
+impl serde::Serialize for Trigger {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct JsonScript {
     name: String,
-    trigger: String,
+    trigger: Trigger,
     code: String,
+}
+
+impl JsonScript {
+    pub fn new<'a, S1, S2>(name: S1, trigger: Trigger, code: S2) -> Self
+    where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        JsonScript {
+            name: name.into().to_owned().to_string(),
+            trigger: trigger,
+            code: code.into().to_owned().to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
 pub struct JsonScriptName {
     name: String,
+}
+
+impl From<&str> for JsonScriptName {
+    fn from(value: &str) -> Self {
+        JsonScriptName {
+            name: value.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,30 +90,30 @@ struct JsonListResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct JsonScriptResponse {
-    name: String,
-    trigger: String,
-    code: String,
-    error: Option<JsonErrorInfo>,
+    pub name: String,
+    pub trigger: String,
+    pub code: String,
+    pub error: Option<JsonErrorInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct JsonErrorResponse {
-    error: Option<JsonErrorInfo>,
+    pub error: Option<JsonErrorInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct JsonScriptInfo {
-    name: String,
-    trigger: String,
-    lines: i64,
-    error: Option<JsonErrorInfo>,
+    pub name: String,
+    pub trigger: String,
+    pub lines: i64,
+    pub error: Option<JsonErrorInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct JsonErrorInfo {
-    line: Option<i64>,
-    position: Option<i64>,
-    message: String,
+    pub line: Option<i64>,
+    pub position: Option<i64>,
+    pub message: String,
 }
 
 #[derive(Clone)]
@@ -75,7 +123,7 @@ pub struct WebClient {
 }
 
 impl WebClient {
-    const URL: &'static str = "http://localhost";
+    const URL: &'static str = "http://127.0.0.1";
 
     pub fn new(port: u16) -> Self {
         let client = reqwest::blocking::Client::new();
@@ -98,6 +146,7 @@ impl WebClient {
                 username: player.into().to_string(),
                 password: password.into().to_string(),
             })
+            .timeout(Duration::from_secs(10))
             .send()
         {
             Ok(response) => {
@@ -133,6 +182,7 @@ impl AuthenticatedWebClient {
     fn post_auth(&self, path: &str) -> reqwest::blocking::RequestBuilder {
         self.client
             .post(path)
+            .timeout(Duration::from_secs(10))
             .bearer_auth(self.access_token.as_str())
     }
 
@@ -140,6 +190,7 @@ impl AuthenticatedWebClient {
         match self
             .client
             .post("/auth/refresh")
+            .timeout(Duration::from_secs(10))
             .json(&JsonRefresh {
                 refresh_token: self.refresh_token.clone(),
             })
@@ -214,11 +265,11 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn update_script(&self, script: &JsonScriptName) -> Result<JsonScriptResponse, StatusCode> {
+    pub fn update_script(&self, script: &JsonScript) -> Result<JsonErrorResponse, StatusCode> {
         match self.post_auth("/scripts/update").json(script).send() {
             Ok(response) => {
                 if response.status().is_success() {
-                    Ok(response.json::<JsonScriptResponse>().unwrap())
+                    Ok(response.json::<JsonErrorResponse>().unwrap())
                 } else {
                     Err(response.status())
                 }

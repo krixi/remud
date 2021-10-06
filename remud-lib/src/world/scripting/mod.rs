@@ -448,9 +448,9 @@ impl ToString for ScriptTrigger {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString)]
 pub enum TriggerKind {
-    PreEvent,
-    PostEvent,
     Init,
+    PostEvent,
+    PreEvent,
     Timer,
 }
 

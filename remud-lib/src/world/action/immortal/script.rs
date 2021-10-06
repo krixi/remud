@@ -306,7 +306,7 @@ pub fn script_attach_system(
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
                     Either::Left(id) => {
-                        messages.queue(format!("Script {} attached to {:?}.", script, id))
+                        messages.queue(format!("Script {} attached to {}.", script, id))
                     }
                     Either::Right(name) => {
                         messages.queue(format!("Script {} attached to player {}.", script, name))
@@ -439,10 +439,10 @@ pub fn script_detach_system(
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 match target {
                     Either::Left(id) => {
-                        messages.queue(format!("Script {} detached from {:?}.", script, id))
+                        messages.queue(format!("Detached script {} from {}.", script, id))
                     }
                     Either::Right(name) => {
-                        messages.queue(format!("Script {} detached from player {}.", script, name))
+                        messages.queue(format!("Detached script {} from player {}.", script, name))
                     }
                 }
             }

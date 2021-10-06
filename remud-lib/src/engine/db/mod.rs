@@ -424,7 +424,7 @@ impl TryFrom<HookRow> for ScriptHook {
             TriggerKind::PreEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())
                     .map_err(|_| Error::Deserialize("script trigger event"))?;
-                ScriptTrigger::PostEvent(trigger)
+                ScriptTrigger::PreEvent(trigger)
             }
             TriggerKind::PostEvent => {
                 let trigger = TriggerEvent::from_str(value.trigger.as_str())

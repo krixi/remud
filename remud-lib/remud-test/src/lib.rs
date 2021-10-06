@@ -18,7 +18,9 @@ use tokio::time::timeout;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
 pub use crate::telnet::{TelnetConnection, TelnetPlayer};
-pub use crate::web::{AuthenticatedWebClient, WebClient};
+pub use crate::web::{
+    AuthenticatedWebClient, JsonScript, JsonScriptName, JsonScriptResponse, Trigger, WebClient,
+};
 pub use reqwest::StatusCode;
 
 static PORT_COUNTER: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(49152));
@@ -134,9 +136,9 @@ impl Server {
             password.as_ref(),
             vec![
                 vec!["Password verified."],
-                vec![],
+                vec![], // spacing line
                 vec!["Welcome to City Six."],
-                vec![],
+                vec![], // spacing line
                 vec!["The Void"],
             ],
         );
@@ -169,10 +171,10 @@ impl Server {
             password.as_ref(),
             vec![
                 vec!["Password verified."],
-                vec![],
+                vec![], // spacing line
                 vec!["Welcome to City Six."],
-                vec![],
-                vec!["The Void"],
+                vec![], // spacing line
+                vec![], // look
             ],
         );
 

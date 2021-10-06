@@ -16,7 +16,7 @@ impl TelnetConnection {
             Telnet::connect(("127.0.0.1", port), 1024).expect("failed to connect to ReMUD");
 
         if let TelnetEvent::Negotiation(NegotiationAction::Do, TelnetOption::TTYPE) = connection
-            .read_timeout(Duration::from_secs(5))
+            .read_timeout(Duration::from_secs(10))
             .expect("did not receive DO TTYPE")
         {
             connection.negotiate(NegotiationAction::Wont, TelnetOption::TTYPE);
@@ -50,7 +50,7 @@ impl TelnetConnection {
     pub fn recv(&mut self) -> String {
         let event = self
             .connection
-            .read_timeout(Duration::from_secs(5))
+            .read_timeout(Duration::from_secs(10))
             .unwrap_or_else(|_| panic!("failed to read from telnet connection",));
 
         if let TelnetEvent::Data(data) = event {
