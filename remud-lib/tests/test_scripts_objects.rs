@@ -1,12 +1,14 @@
 #![allow(dead_code)]
 
+use std::time::Duration;
+
 use remud_test::{JsonScript, Server, Trigger};
 
 /// test scripts object interface
-#[test]
-fn test_script_object_attach_init() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_attach_init() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
+    let web = server.login_web(&t).await;
 
     const SCRIPT: &'static str = "the_script";
     let error = web
@@ -15,6 +17,7 @@ fn test_script_object_attach_init() {
             Trigger::Init,
             r#"SELF.say("hello");"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -22,30 +25,34 @@ fn test_script_object_attach_init() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test(
         "attach init script to prototype",
         format!("scripts {} attach-init prototype 1", SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to prototype",
         "prototype 1 info",
         vec!["Prototype 1", format!("Init -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
     // objects created with init scripts immediately run them
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to object",
@@ -55,55 +62,62 @@ fn test_script_object_attach_init() {
             "prototype: 1",
             format!("Init -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
     t.test(
         "run init scripts",
         "object 1 init",
         vec!["Initializing object 1 with 1 script."],
-    );
+    )
+    .await;
 
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
     t.test(
         "detach init script from prototype",
         format!("scripts {} detach prototype 1", SCRIPT),
         vec![format!("Detached script {} from prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("Init -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("Init -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("Init -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("Init -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 }
 
-#[test]
-fn test_script_object_attach_pre() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_attach_pre() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
+    let web = server.login_web(&t).await;
 
     const SCRIPT: &'static str = "the_script";
     let error = web
@@ -112,6 +126,7 @@ fn test_script_object_attach_pre() {
             Trigger::Say,
             r#"if WORLD.is_player(EVENT.actor) { SELF.say("hello"); }"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -119,13 +134,15 @@ fn test_script_object_attach_pre() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test(
         "attach pre-action script to prototype",
         format!("scripts {} attach-pre prototype 1", SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "ensure script is attached to prototype",
@@ -134,9 +151,10 @@ fn test_script_object_attach_pre() {
             "Prototype 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to prototype post-restart",
@@ -145,17 +163,19 @@ fn test_script_object_attach_pre() {
             "Prototype 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec![""]).await;
 
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to object",
@@ -165,51 +185,57 @@ fn test_script_object_attach_pre() {
             "prototype: 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec![""]).await;
 
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
     t.test(
         "detach pre-event script from prototype",
         format!("scripts {} detach prototype 1", SCRIPT),
         vec![format!("Detached script {} from prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("PreEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("PreEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("PreEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("PreEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 }
 
-#[test]
-fn test_script_object_attach_pre_disallow_action() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_attach_pre_disallow_action() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
+    let web = server.login_web(&t).await;
 
     const SCRIPT: &'static str = "the_script";
     let error = web
@@ -218,6 +244,7 @@ fn test_script_object_attach_pre_disallow_action() {
             Trigger::Say,
             r#"if WORLD.is_player(EVENT.actor) { allow_action = false; SELF.say("shh..."); }"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -225,13 +252,15 @@ fn test_script_object_attach_pre_disallow_action() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test(
         "attach pre-action script to prototype",
         format!("scripts {} attach-pre prototype 1", SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "ensure script is attached to prototype",
@@ -240,9 +269,10 @@ fn test_script_object_attach_pre_disallow_action() {
             "Prototype 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to prototype post-restart",
@@ -251,9 +281,11 @@ fn test_script_object_attach_pre_disallow_action() {
             "Prototype 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
     t.test(
         "object contains pre-event script",
@@ -263,14 +295,15 @@ fn test_script_object_attach_pre_disallow_action() {
             "prototype: 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
     // the 'say hello' command is prevented by the script
-    t.send("say hello");
-    t.recv_contains(r#"object says "shh...""#);
-    t.recv_prompt();
+    t.send("say hello").await;
+    t.line_contains(r#"object says "shh...""#).await;
+    t.assert_prompt().await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to object",
@@ -280,17 +313,18 @@ fn test_script_object_attach_pre_disallow_action() {
             "prototype: 1",
             format!("PreEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.send("say hello");
-    t.recv_contains(r#"object says "shh...""#);
-    t.recv_prompt();
+    t.send("say hello").await;
+    t.line_contains(r#"object says "shh...""#).await;
+    t.assert_prompt().await;
 }
 
-#[test]
-fn test_script_object_attach_post() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_attach_post() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
+    let web = server.login_web(&t).await;
 
     const SCRIPT: &'static str = "the_script";
     let error = web
@@ -299,6 +333,7 @@ fn test_script_object_attach_post() {
             Trigger::Say,
             r#"if WORLD.is_player(EVENT.actor) { SELF.say("hello"); }"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -306,15 +341,17 @@ fn test_script_object_attach_post() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test(
         "attach post-action script to prototype",
         format!("scripts {} attach-post prototype 1", SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to prototype",
@@ -323,17 +360,19 @@ fn test_script_object_attach_post() {
             "Prototype 1",
             format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec!["You say"]).await;
 
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to object",
@@ -343,51 +382,57 @@ fn test_script_object_attach_post() {
             "prototype: 1",
             format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec![""]).await;
 
-    t.recv();
-    t.recv_contains(r#"object says "hello""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "hello""#).await;
+    t.assert_prompt().await;
 
     t.test(
         "detach post-event script from prototype",
         format!("scripts {} detach prototype 1", SCRIPT),
         vec![format!("Detached script {} from prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("PostEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("PostEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
         "prototype 1 info",
         vec!["->", format!("PostEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
         "object 1 info",
         vec!["->", format!("PostEvent(Say) -> {}", SCRIPT).as_str()],
-    );
+    )
+    .await;
 }
 
-#[test]
-fn test_script_object_attach_timer() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_attach_timer() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
+    let web = server.login_web(&t).await;
 
     const TIMER_NAME: &'static str = "react";
     const SAY_SCRIPT: &'static str = "say_script";
@@ -403,6 +448,7 @@ fn test_script_object_attach_timer() {
             )
             .as_str(),
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -412,6 +458,7 @@ fn test_script_object_attach_timer() {
             Trigger::Timer,
             r#"SELF.say("What's all this?");"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -419,13 +466,15 @@ fn test_script_object_attach_timer() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test(
         "attach say script to prototype",
         format!("scripts {} attach-post prototype 1", SAY_SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SAY_SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "attach timer script to prototype",
@@ -434,9 +483,10 @@ fn test_script_object_attach_timer() {
             TIMER_SCRIPT, TIMER_NAME
         ),
         vec![format!("Script {} attached to prototype 1.", TIMER_SCRIPT)],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test(
         "ensure scripts are attached to prototype",
@@ -446,17 +496,22 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("react") -> {}"#, TIMER_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec![r#"You say "hello""#])
+        .await;
 
-    t.recv();
-    t.recv_contains(r#"object says "What's all this?""#);
-    t.recv_prompt();
+    tokio::time::sleep(Duration::from_millis(150)).await;
 
-    t = server.restart(t);
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "What's all this?""#).await;
+    t.assert_prompt().await;
+
+    t = server.restart(t).await;
 
     t.test(
         "ensure script is attached to object",
@@ -467,19 +522,21 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("react") -> {}"#, TIMER_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t.test("greet object", "say hello", vec![""]);
+    t.test("greet object", "say hello", vec![""]).await;
 
-    t.recv();
-    t.recv_contains(r#"object says "What's all this?""#);
-    t.recv_prompt();
+    t.consume_prompt().await;
+    t.line_contains(r#"object says "What's all this?""#).await;
+    t.assert_prompt().await;
 
     t.test(
         "detach post-event script from prototype",
         format!("scripts {} detach prototype 1", SAY_SCRIPT),
         vec![format!("Detached script {} from prototype 1.", SAY_SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "detach timer script from prototype",
@@ -488,7 +545,8 @@ fn test_script_object_attach_timer() {
             "Detached script {} from prototype 1.",
             TIMER_SCRIPT
         )],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
@@ -498,7 +556,8 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("{}") -> {}"#, TIMER_NAME, SAY_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
@@ -508,9 +567,10 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("{}") -> {}"#, TIMER_NAME, SAY_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
-    t = server.restart(t);
+    t = server.restart(t).await;
 
     t.test_exclude(
         "ensure script is removed from prototype",
@@ -520,7 +580,8 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("{}") -> {}"#, TIMER_NAME, SAY_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure script is removed from object",
@@ -530,14 +591,15 @@ fn test_script_object_attach_timer() {
             format!("PostEvent(Say) -> {}", SAY_SCRIPT).as_str(),
             format!(r#"Timer("{}") -> {}"#, TIMER_NAME, SAY_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 }
 
 // removal from prototype reflected in object is tested above
-#[test]
-fn test_script_object_inherit_scripts() {
-    let (mut server, mut t) = Server::new_create_player("Shane", "_)(@${P :@L KL J");
-    let web = server.login_web(&t);
+#[tokio::test]
+async fn test_script_object_inherit_scripts() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "_)(@${P :@L KL J").await;
+    let web = server.login_web(&t).await;
 
     const SCRIPT: &'static str = "the_script";
     const OTHER_SCRIPT: &'static str = "the_other_script";
@@ -547,6 +609,7 @@ fn test_script_object_inherit_scripts() {
             Trigger::Say,
             r#"if WORLD.is_player(EVENT.actor) { SELF.say("hello"); }"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
     let error = web
@@ -555,6 +618,7 @@ fn test_script_object_inherit_scripts() {
             Trigger::Say,
             r#"if WORLD.is_player(EVENT.actor) { SELF.say("hello there"); }"#,
         ))
+        .await
         .unwrap();
     assert!(error.is_none());
 
@@ -562,33 +626,39 @@ fn test_script_object_inherit_scripts() {
         "create prototype",
         "prototype new",
         vec!["Created prototype 1"],
-    );
+    )
+    .await;
 
     t.test_exclude(
         "ensure no scripts are attached to prototype",
         "prototype 1 info",
         vec!["->"],
-    );
+    )
+    .await;
 
-    t.test("create object", "object new 1", vec!["Created object 1"]);
+    t.test("create object", "object new 1", vec!["Created object 1"])
+        .await;
 
     t.test_exclude(
         "ensure no scripts are attached to object",
         "object 1 info",
         vec!["->"],
-    );
+    )
+    .await;
 
     t.test(
         "attach post-action script to prototype",
         format!("scripts {} attach-post prototype 1", SCRIPT),
         vec![format!("Script {} attached to prototype 1.", SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "attach other post-action script to prototype",
         format!("scripts {} attach-post prototype 1", OTHER_SCRIPT),
         vec![format!("Script {} attached to prototype 1.", OTHER_SCRIPT)],
-    );
+    )
+    .await;
 
     t.test(
         "ensure scripts are attached to prototype",
@@ -598,7 +668,8 @@ fn test_script_object_inherit_scripts() {
             format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
             format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 
     t.test(
         "ensure scripts are attached to object",
@@ -609,7 +680,8 @@ fn test_script_object_inherit_scripts() {
             format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
             format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
         ],
-    );
+    )
+    .await;
 }
 
 /// Test triggers with this type

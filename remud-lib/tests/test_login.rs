@@ -2,220 +2,204 @@ use std::time::Duration;
 
 use remud_test::Server;
 
-#[test]
-fn test_login_create_player() {
-    let (_server, _t) = Server::new_create_player("Shane", "s;kladjf");
+#[tokio::test]
+async fn test_login_create_player() {
+    let (_server, _t) = Server::new_create_player("Shane", "s;kladjf").await;
 }
 
-#[test]
-fn test_login_create_verify_failed() {
-    let (_server, mut t) = Server::new_connect_telnet();
+#[tokio::test]
+async fn test_login_create_verify_failed() {
+    let (_server, mut t) = Server::new_connect_telnet().await;
 
-    t.recv_contains("Connected to");
-    t.recv_contains("Name?");
-    t.recv_prompt();
+    t.line_contains("Connected to").await;
+    t.line_contains("Name?").await;
+    t.assert_prompt().await;
 
-    t.test_many(
+    t.test(
         "enter name",
         "Shane",
-        vec![vec!["New user detected"], vec!["Password?"]],
-    );
+        vec!["New user detected", "Password?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter password",
         "some pw",
-        vec![vec!["Password accepted."], vec!["Verify?"]],
-    );
+        vec!["Password accepted.", "Verify?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "fail verify password",
         "some other pw",
-        vec![vec!["Verification failed"], vec!["Password?"]],
-    );
+        vec!["Verification failed", "Password?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter password",
         "some pw",
-        vec![vec!["Password accepted."], vec!["Verify?"]],
-    );
+        vec!["Password accepted.", "Verify?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "verify password",
         "some pw",
-        vec![
-            vec!["Password verified."],
-            vec![],
-            vec!["Welcome to City Six"],
-            vec![],
-            vec!["The Void"],
-        ],
-    );
+        vec!["Password verified.", "Welcome to City Six", "The Void"],
+    )
+    .await;
+
+    t.assert_prompt().await;
 }
 
-#[test]
-fn test_login_login_player() {
-    let (mut server, t) = Server::new_create_player("Shane", "s;kladjf");
+#[tokio::test]
+async fn test_login_login_player() {
+    let (mut server, mut t) = Server::new_create_player("Shane", "s;kladjf").await;
+    t.assert_prompt().await;
 
     drop(t);
     std::thread::sleep(Duration::from_secs(1));
 
-    server.login_player("Shane", "s;kladjf");
+    let mut t = server.login_player("Shane", "s;kladjf").await;
+    t.assert_prompt().await;
 }
 
-#[test]
-fn test_login_already_online() {
-    let (server, t) = Server::new_create_player("Shane", "some pw");
+#[tokio::test]
+async fn test_login_already_online() {
+    let (server, mut t) = Server::new_create_player("Shane", "some pw").await;
+    t.assert_prompt().await;
 
     let mut t2 = server.connect_telnet();
-    t2.recv_contains("Connected to");
-    t2.recv_contains("Name?");
-    t2.recv_prompt();
+    t2.line_contains("Connected to").await;
+    t2.line_contains("Name?").await;
+    t2.assert_prompt().await;
 
-    t2.test_many(
+    t2.test(
         "enter name",
         "Shane",
-        vec![vec!["User currently online."], vec!["Name?"]],
-    );
+        vec!["User currently online.", "Name?"],
+    )
+    .await;
 
     drop(t);
     std::thread::sleep(Duration::from_secs(1));
 
-    t2.test_many(
-        "enter name",
-        "Shane",
-        vec![vec!["User located."], vec!["Password?"]],
-    );
+    t2.test("enter name", "Shane", vec!["User located.", "Password?"])
+        .await;
 
-    t2.test_many(
+    t2.test(
         "verify password",
         "some pw",
-        vec![
-            vec!["Password verified."],
-            vec![],
-            vec!["Welcome to City Six"],
-            vec![],
-            vec!["The Void"],
-        ],
-    );
+        vec!["Password verified.", "Welcome to City Six", "The Void"],
+    )
+    .await;
+    t2.assert_prompt().await;
 }
 
-#[test]
-fn test_login_bad_player_name() {
-    let (_server, mut t) = Server::new_connect_telnet();
+#[tokio::test]
+async fn test_login_bad_player_name() {
+    let (_server, mut t) = Server::new_connect_telnet().await;
 
-    t.recv_contains("Connected to");
-    t.recv_contains("Name?");
-    t.recv_prompt();
+    t.line_contains("Connected to").await;
+    t.line_contains("Name?").await;
+    t.assert_prompt().await;
 
-    t.test_many(
+    t.test(
         "enter name",
         "$@()* ()% (#%)#%(( ",
-        vec![vec!["Invalid username."], vec!["Name?"]],
-    );
+        vec!["Invalid username.", "Name?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter name",
         "Shane",
-        vec![vec!["New user detected"], vec!["Password?"]],
-    );
+        vec!["New user detected", "Password?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter password",
         "some pw",
-        vec![vec!["Password accepted."], vec!["Verify?"]],
-    );
+        vec!["Password accepted.", "Verify?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "verify password",
         "some pw",
-        vec![
-            vec!["Password verified."],
-            vec![],
-            vec!["Welcome to City Six"],
-            vec![],
-            vec!["The Void"],
-        ],
-    );
+        vec!["Password verified.", "Welcome to City Six", "The Void"],
+    )
+    .await;
 }
 
-#[test]
-fn test_login_bad_password() {
-    let (_server, mut t) = Server::new_connect_telnet();
+#[tokio::test]
+async fn test_login_bad_password() {
+    let (_server, mut t) = Server::new_connect_telnet().await;
 
-    t.recv_contains("Connected to");
-    t.recv_contains("Name?");
-    t.recv_prompt();
+    t.line_contains("Connected to").await;
+    t.line_contains("Name?").await;
+    t.assert_prompt().await;
 
-    t.test_many(
+    t.test(
         "enter name",
         "Shane",
-        vec![vec!["New user detected."], vec!["Password?"]],
-    );
+        vec!["New user detected.", "Password?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter bad password",
         "ok",
-        vec![vec!["Weak password detected"], vec!["Password?"]],
-    );
+        vec!["Weak password detected", "Password?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "enter password",
         "some pw",
-        vec![vec!["Password accepted."], vec!["Verify?"]],
-    );
+        vec!["Password accepted.", "Verify?"],
+    )
+    .await;
 
-    t.test_many(
+    t.test(
         "verify password",
         "some pw",
-        vec![
-            vec!["Password verified."],
-            vec![],
-            vec!["Welcome to City Six"],
-            vec![],
-            vec!["The Void"],
-        ],
-    );
+        vec!["Password verified.", "Welcome to City Six", "The Void"],
+    )
+    .await;
 }
 
-#[test]
-fn test_login_verify_failed() {
-    let (server, t) = Server::new_create_player("Shane", "password");
+#[tokio::test]
+async fn test_login_verify_failed() {
+    let (server, t) = Server::new_create_player("Shane", "password").await;
 
     drop(t);
     std::thread::sleep(Duration::from_secs(1));
 
     let mut t = server.connect_telnet();
-    t.recv_contains("Connected to");
-    t.recv_contains("Name?");
-    t.recv_prompt();
+    t.line_contains("Connected to").await;
+    t.line_contains("Name?").await;
+    t.assert_prompt().await;
 
-    t.test_many(
-        "enter name",
-        "Shane",
-        vec![vec!["User located."], vec!["Password?"]],
-    );
+    t.test("enter name", "Shane", vec!["User located.", "Password?"])
+        .await;
 
-    t.test_many(
+    t.test(
         "enter bad password",
         "ok",
-        vec![vec!["Verification failed."], vec!["Name?"]],
-    );
+        vec!["Verification failed.", "Name?"],
+    )
+    .await;
 
-    t.test_many(
-        "enter name",
-        "Shane",
-        vec![vec!["User located."], vec!["Password?"]],
-    );
+    t.test("enter name", "Shane", vec!["User located.", "Password?"])
+        .await;
 
-    t.test_many(
+    t.test(
         "verify password",
         "password",
-        vec![
-            vec!["Password verified."],
-            vec![],
-            vec!["Welcome to City Six"],
-            vec![],
-            vec!["The Void"],
-        ],
-    );
+        vec!["Password verified.", "Welcome to City Six", "The Void"],
+    )
+    .await;
 }

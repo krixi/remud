@@ -47,10 +47,13 @@ impl Server {
                         tracing::info!("new client ({:?}): {:?}", client_id, address);
                         let client_tx = client_tx;
                         let (engine_tx, engine_rx) = mpsc::channel(16);
+
                         let message = ClientMessage::Connect(client_id, engine_tx);
                         if client_tx.send(message).await.is_err() {
                             return;
                         }
+
+                        stream.set_nodelay(true).unwrap();
 
                         process(client_id, stream, client_tx.clone(), engine_rx).await;
 

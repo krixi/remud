@@ -5,10 +5,7 @@ use std::{
     borrow::Cow,
     io::{self},
     path::Path,
-    sync::{
-        atomic::{AtomicU16, Ordering},
-        mpsc,
-    },
+    sync::atomic::{AtomicU16, Ordering},
     time::Duration,
 };
 
@@ -34,45 +31,93 @@ pub struct Server {
     telnet: u16,
     web: u16,
     #[allow(dead_code)]
-    runtime: tokio::runtime::Runtime,
-    ready: Option<tokio::sync::mpsc::Receiver<()>>,
+    ready: tokio::sync::mpsc::Receiver<()>,
 }
 
 impl Server {
-    pub fn new_create_player<'a, S1, S2>(player: S1, password: S2) -> (Server, TelnetPlayer)
+    pub async fn new() -> Self {
+        Lazy::force(&TRACING);
+
+        let mut telnet_port;
+        let mut web_port;
+
+        let ready_rx = 'connect_loop: loop {
+            telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
+            web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+            let web = WebOptions::new(
+                web_port,
+                Path::new("./keys"),
+                vec!["http://localhost"],
+                None,
+            );
+            let (ready_tx, mut ready_rx) = tokio::sync::mpsc::channel(16);
+
+            let spawn =
+                tokio::spawn(
+                    async move { run_remud(None, telnet_port, web, Some(ready_tx)).await },
+                );
+
+            tokio::select! {
+                join_result = spawn => {
+                    match join_result {
+                        Ok(remud_result) => {
+                            match remud_result {
+                                // ReMUD did not stop to listen for requests and the run function returned early.
+                                Ok(_) => panic!("ReMUD exited early"),
+                                Err(e) => match e {
+                                    RemudError::TelnetError(_) => {
+                                        tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
+                                    },
+                                    e => panic!("ReMUD failed to start: {}", e)
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            panic!("Failed to join ReMUD task")
+                        }
+                    }
+                }
+                _ = ready_rx.recv() => {
+                    break 'connect_loop ready_rx
+                }
+            }
+        };
+
+        Server {
+            telnet: telnet_port,
+            web: web_port,
+            ready: ready_rx,
+        }
+    }
+
+    pub async fn new_create_player<'a, S1, S2>(player: S1, password: S2) -> (Server, TelnetPlayer)
     where
         S1: Into<Cow<'a, str>>,
         S2: Into<Cow<'a, str>>,
     {
-        let mut server = Server::default();
-        let telnet = server.create_player(player, password);
+        let mut server = Server::new().await;
+        let telnet = server.create_player(player, password).await;
         (server, telnet)
     }
 
-    pub fn new_connect_telnet() -> (Server, TelnetConnection) {
-        let server = Server::default();
+    pub async fn new_connect_telnet() -> (Server, TelnetConnection) {
+        let server = Server::new().await;
         let connection = TelnetConnection::new(server.telnet());
         (server, connection)
     }
 
-    pub fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
-        client.send("restart");
+    pub async fn restart(&mut self, mut client: TelnetPlayer) -> TelnetPlayer {
+        client.send("restart").await;
         let (player, password) = (client.name.clone(), client.password.clone());
         drop(client);
 
-        self.ready();
-        self.login_player(player, password)
+        self.ready().await;
+        self.login_player(player, password).await
     }
 
-    pub fn ready(&mut self) {
-        let mut ready = self.ready.take().unwrap();
-
-        let (result, ready) = self.runtime.block_on(async move {
-            let result = timeout(Duration::from_secs(5), ready.recv()).await;
-            (result, ready)
-        });
-
-        self.ready = Some(ready);
+    pub async fn ready(&mut self) {
+        let result = timeout(Duration::from_secs(5), self.ready.recv()).await;
 
         match result {
             Ok(_) => (),
@@ -98,14 +143,15 @@ impl Server {
         WebClient::new(self.web())
     }
 
-    pub fn login_web(&self, player: &TelnetPlayer) -> AuthenticatedWebClient {
+    pub async fn login_web(&self, player: &TelnetPlayer) -> AuthenticatedWebClient {
         let client = self.connect_web();
         client
             .login(player.name.as_str(), player.password.as_str())
+            .await
             .expect("valid credentials from telnet player")
     }
 
-    pub fn create_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
+    pub async fn create_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
     where
         S1: Into<Cow<'a, str>>,
         S2: Into<Cow<'a, str>>,
@@ -115,38 +161,43 @@ impl Server {
         let mut connection = self.connect_telnet();
 
         connection.info("create player");
-        connection.recv_contains("Connected to");
-        connection.recv_contains("Name?");
-        connection.recv_prompt();
+        connection.line_contains("Connected to").await;
+        connection.line_contains("Name?").await;
+        connection.assert_prompt().await;
 
-        connection.test_many(
-            "enter player name",
-            player.as_ref(),
-            vec![vec!["New user detected."], vec!["Password?"]],
-        );
+        connection
+            .test(
+                "enter player name",
+                player.as_ref(),
+                vec!["New user detected.", "Password?"],
+            )
+            .await;
 
-        connection.test_many(
-            "enter password",
-            password.as_ref(),
-            vec![vec!["Password accepted."], vec!["Verify?"]],
-        );
+        connection
+            .test(
+                "enter password",
+                password.as_ref(),
+                vec!["Password accepted.", "Verify?"],
+            )
+            .await;
 
-        connection.test_many(
-            "verify password",
-            password.as_ref(),
-            vec![
-                vec!["Password verified."],
-                vec![], // spacing line
-                vec!["Welcome to City Six."],
-                vec![], // spacing line
-                vec!["The Void"],
-            ],
-        );
+        connection
+            .test(
+                "verify password",
+                password.as_ref(),
+                vec![
+                    "Password verified.",
+                    "Welcome to City Six.",
+                    "The Void",
+                    "A dark void extends infinitely in all directions.",
+                ],
+            )
+            .await;
 
         TelnetPlayer::new(connection, player, password)
     }
 
-    pub fn login_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
+    pub async fn login_player<'a, S1, S2>(&mut self, player: S1, password: S2) -> TelnetPlayer
     where
         S1: Into<Cow<'a, str>>,
         S2: Into<Cow<'a, str>>,
@@ -156,99 +207,31 @@ impl Server {
         let mut connection = self.connect_telnet();
 
         connection.info("login player");
-        connection.recv_contains("Connected to");
-        connection.recv_contains("Name?");
-        connection.recv_prompt();
+        connection.line_contains("Connected to").await;
+        connection.line_contains("Name?").await;
+        connection.assert_prompt().await;
 
-        connection.test_many(
-            "enter player name",
-            player.as_ref(),
-            vec![vec!["User located."], vec!["Password?"]],
-        );
+        connection
+            .test(
+                "enter player name",
+                player.as_ref(),
+                vec!["User located.", "Password?"],
+            )
+            .await;
 
-        connection.test_many(
-            "enter password",
-            password.as_ref(),
-            vec![
-                vec!["Password verified."],
-                vec![], // spacing line
-                vec!["Welcome to City Six."],
-                vec![], // spacing line
-                vec![], // look
-            ],
-        );
+        connection.assert_prompt().await;
+
+        connection
+            .test(
+                "enter password",
+                password.as_ref(),
+                vec!["Password verified.", "Welcome to City Six."],
+            )
+            .await;
+
+        connection.assert_prompt().await;
 
         TelnetPlayer::new(connection, player, password)
-    }
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Lazy::force(&TRACING);
-
-        let (tx, rx) = mpsc::channel();
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()
-            .unwrap();
-
-        runtime.spawn(async move {
-            let external_tx = tx;
-            let mut telnet_port ;
-            let mut web_port ;
-
-            let ready_rx = 'connect_loop: loop {
-                telnet_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-                web_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-
-                let web = WebOptions::new(web_port, Path::new("./keys"), vec!["http://localhost"], None);
-                let (ready_tx, mut ready_rx) = tokio::sync::mpsc::channel(16);
-
-                let spawn = tokio::spawn(async move {
-                    run_remud(None, telnet_port, web, Some(ready_tx)).await
-                });
-
-                tokio::select! {
-                    join_result = spawn => {
-                        match join_result {
-                            Ok(remud_result) => {
-                                match remud_result {
-                                    // ReMUD did not stop to listen for requests and the run function returned early.
-                                    Ok(_) => panic!("ReMUD exited early"),
-                                    Err(e) => match e {
-                                        RemudError::TelnetError(_) => {
-                                            tracing::info!("port {} or {} in use, selecting next ports", telnet_port, web_port);
-                                        },
-                                        e => panic!("ReMUD failed to start: {}", e)
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                panic!("Failed to join ReMUD task")
-                            }
-                        }
-                    }
-                    _ = ready_rx.recv() => {
-                        break 'connect_loop ready_rx
-                    }
-                }
-            };
-
-            external_tx.send((telnet_port, web_port, ready_rx)).unwrap_or_else(|e| panic!("failed to start server: {}", e));
-        });
-
-        let (telnet, web, ready_rx) = rx
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap_or_else(|e| panic!("failed to receive server init message: {}", e));
-
-        Server {
-            telnet,
-            web,
-            runtime,
-            ready: Some(ready_rx),
-        }
     }
 }
 

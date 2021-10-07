@@ -119,18 +119,18 @@ pub struct JsonErrorInfo {
 #[derive(Clone)]
 pub struct WebClient {
     port: u16,
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
 }
 
 impl WebClient {
     const URL: &'static str = "http://127.0.0.1";
 
     pub fn new(port: u16) -> Self {
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         WebClient { port, client }
     }
 
-    pub fn login<'a, S1, S2>(
+    pub async fn login<'a, S1, S2>(
         self,
         player: S1,
         password: S2,
@@ -148,10 +148,11 @@ impl WebClient {
             })
             .timeout(Duration::from_secs(10))
             .send()
+            .await
         {
             Ok(response) => {
                 if response.status().is_success() {
-                    let response: JsonAuthResponse = response.json().unwrap();
+                    let response: JsonAuthResponse = response.json().await.unwrap();
                     Ok(AuthenticatedWebClient {
                         client: self,
                         access_token: response.access_token,
@@ -165,7 +166,7 @@ impl WebClient {
         }
     }
 
-    fn post(&self, path: &str) -> reqwest::blocking::RequestBuilder {
+    fn post(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .post(format!("{}:{}{}", WebClient::URL, self.port, path))
     }
@@ -179,14 +180,14 @@ pub struct AuthenticatedWebClient {
 }
 
 impl AuthenticatedWebClient {
-    fn post_auth(&self, path: &str) -> reqwest::blocking::RequestBuilder {
+    fn post_auth(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .post(path)
             .timeout(Duration::from_secs(10))
             .bearer_auth(self.access_token.as_str())
     }
 
-    pub fn refresh_auth(&mut self) -> Result<(), StatusCode> {
+    pub async fn refresh_auth(&mut self) -> Result<(), StatusCode> {
         match self
             .client
             .post("/auth/refresh")
@@ -195,10 +196,11 @@ impl AuthenticatedWebClient {
                 refresh_token: self.refresh_token.clone(),
             })
             .send()
+            .await
         {
             Ok(response) => {
                 if response.status().is_success() {
-                    let response = response.json::<JsonAuthResponse>().unwrap();
+                    let response = response.json::<JsonAuthResponse>().await.unwrap();
                     self.access_token = response.access_token;
                     self.refresh_token = response.refresh_token;
                     Ok(())
@@ -211,11 +213,11 @@ impl AuthenticatedWebClient {
     }
 
     // Does not consume self to allow testing of code reuse
-    pub fn logout(&self) -> Result<(), StatusCode> {
-        match self.post_auth("/auth/logout").json(&Empty {}).send() {
+    pub async fn logout(&self) -> Result<(), StatusCode> {
+        match self.post_auth("/auth/logout").json(&Empty {}).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    response.json::<Empty>().unwrap();
+                    response.json::<Empty>().await.unwrap();
                     Ok(())
                 } else {
                     Err(response.status())
@@ -225,11 +227,14 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn create_script(&self, script: &JsonScript) -> Result<Option<JsonErrorInfo>, StatusCode> {
-        match self.post_auth("/scripts/create").json(script).send() {
+    pub async fn create_script(
+        &self,
+        script: &JsonScript,
+    ) -> Result<Option<JsonErrorInfo>, StatusCode> {
+        match self.post_auth("/scripts/create").json(script).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    Ok(response.json::<JsonErrorResponse>().unwrap().error)
+                    Ok(response.json::<JsonErrorResponse>().await.unwrap().error)
                 } else {
                     Err(response.status())
                 }
@@ -238,11 +243,14 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn read_script(&self, script: &JsonScriptName) -> Result<JsonScriptResponse, StatusCode> {
-        match self.post_auth("/scripts/read").json(script).send() {
+    pub async fn read_script(
+        &self,
+        script: &JsonScriptName,
+    ) -> Result<JsonScriptResponse, StatusCode> {
+        match self.post_auth("/scripts/read").json(script).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    Ok(response.json::<JsonScriptResponse>().unwrap())
+                    Ok(response.json::<JsonScriptResponse>().await.unwrap())
                 } else {
                     Err(response.status())
                 }
@@ -251,11 +259,16 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn list_scripts(&self) -> Result<Vec<JsonScriptInfo>, StatusCode> {
-        match self.post_auth("/scripts/read/all").json(&Empty {}).send() {
+    pub async fn list_scripts(&self) -> Result<Vec<JsonScriptInfo>, StatusCode> {
+        match self
+            .post_auth("/scripts/read/all")
+            .json(&Empty {})
+            .send()
+            .await
+        {
             Ok(response) => {
                 if response.status().is_success() {
-                    let response = response.json::<JsonListResponse>().unwrap();
+                    let response = response.json::<JsonListResponse>().await.unwrap();
                     Ok(response.scripts)
                 } else {
                     Err(response.status())
@@ -265,11 +278,14 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn update_script(&self, script: &JsonScript) -> Result<JsonErrorResponse, StatusCode> {
-        match self.post_auth("/scripts/update").json(script).send() {
+    pub async fn update_script(
+        &self,
+        script: &JsonScript,
+    ) -> Result<JsonErrorResponse, StatusCode> {
+        match self.post_auth("/scripts/update").json(script).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    Ok(response.json::<JsonErrorResponse>().unwrap())
+                    Ok(response.json::<JsonErrorResponse>().await.unwrap())
                 } else {
                     Err(response.status())
                 }
@@ -278,11 +294,11 @@ impl AuthenticatedWebClient {
         }
     }
 
-    pub fn delete_script(&self, script: &JsonScriptName) -> Result<(), StatusCode> {
-        match self.post_auth("/scripts/delete").json(script).send() {
+    pub async fn delete_script(&self, script: &JsonScriptName) -> Result<(), StatusCode> {
+        match self.post_auth("/scripts/delete").json(script).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    response.json::<Empty>().expect("empty JSON response");
+                    response.json::<Empty>().await.expect("empty JSON response");
                     Ok(())
                 } else {
                     Err(response.status())
