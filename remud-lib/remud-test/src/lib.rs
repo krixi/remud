@@ -185,12 +185,7 @@ impl Server {
             .test(
                 "verify password",
                 password.as_ref(),
-                vec![
-                    "Password verified.",
-                    "Welcome to City Six.",
-                    "The Void",
-                    "A dark void extends infinitely in all directions.",
-                ],
+                vec!["Password verified.", "Welcome to City Six."],
             )
             .await;
 

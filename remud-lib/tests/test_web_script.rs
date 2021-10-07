@@ -3,7 +3,7 @@ use std::str::FromStr;
 use remud_test::{JsonScript, JsonScriptName, JsonScriptResponse, Server, StatusCode, Trigger};
 
 #[tokio::test]
-async fn test_script_create() {
+async fn test_web_script_create() {
     let (server, t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -42,7 +42,7 @@ async fn test_script_create() {
 }
 
 #[tokio::test]
-async fn test_script_read() {
+async fn test_web_script_read() {
     let (server, t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -106,7 +106,7 @@ async fn test_script_read() {
 }
 
 #[tokio::test]
-async fn test_script_update() {
+async fn test_web_script_update() {
     let (server, t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -193,7 +193,7 @@ async fn test_script_update() {
 }
 
 #[tokio::test]
-async fn test_script_delete() {
+async fn test_web_script_delete() {
     let (server, t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 

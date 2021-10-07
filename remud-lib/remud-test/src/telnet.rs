@@ -173,6 +173,20 @@ impl TelnetConnection {
         );
     }
 
+    /// Runs a command and discards the response
+    pub async fn command<'a, S1, S2>(&mut self, scenario: S1, command: S2)
+    where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        self.info(scenario);
+        self.send(command).await;
+
+        self.recv().await;
+
+        self.output.clear();
+    }
+
     /// Runs a command and tests its output against the matcher
     pub async fn test_matches<'a, S1, S2>(
         &mut self,

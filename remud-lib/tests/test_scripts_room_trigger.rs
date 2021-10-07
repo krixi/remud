@@ -1,4 +1,4 @@
-
+#![allow(dead_code)]
 /// Test triggers with this type
 fn test_script_room_trigger_drop() {}
 fn test_script_room_trigger_emote() {}

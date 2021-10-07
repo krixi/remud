@@ -4,7 +4,7 @@ use remud_test::{JsonScript, Match, Matcher, Server, Trigger};
 
 /// test scripts object interface
 #[tokio::test]
-async fn test_script_object_attach_init() {
+async fn test_script_object_attachment_attach_init() {
     let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -113,7 +113,7 @@ async fn test_script_object_attach_init() {
 }
 
 #[tokio::test]
-async fn test_script_object_attach_pre() {
+async fn test_script_object_attachment_attach_pre() {
     let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -231,7 +231,7 @@ async fn test_script_object_attach_pre() {
 }
 
 #[tokio::test]
-async fn test_script_object_attach_pre_disallow_action() {
+async fn test_script_object_attachment_attach_pre_disallow_action() {
     let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -320,7 +320,7 @@ async fn test_script_object_attach_pre_disallow_action() {
 }
 
 #[tokio::test]
-async fn test_script_object_attach_post() {
+async fn test_script_object_attachment_attach_post() {
     let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -428,7 +428,7 @@ async fn test_script_object_attach_post() {
 }
 
 #[tokio::test]
-async fn test_script_object_attach_timer() {
+async fn test_script_object_attachment_attach_timer() {
     let (mut server, mut t) = Server::new_create_player("Shane", "p@55w0rd").await;
     let web = server.login_web(&t).await;
 
@@ -595,7 +595,7 @@ async fn test_script_object_attach_timer() {
 
 // removal from prototype reflected in object is tested above
 #[tokio::test]
-async fn test_script_object_inherit_scripts() {
+async fn test_script_object_attachment_inherit_scripts() {
     let (mut server, mut t) = Server::new_create_player("Shane", "_)(@${P :@L KL J").await;
     let web = server.login_web(&t).await;
 

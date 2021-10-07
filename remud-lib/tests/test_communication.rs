@@ -2,7 +2,7 @@
 
 use remud_test::{Matcher, Server};
 #[tokio::test]
-async fn test_emote() {
+async fn test_communicate_emote() {
     let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&").await;
     let mut t2 = server.create_player("Shane", "lkja;jf89 f").await;
 
@@ -34,7 +34,7 @@ async fn test_emote() {
 }
 
 #[tokio::test]
-async fn test_say() {
+async fn test_communicate_say() {
     let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&").await;
     let mut t2 = server.create_player("Shane", "lkja;jf89 f").await;
 
@@ -66,7 +66,7 @@ async fn test_say() {
 }
 
 #[tokio::test]
-async fn test_send() {
+async fn test_communicate_send() {
     let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&").await;
     let mut t2 = server.create_player("Shane", "lkja;jf89 f").await;
 
@@ -87,7 +87,7 @@ async fn test_send() {
 }
 
 #[tokio::test]
-async fn test_who() {
+async fn test_communicate_who() {
     let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&").await;
 
     t.test_matches(
