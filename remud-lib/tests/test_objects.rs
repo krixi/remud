@@ -1,4 +1,4 @@
-use remud_test::Server;
+use remud_test::{Match, Matcher, Server};
 // all other object commands are tested as part of prototype testing.
 
 // test inventory, get and drop
@@ -122,10 +122,13 @@ async fn test_object_remove() {
     )
     .await;
 
-    t.test("check one is deleted", "room info", vec!["object 2"])
-        .await;
-    t.test_exclude("is it tho", "room info", vec!["object 1"])
-        .await;
+    t.test_matches(
+        "check one is deleted",
+        "room info",
+        Matcher::unordered(vec![Match::include("object 2"), Match::exclude("object 1")]),
+    )
+    .await;
+
     t.test(
         "check removed objects info",
         "object 1 info",

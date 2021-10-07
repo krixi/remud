@@ -311,10 +311,11 @@ impl Engine {
                     client
                         .send_batch(
                             self.tick,
-                        SendPrompt::Prompt,
+                            SendPrompt::Prompt,
                             vec![
                                 Cow::from(
-                                    "|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n",
+                                    "|SteelBlue3|Connected to|-| \
+                                     |white|ucs://uplink.six.city|-|\r\n",
                                 ),
                                 Cow::from("|SteelBlue3|Name?|-|"),
                             ],

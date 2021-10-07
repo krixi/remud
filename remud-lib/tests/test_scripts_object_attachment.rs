@@ -1,8 +1,6 @@
-#![allow(dead_code)]
-
 use std::time::Duration;
 
-use remud_test::{JsonScript, Server, Trigger};
+use remud_test::{JsonScript, Match, Matcher, Server, Trigger};
 
 /// test scripts object interface
 #[tokio::test]
@@ -385,7 +383,7 @@ async fn test_script_object_attach_post() {
     )
     .await;
 
-    t.test("greet object", "say hello", vec![""]).await;
+    t.test("greet object", "say hello", vec!["You say"]).await;
 
     t.consume_prompt().await;
     t.line_contains(r#"object says "hello""#).await;
@@ -682,18 +680,244 @@ async fn test_script_object_inherit_scripts() {
         ],
     )
     .await;
-}
 
-/// Test triggers with this type
-fn test_script_object_trigger_drop() {}
-fn test_script_object_trigger_emote() {}
-fn test_script_object_trigger_exits() {}
-fn test_script_object_trigger_get() {}
-fn test_script_object_trigger_init() {}
-fn test_script_object_trigger_inventory() {}
-fn test_script_object_trigger_look() {}
-fn test_script_object_trigger_look_at() {}
-fn test_script_object_trigger_move() {}
-fn test_script_object_trigger_say() {}
-fn test_script_object_trigger_send() {}
-fn test_script_object_trigger_timer() {}
+    t = server.restart(t).await;
+
+    t.test(
+        "ensure scripts are attached to prototype",
+        "prototype 1 info",
+        vec![
+            "Prototype 1",
+            format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
+            format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
+        ],
+    )
+    .await;
+
+    t.test(
+        "ensure scripts are attached to object",
+        "object 1 info",
+        vec![
+            "Object 1",
+            "prototype: 1",
+            format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
+            format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
+        ],
+    )
+    .await;
+
+    t.test(
+        "remove other script from prototype",
+        format!("scripts {} detach prototype 1", OTHER_SCRIPT),
+        vec![format!(
+            "Detached script {} from prototype 1.",
+            OTHER_SCRIPT
+        )],
+    )
+    .await;
+
+    t.test_matches(
+        "ensure script is attached to prototype",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "ensure script is attached to object",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t = server.restart(t).await;
+
+    t.test_matches(
+        "ensure one script is still attached to prototype",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "ensure one script is still attached to object",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test(
+        "add other script to object",
+        format!("scripts {} attach-post object 1", OTHER_SCRIPT),
+        vec![format!("Script {} attached to object 1.", OTHER_SCRIPT)],
+    )
+    .await;
+
+    t.test_matches(
+        "prototype has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test(
+        "object still has both scripts",
+        "object 1 info",
+        vec![
+            "Object 1",
+            format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
+            format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
+        ],
+    )
+    .await;
+
+    t = server.restart(t).await;
+
+    t.test_matches(
+        "prototype still has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test(
+        "object still has both scripts",
+        "object 1 info",
+        vec![
+            "Object 1",
+            format!("PostEvent(Say) -> {}", SCRIPT).as_str(),
+            format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str(),
+        ],
+    )
+    .await;
+
+    t.test(
+        "remove script from object",
+        format!("scripts {} detach object 1", SCRIPT),
+        vec![format!("Detached script {} from object 1.", SCRIPT)],
+    )
+    .await;
+
+    t.test_matches(
+        "prototype still has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "object has only other script",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str()),
+            Match::exclude(SCRIPT),
+        ]),
+    )
+    .await;
+
+    t = server.restart(t).await;
+
+    t.test_matches(
+        "prototype still has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "object still has only other script",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", OTHER_SCRIPT).as_str()),
+            Match::exclude(SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test(
+        "object inherits from prototype",
+        "object 1 inherit scripts",
+        vec!["Object 1 fields set to inherit."],
+    )
+    .await;
+
+    t.test_matches(
+        "prototype still has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "object now has only script",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t = server.restart(t).await;
+
+    t.test_matches(
+        "prototype still has only one script",
+        "prototype 1 info",
+        Matcher::unordered(vec![
+            Match::include("Prototype 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+
+    t.test_matches(
+        "object still has only script",
+        "object 1 info",
+        Matcher::unordered(vec![
+            Match::include("Object 1"),
+            Match::include(format!("PostEvent(Say) -> {}", SCRIPT).as_str()),
+            Match::exclude(OTHER_SCRIPT),
+        ]),
+    )
+    .await;
+}

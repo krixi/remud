@@ -1,4 +1,4 @@
-use remud_test::Server;
+use remud_test::{Matcher, Server};
 
 #[tokio::test]
 async fn test_prototype_new() {
@@ -11,17 +11,17 @@ async fn test_prototype_new() {
     )
     .await;
 
-    t.test(
+    t.test_matches(
         "created prototype has expected attributes",
         "prototype 1 info",
-        vec![
+        Matcher::exact_includes(vec![
             "Prototype 1",
             "name: object",
             "description: A nondescript object.",
             "flags: (empty)",
             "keywords: object",
             "script hooks: none",
-        ],
+        ]),
     )
     .await;
 
@@ -32,10 +32,10 @@ async fn test_prototype_new() {
     )
     .await;
 
-    t.test(
+    t.test_matches(
         "created object has expected attributes",
         "object 1 info",
-        vec![
+        Matcher::exact_includes(vec![
             "Object 1",
             "prototype: 1",
             "inherit scripts: true",
@@ -48,30 +48,30 @@ async fn test_prototype_new() {
             "script data: none",
             "timers: none",
             "fsm: none",
-        ],
+        ]),
     )
     .await;
 
     t = server.restart(t).await;
 
-    t.test(
+    t.test_matches(
         "created prototype has expected attributes after restart",
         "prototype 1 info",
-        vec![
+        Matcher::exact_includes(vec![
             "Prototype 1",
             "name: object",
             "description: A nondescript object.",
             "flags: (empty)",
             "keywords: object",
             "script hooks: none",
-        ],
+        ]),
     )
     .await;
 
-    t.test(
+    t.test_matches(
         "created object has expected attributes after restart",
         "object 1 info",
-        vec![
+        Matcher::exact_includes(vec![
             "Object 1",
             "prototype: 1",
             "inherit scripts: true",
@@ -84,7 +84,7 @@ async fn test_prototype_new() {
             "script data: none",
             "timers: none",
             "fsm: none",
-        ],
+        ]),
     )
     .await;
 }

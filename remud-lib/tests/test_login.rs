@@ -132,6 +132,8 @@ async fn test_login_bad_player_name() {
         vec!["Password verified.", "Welcome to City Six", "The Void"],
     )
     .await;
+
+    t.assert_prompt().await;
 }
 
 #[tokio::test]
@@ -169,6 +171,8 @@ async fn test_login_bad_password() {
         vec!["Password verified.", "Welcome to City Six", "The Void"],
     )
     .await;
+
+    t.assert_prompt().await;
 }
 
 #[tokio::test]
@@ -202,4 +206,6 @@ async fn test_login_verify_failed() {
         vec!["Password verified.", "Welcome to City Six", "The Void"],
     )
     .await;
+
+    t.assert_prompt().await;
 }

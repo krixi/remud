@@ -11,14 +11,14 @@ pub enum TelnetRequest {
     Send(String),
 }
 
-// TelnetConnection maintains a scratch buffer for holding incoming data and an output list which consists
-// of lines between one prompt and another. When a prompt is found in the received output, deserializing
-// into the output list is halted and the output is made available for inspection either line-by-line or
-// wholesale using one of the test* functions.
-//
-// A prompt leading the buffer must be consumed before more data can be read. The send method automatically
-// consumes the last prompt - it assumes you are a good citizen and only enter commands when prompted.
-// It can be manually consumed with consume_prompt.
+/// TelnetConnection maintains a scratch buffer for holding incoming data and an output list which consists
+/// of lines between one prompt and another. When a prompt is found in the received output, deserializing
+/// into the output list is halted and the output is made available for inspection either line-by-line or
+/// wholesale using one of the test* functions.
+///
+/// A prompt leading the buffer must be consumed before more data can be read. The send method automatically
+/// consumes the last prompt - it assumes you are a good citizen and only enter commands when prompted.
+/// It can be manually consumed with consume_prompt.
 pub struct TelnetConnection {
     buffer: String,
     output: VecDeque<String>,
@@ -27,7 +27,7 @@ pub struct TelnetConnection {
 }
 
 impl TelnetConnection {
-    // Creates a new client and performs initial Telnet options negotiation.
+    /// Creates a new client and performs initial Telnet options negotiation.
     pub fn new(port: u16) -> Self {
         let (req_tx, mut req_rx) = mpsc::channel(16);
         let (event_tx, event_rx) = mpsc::channel(16);
@@ -71,6 +71,7 @@ impl TelnetConnection {
         }
     }
 
+    /// Prints an info line to the logs
     pub fn info<'a, S>(&mut self, text: S)
     where
         S: Into<Cow<'a, str>>,
@@ -81,7 +82,7 @@ impl TelnetConnection {
         }
     }
 
-    // Consume the current prompt and dispatch a message to the server
+    /// Consume the current prompt and dispatch a message to the server
     pub async fn send<'a, S>(&mut self, line: S)
     where
         S: Into<Cow<'a, str>>,
@@ -99,7 +100,7 @@ impl TelnetConnection {
             .unwrap();
     }
 
-    // Consumes the next line of output, asserting if it doesn't contain text.
+    /// Consumes the next line of output, asserting if it doesn't contain text.
     pub async fn line_contains<'a, S>(&mut self, text: S)
     where
         S: Into<Cow<'a, str>>,
@@ -114,7 +115,7 @@ impl TelnetConnection {
         )
     }
 
-    // Consumes the next line of output, asserting if any value in msgs is missing.
+    /// Consumes the next line of output, asserting if any value in msgs is missing.
     pub async fn line_contains_all<'a, S>(&mut self, msgs: Vec<S>)
     where
         S: Into<Cow<'a, str>>,
@@ -131,7 +132,7 @@ impl TelnetConnection {
         }
     }
 
-    // Consumes the next line of output, asserting if any value in msgs is contained within.
+    /// Consumes the next line of output, asserting if any value in msgs is contained within.
     pub async fn line_contains_none<'a, S>(&mut self, msgs: Vec<S>)
     where
         S: Into<Cow<'a, str>>,
@@ -148,8 +149,8 @@ impl TelnetConnection {
         }
     }
 
-    // Asserts that the client is waiting at a prompt and clears it.
-    // Automatically called when using the send method.
+    /// Asserts that the client is waiting at a prompt and clears it.
+    /// Automatically called when using the send method.
     pub async fn consume_prompt(&mut self) {
         if self.buffer.is_empty() {
             self.recv().await
@@ -163,7 +164,7 @@ impl TelnetConnection {
         tracing::info!("consumed prompt");
     }
 
-    // Asserts that the client is currently waiting at a prompt for input.
+    /// Asserts that the client is currently waiting at a prompt for input.
     pub async fn assert_prompt(&mut self) {
         assert!(
             self.buffer.starts_with("> "),
@@ -172,8 +173,75 @@ impl TelnetConnection {
         );
     }
 
-    // Runs a command and consumes all output between the command and the next prompt.
-    // Asserts if any string in response_contains does not appear in output.
+    /// Runs a command and tests its output against the matcher
+    pub async fn test_matches<'a, S1, S2>(
+        &mut self,
+        scenario: S1,
+        command: S2,
+        matcher: Matcher<'a>,
+    ) where
+        S1: Into<Cow<'a, str>>,
+        S2: Into<Cow<'a, str>>,
+    {
+        self.info(scenario);
+        self.send(command).await;
+
+        self.recv().await;
+
+        let mut output = VecDeque::new();
+        std::mem::swap(&mut output, &mut self.output);
+
+        let matched = match matcher.clone() {
+            Matcher::Exact(matchers) => {
+                assert!(
+                    matchers.len() == output.len(),
+                    "wanted exact match, found different line counts for matcher and output: \
+                     {:?}, {:?}",
+                    matcher,
+                    output,
+                );
+
+                let mut lines = output.iter();
+                matchers.into_iter().all(|m| match m {
+                    Match::Include(value) => lines.next().unwrap().contains(value.as_ref()),
+                    Match::Exclude(value) => !lines.next().unwrap().contains(value.as_ref()),
+                    Match::None => {
+                        lines.next();
+                        true
+                    }
+                })
+            }
+            Matcher::Ordered(matchers) => {
+                let mut lines = output.iter();
+                matchers.into_iter().all(|m| match m {
+                    Match::Include(value) => {
+                        while let Some(line) = lines.next() {
+                            if line.contains(value.as_ref()) {
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                    Match::Exclude(_) => unreachable!("invalid matcher state"),
+                    Match::None => true,
+                })
+            }
+            Matcher::Unordered(matchers) => matchers.into_iter().all(|m| match m {
+                Match::Include(value) => output.iter().any(|l| l.contains(value.as_ref())),
+                Match::Exclude(value) => output.iter().all(|l| !l.contains(value.as_ref())),
+                Match::None => true,
+            }),
+        };
+
+        assert!(
+            matched,
+            "matcher does not match output: {:?}, {:?}",
+            matcher, output
+        );
+    }
+
+    /// Runs a command and consumes all output between the command and the next prompt.
+    /// Asserts if any string in response_contains does not appear in output.
     pub async fn test<'a, S1, S2, S3>(
         &mut self,
         scenario: S1,
@@ -184,16 +252,14 @@ impl TelnetConnection {
         S2: Into<Cow<'a, str>>,
         S3: Into<Cow<'a, str>>,
     {
-        let includes = response_contains
-            .into_iter()
-            .map(|s| s.into().to_owned().to_string())
-            .collect_vec();
-        self.validate(scenario, command, Validate::Includes(includes))
+        let includes = response_contains.into_iter().map(Into::into).collect_vec();
+
+        self.test_matches(scenario, command, Matcher::includes(includes))
             .await;
     }
 
-    // Runs a command and consumes all output between the command and the next prompt.
-    // Asserts if any string in response_excludes appears in output.
+    /// Runs a command and consumes all output between the command and the next prompt.
+    /// Asserts if any string in response_excludes appears in output.
     pub async fn test_exclude<'a, S1, S2, S3>(
         &mut self,
         scenario: S1,
@@ -204,17 +270,10 @@ impl TelnetConnection {
         S2: Into<Cow<'a, str>>,
         S3: Into<Cow<'a, str>>,
     {
-        self.validate(
-            scenario,
-            command,
-            Validate::Excludes(
-                response_excludes
-                    .into_iter()
-                    .map(|s| s.into().to_owned().to_string())
-                    .collect_vec(),
-            ),
-        )
-        .await;
+        let excludes = response_excludes.into_iter().map(Into::into).collect_vec();
+
+        self.test_matches(scenario, command, Matcher::excludes(excludes))
+            .await;
     }
 
     async fn recv(&mut self) {
@@ -286,35 +345,6 @@ impl TelnetConnection {
 
         line
     }
-
-    async fn validate<'a, S1, S2>(&mut self, scenario: S1, command: S2, validate: Validate)
-    where
-        S1: Into<Cow<'a, str>>,
-        S2: Into<Cow<'a, str>>,
-    {
-        self.info(scenario);
-        self.send(command).await;
-
-        self.recv().await;
-
-        let (is_include, items) = match validate {
-            Validate::Includes(items) => (true, items),
-            Validate::Excludes(items) => (false, items),
-        };
-
-        let mut output = VecDeque::new();
-        std::mem::swap(&mut output, &mut self.output);
-
-        if is_include {
-            assert!(items
-                .into_iter()
-                .all(|i| output.iter().any(|b| b.contains(i.as_str()))));
-        } else {
-            assert!(!items
-                .into_iter()
-                .any(|i| output.iter().any(|b| b.contains(i.as_str()))));
-        }
-    }
 }
 
 pub struct TelnetPlayer {
@@ -353,7 +383,95 @@ impl std::ops::DerefMut for TelnetPlayer {
 
 impl TelnetPlayer {}
 
-enum Validate {
-    Includes(Vec<String>),
-    Excludes(Vec<String>),
+#[derive(Debug, Clone)]
+pub enum Matcher<'a> {
+    Exact(Vec<Match<'a>>),
+    Ordered(Vec<Match<'a>>),
+    Unordered(Vec<Match<'a>>),
+}
+
+impl<'a> Matcher<'a> {
+    /// Checks that each matcher matches exactly one output line, in order
+    pub fn exact(matches: impl IntoIterator<Item = Match<'a>>) -> Self {
+        Self::Exact(matches.into_iter().collect_vec())
+    }
+
+    pub fn exact_includes<S>(matches: impl IntoIterator<Item = S>) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Self::Exact(
+            matches
+                .into_iter()
+                .map(|m| Match::Include(m.into()))
+                .collect_vec(),
+        )
+    }
+
+    /// Checks that each matcher is present in output, in order
+    pub fn ordered<S>(matches: impl IntoIterator<Item = S>) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Self::Ordered(
+            matches
+                .into_iter()
+                .map(|m| Match::Include(m.into()))
+                .collect_vec(),
+        )
+    }
+
+    /// Checks matchers against output, unordered
+    pub fn unordered(matches: impl IntoIterator<Item = Match<'a>>) -> Self {
+        Self::Unordered(matches.into_iter().collect_vec())
+    }
+
+    /// Checks that all of the matchers are present in output
+    pub fn includes<S>(matches: impl IntoIterator<Item = S>) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Self::Unordered(
+            matches
+                .into_iter()
+                .map(|m| Match::Include(m.into()))
+                .collect_vec(),
+        )
+    }
+
+    /// Checks that none of the matchers are present in output
+    pub fn excludes<S>(matches: impl IntoIterator<Item = S>) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Self::Unordered(
+            matches
+                .into_iter()
+                .map(|m| Match::Exclude(m.into()))
+                .collect_vec(),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Match<'a> {
+    Include(Cow<'a, str>),
+    Exclude(Cow<'a, str>),
+    None,
+}
+
+impl<'a> Match<'a> {
+    pub fn include<S>(value: S) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Match::Include(value.into())
+    }
+
+    pub fn exclude<S>(value: S) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Match::Exclude(value.into())
+    }
 }
