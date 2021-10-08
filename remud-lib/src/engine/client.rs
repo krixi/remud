@@ -3,6 +3,9 @@ use std::{borrow::Cow, collections::HashMap};
 use bevy_ecs::prelude::*;
 use tokio::sync::mpsc;
 
+use crate::engine::db::Db;
+use crate::engine::negotiate_login::{ClientData, ClientFSM, Params, Transition};
+use crate::world::GameWorld;
 use crate::{engine::EngineResponse, ClientId};
 
 pub enum State {
@@ -21,28 +24,41 @@ pub enum SendPrompt {
 
 pub struct Client {
     id: ClientId,
-    tx: mpsc::Sender<EngineResponse>,
-    state: State,
+    sender: ClientSender,
+    state: State, // TODO
+    fsm: ClientFSM,
+    data: ClientData,
 }
 
 impl Client {
-    pub fn get_player(&self) -> Option<Entity> {
-        match self.state {
-            State::InGame { player } => Some(player),
-            _ => None,
-        }
+    pub fn player(&self) -> Option<Entity> {
+        self.data.player()
     }
 
+    pub async fn update(&mut self, input: Option<&str>, world: &mut GameWorld, db: &Db) {
+        let data = &mut self.data;
+        let sender = &self.sender;
+        self.fsm
+            .on_update(
+                None,
+                data,
+                &mut Params::new(self.id, sender, world, db).with_input(input),
+            )
+            .await;
+    }
+
+    pub async fn transition(&mut self, tx: Transition, world: &mut GameWorld, db: &Db) {
+        let data = &mut self.data;
+        let sender = &self.sender;
+        self.fsm
+            .on_update(Some(tx), data, &mut Params::new(self.id, sender, world, db))
+            .await;
+    }
+
+    // TODO : get rid of this probably?
     pub async fn send_prompted(&self, tick: u64, message: Cow<'_, str>) {
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-        if self
-            .tx
-            .send(EngineResponse::with_message(message))
-            .await
-            .is_err()
-        {
-            tracing::error!("failed to send message to client {:?}", self.id);
-        }
+        self.sender
+            .send_batch(tick, self.id, SendPrompt::Prompt, vec![message]);
     }
 
     pub async fn send_batch<'a>(
@@ -51,15 +67,7 @@ impl Client {
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = Cow<'a, str>>,
     ) {
-        let message = match prompt {
-            SendPrompt::None => EngineResponse::from_messages_noprompt(messages),
-            SendPrompt::Prompt => EngineResponse::from_messages(messages, false),
-            SendPrompt::SensitivePrompt => EngineResponse::from_messages(messages, true),
-        };
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-        if self.tx.send(message).await.is_err() {
-            tracing::error!("failed to send message to client {:?}", self.id);
-        }
+        self.sender.send_batch(tick, self.id, prompt, messages);
     }
 
     pub fn get_state(&self) -> &State {
@@ -127,6 +135,31 @@ impl Client {
     }
 }
 
+#[derive(Clone)]
+pub struct ClientSender {
+    tx: mpsc::Sender<EngineResponse>,
+}
+
+impl ClientSender {
+    pub async fn send_batch<'a>(
+        &self,
+        tick: u64,
+        id: ClientId,
+        prompt: SendPrompt,
+        messages: impl IntoIterator<Item = Cow<'a, str>>,
+    ) {
+        let message = match prompt {
+            SendPrompt::None => EngineResponse::from_messages_noprompt(messages),
+            SendPrompt::Prompt => EngineResponse::from_messages(messages, false),
+            SendPrompt::SensitivePrompt => EngineResponse::from_messages(messages, true),
+        };
+        tracing::debug!("[{}] {:?} <- {:?}.", tick, id, message);
+        if let Err(e) = self.tx.send(message).await {
+            tracing::error!("failed to send message to client {:?}: {}", id, e);
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Clients {
     clients: HashMap<ClientId, Client>,
@@ -139,8 +172,10 @@ impl Clients {
             client_id,
             Client {
                 id: client_id,
-                tx,
+                sender: ClientSender { tx },
                 state: State::LoginName,
+                fsm: ClientFSM::default(),
+                data: ClientData::default(),
             },
         );
     }

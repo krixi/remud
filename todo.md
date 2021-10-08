@@ -24,7 +24,7 @@
 
 - password verification is slow - do it in another task
 
-- figure out how to factor out Engine.process_input (needed for character creation)
+- *figure out how to factor out Engine.process_input (needed for character creation)
 
 - consider cleaning up timers at the end of a tick
 
@@ -36,7 +36,7 @@
 
 - support graceful shutdown handling via signals
 
-- add change password command
+- *add change password command
 
 - add persist feedback for immortal commands (?)
 
@@ -45,3 +45,10 @@
 - add ability to spawn objects from prefabs in script
 
 - add currency
+
+
+Things that would benefit from a state machine:
+- figure out how to factor out Engine.process_input (needed for character creation)
+- add change password command
+- Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)
+- 

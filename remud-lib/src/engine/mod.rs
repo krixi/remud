@@ -1,5 +1,7 @@
 mod client;
 pub mod db;
+pub mod dialog;
+pub mod negotiate_login;
 pub mod persist;
 
 use std::{borrow::Cow, collections::VecDeque};
@@ -14,6 +16,7 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
+use crate::engine::negotiate_login::{Params, Transition};
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
@@ -292,11 +295,13 @@ impl Engine {
             ClientMessage::Disconnect(client_id) => {
                 tracing::info!("[{}] {} disconnected", self.tick, client_id);
 
-                if let Some(player) = self.clients.get(client_id).and_then(Client::get_player) {
+                if let Some(player) = self.clients.get(client_id).and_then(Client::player) {
                     if let Err(e) = self.game_world.despawn_player(player) {
                         tracing::error!("failed to despawn player: {}", e);
                     }
                 }
+
+                // TODO: send to FSM
 
                 self.clients.remove(client_id);
                 self.engine_tx
@@ -307,27 +312,23 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("[{}] {} ready", self.tick, client_id);
 
-                if let Some(client) = self.clients.get(client_id) {
-                    client
-                        .send_batch(
-                            self.tick,
-                            SendPrompt::Prompt,
-                            vec![
-                                Cow::from(
-                                    "|SteelBlue3|Connected to|-| \
-                                     |white|ucs://uplink.six.city|-|\r\n",
-                                ),
-                                Cow::from("|SteelBlue3|Name?|-|"),
-                            ],
-                        )
-                        .await;
+                // TODO: this is where we invoke the character login fsm
+
+                if let Some(mut client) = self.clients.get_mut(client_id) {
+                    client.transition(Transition::Ready, &mut self.game_world, &self.db);
+
+                    // manually drive the state machine in certain cases.
+                    client.update(None, &mut self.game_world, &self.db);
                 } else {
                     tracing::error!("received message from unknown client: {:?}", message);
                 }
             }
             ClientMessage::Input(client_id, input) => {
                 tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
-                self.process_input(client_id, input).await;
+                if let Some(mut client) = self.clients.get_mut(client_id) {
+                    client.update(Some(input.as_str()), &mut self.game_world, &self.db);
+                }
+                //self.process_input(client_id, input).await;
             }
         }
     }
@@ -668,7 +669,7 @@ impl Engine {
     }
 }
 
-fn name_valid(name: &str) -> bool {
+pub fn name_valid(name: &str) -> bool {
     // Match names with between 2 and 32 characters which are alphanumeric and possibly include
     // the following characters: ' ', ''', '-', and '_'
     let re = regex!(r#"^[[:alnum:] '\-_]{2,32}$"#);
