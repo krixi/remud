@@ -75,22 +75,13 @@ impl Client {
             .await;
     }
 
-    // TODO : get rid of this probably?
-    pub async fn send_prompted(&self, tick: u64, message: Cow<'_, str>) {
-        self.sender
-            .send_batch(tick, self.id, SendPrompt::Prompt, vec![message])
-            .await;
-    }
-
-    pub async fn send_batch<'a>(
+    pub async fn send<'a>(
         &self,
         tick: u64,
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = Cow<'a, str>>,
     ) {
-        self.sender
-            .send_batch(tick, self.id, prompt, messages)
-            .await;
+        self.sender.send(tick, self.id, prompt, messages).await;
     }
 }
 
@@ -100,7 +91,7 @@ pub struct ClientSender {
 }
 
 impl ClientSender {
-    pub async fn send_batch<'a>(
+    pub async fn send<'a>(
         &self,
         tick: u64,
         id: ClientId,

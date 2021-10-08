@@ -6,22 +6,20 @@ pub mod persist;
 
 use std::{borrow::Cow, collections::VecDeque};
 
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use futures::future::join_all;
 use itertools::Itertools;
-use rand::rngs::OsRng;
 use thiserror::Error;
 use tokio::{
     sync::mpsc,
     time::{interval, Duration, Interval},
 };
 
-use crate::engine::negotiate_login::{Params, Transition};
+use crate::engine::negotiate_login::Transition;
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
         client::{Client, Clients, SendPrompt},
-        db::{verify_password, AuthDb, Db, GameDb, VerifyError},
+        db::{Db, GameDb},
         persist::PersistPlugin,
     },
     macros::regex,
@@ -30,13 +28,10 @@ use crate::{
         ScriptsRequest, ScriptsResponse, WebMessage,
     },
     world::{
-        action::{commands::Commands, observe::Look, system::Login, Action, ActionsPlugin},
+        action::{commands::Commands, ActionsPlugin},
         fsm::FsmPlugin,
         scripting::ScriptPlugin,
-        types::{
-            player::{self, PlayerFlags},
-            TypesPlugin,
-        },
+        types::TypesPlugin,
         GameWorld,
     },
     ClientId,
@@ -78,10 +73,6 @@ pub enum EngineResponse {
 }
 
 impl EngineResponse {
-    pub fn with_message(message: Cow<str>) -> Self {
-        Output::Message(message.to_owned().to_string()).into()
-    }
-
     pub fn from_messages<'a>(
         messages: impl IntoIterator<Item = Cow<'a, str>>,
         sensitive: bool,
@@ -237,7 +228,7 @@ impl Engine {
         for (player, messages) in self.game_world.messages() {
             if let Some(client) = self.clients.by_player(player) {
                 client
-                    .send_batch(
+                    .send(
                         self.tick,
                         SendPrompt::Prompt,
                         messages.into_iter().map(Into::into),
@@ -301,7 +292,16 @@ impl Engine {
                     }
                 }
 
-                // TODO: send to FSM
+                if let Some(client) = self.clients.get_mut(client_id) {
+                    client
+                        .transition(
+                            Transition::Disconnect,
+                            &mut self.game_world,
+                            &self.db,
+                            &self.commands,
+                        )
+                        .await;
+                }
 
                 self.clients.remove(client_id);
                 self.engine_tx
@@ -312,9 +312,8 @@ impl Engine {
             ClientMessage::Ready(client_id) => {
                 tracing::info!("[{}] {} ready", self.tick, client_id);
 
-                // TODO: this is where we invoke the character login fsm
-
-                if let Some(mut client) = self.clients.get_mut(client_id) {
+                // this is where we invoke the character login fsm
+                if let Some(client) = self.clients.get_mut(client_id) {
                     client
                         .transition(
                             Transition::Ready,
@@ -334,7 +333,7 @@ impl Engine {
             }
             ClientMessage::Input(client_id, input) => {
                 tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
-                if let Some(mut client) = self.clients.get_mut(client_id) {
+                if let Some(client) = self.clients.get_mut(client_id) {
                     client
                         .update(
                             Some(input.as_str()),
@@ -428,264 +427,6 @@ impl Engine {
             }
         };
     }
-
-    // #[tracing::instrument(name = "process input", skip_all)]
-    // async fn process_input(&mut self, client_id: ClientId, input: String) {
-    //     let mut spawned_player = None;
-    //
-    //     if let Some(client) = self.clients.get_mut(client_id) {
-    //         match client.get_state() {
-    //             State::LoginName => {
-    //                 let name = input.trim();
-    //                 if name_valid(name) {
-    //                     let has_user = match self.db.has_player(name).await {
-    //                         Ok(has_user) => has_user,
-    //                         Err(e) => {
-    //                             tracing::error!("player presence check error: {}", e);
-    //                             client
-    //                                 .send_batch(
-    //                                     self.tick,
-    //                                     SendPrompt::Prompt,
-    //                                     vec![
-    //                                         Cow::from("|Red1|Error retrieving user.|-|"),
-    //                                         Cow::from("|SteelBlue3|Name?|-|"),
-    //                                     ],
-    //                                 )
-    //                                 .await;
-    //                             return;
-    //                         }
-    //                     };
-    //
-    //                     if has_user {
-    //                         if self.game_world.player_online(name) {
-    //                             client
-    //                                 .send_batch(
-    //                                     self.tick,
-    //                                     SendPrompt::Prompt,
-    //                                     vec![
-    //                                         Cow::from("|Red1|User currently online.|-|"),
-    //                                         Cow::from("|SteelBlue3|Name?|-|"),
-    //                                     ],
-    //                                 )
-    //                                 .await;
-    //                             return;
-    //                         }
-    //                         client
-    //                             .send_batch(
-    //                                 self.tick,
-    //                                 SendPrompt::SensitivePrompt,
-    //                                 vec![
-    //                                     Cow::from("|SteelBlue3|User located.|-|"),
-    //                                     Cow::from("|SteelBlue3|Password?|-|"),
-    //                                 ],
-    //                             )
-    //                             .await;
-    //                         client.set_state(State::LoginPassword {
-    //                             name: name.to_string(),
-    //                         });
-    //                     } else {
-    //                         client
-    //                             .send_batch(
-    //                                 self.tick,
-    //                                 SendPrompt::SensitivePrompt,
-    //                                 vec![
-    //                                     Cow::from("|SteelBlue3|New user detected.|-|"),
-    //                                     Cow::from("|SteelBlue3|Password?|-|"),
-    //                                 ],
-    //                             )
-    //                             .await;
-    //                         client.set_state(State::CreatePassword {
-    //                             name: name.to_string(),
-    //                         });
-    //                     }
-    //                 } else {
-    //                     client
-    //                         .send_batch(
-    //                             self.tick,
-    //                             SendPrompt::Prompt,
-    //                             vec![
-    //                                 Cow::from("|SteelBlue3|Invalid username.|-|"),
-    //                                 Cow::from("|SteelBlue3|Name?|-|"),
-    //                             ],
-    //                         )
-    //                         .await;
-    //                 }
-    //             }
-    //             State::CreatePassword { name } => {
-    //                 let name = name.clone();
-    //
-    //                 if input.len() < 5 {
-    //                     client
-    //                         .send_batch(
-    //                             self.tick,
-    //                             SendPrompt::SensitivePrompt,
-    //                             vec![
-    //                                 Cow::from("|Red1|Weak password detected.|-|"),
-    //                                 Cow::from("|SteelBlue3|Password?|-|"),
-    //                             ],
-    //                         )
-    //                         .await;
-    //                     return;
-    //                 }
-    //
-    //                 let hasher = Argon2::default();
-    //                 let salt = SaltString::generate(&mut OsRng);
-    //                 let hash = match hasher
-    //                     .hash_password(input.as_bytes(), &salt)
-    //                     .map(|hash| hash.to_string())
-    //                 {
-    //                     Ok(hash) => hash,
-    //                     Err(e) => {
-    //                         tracing::error!("create password hash error: {}", e);
-    //                         client
-    //                             .send_batch(
-    //                                 self.tick,
-    //                                 SendPrompt::SensitivePrompt,
-    //                                 vec![
-    //                                     Cow::from("|Red1|Error computing password hash.|-|"),
-    //                                     Cow::from("|SteelBlue3|Password?|-|"),
-    //                                 ],
-    //                             )
-    //                             .await;
-    //                         return;
-    //                     }
-    //                 };
-    //
-    //                 client
-    //                     .send_batch(
-    //                         self.tick,
-    //                         SendPrompt::SensitivePrompt,
-    //                         vec![
-    //                             Cow::from("|SteelBlue3|Password accepted.|-|"),
-    //                             Cow::from("|SteelBlue3|Verify?|-|"),
-    //                         ],
-    //                     )
-    //                     .await;
-    //                 client.set_state(State::VerifyPassword {
-    //                     name: name.clone(),
-    //                     hash,
-    //                 });
-    //             }
-    //             State::VerifyPassword { name, hash } => {
-    //                 let name = name.clone();
-    //
-    //                 match verify_password(hash, input.as_str()) {
-    //                     Ok(_) => (),
-    //                     Err(e) => {
-    //                         if let VerifyError::Unknown(e) = e {
-    //                             tracing::error!("create verify password failure: {}", e);
-    //                         }
-    //                         client
-    //                             .verification_failed_creation(self.tick, name.as_str())
-    //                             .await;
-    //                         return;
-    //                     }
-    //                 }
-    //
-    //                 let spawn_room = self.game_world.spawn_room();
-    //                 match self.db.create_player(name.as_str(), hash, spawn_room).await {
-    //                     Ok(_) => (),
-    //                     Err(e) => {
-    //                         tracing::error!("user creation error: {}", e);
-    //                         client
-    //                             .verification_failed_creation(self.tick, name.as_str())
-    //                             .await;
-    //                         return;
-    //                     }
-    //                 };
-    //
-    //                 let player = match self
-    //                     .db
-    //                     .load_player(self.game_world.world_mut(), name.as_str())
-    //                     .await
-    //                 {
-    //                     Ok(player) => (player),
-    //                     Err(e) => {
-    //                         tracing::error!("failed to load player: {}", e);
-    //                         client.spawn_failed(self.tick).await;
-    //                         return;
-    //                     }
-    //                 };
-    //
-    //                 client.verified(self.tick).await;
-    //                 client.set_state(State::InGame { player });
-    //
-    //                 self.game_world
-    //                     .player_action(Action::from(Login { actor: player }));
-    //                 self.game_world.player_action(Action::from(Look {
-    //                     actor: player,
-    //                     direction: None,
-    //                 }));
-    //
-    //                 spawned_player = Some(player);
-    //             }
-    //             State::LoginPassword { name } => {
-    //                 let name = name.clone();
-    //
-    //                 match self.db.verify_player(name.as_str(), input.as_str()).await {
-    //                     Ok(verified) => {
-    //                         if !verified {
-    //                             client.verification_failed_login(self.tick).await;
-    //                             return;
-    //                         }
-    //                     }
-    //                     Err(e) => {
-    //                         tracing::error!("get user hash error: {}", e);
-    //                         client.verification_failed_login(self.tick).await;
-    //                         return;
-    //                     }
-    //                 };
-    //
-    //                 let player = match self
-    //                     .db
-    //                     .load_player(self.game_world.world_mut(), name.as_str())
-    //                     .await
-    //                 {
-    //                     Ok(player) => (player),
-    //                     Err(e) => {
-    //                         tracing::error!("failed to load player: {}", e);
-    //                         client.spawn_failed(self.tick).await;
-    //                         return;
-    //                     }
-    //                 };
-    //
-    //                 client.verified(self.tick).await;
-    //                 client.set_state(State::InGame { player });
-    //
-    //                 self.game_world
-    //                     .player_action(Action::from(Login { actor: player }));
-    //                 self.game_world.player_action(Action::from(Look {
-    //                     actor: player,
-    //                     direction: None,
-    //                 }));
-    //
-    //                 spawned_player = Some(player);
-    //             }
-    //             State::InGame { player } => {
-    //                 tracing::debug!("{}> {:?} sent {:?}", self.tick, client_id, input);
-    //                 let immortal = self
-    //                     .game_world
-    //                     .world()
-    //                     .get::<PlayerFlags>(*player)
-    //                     .unwrap()
-    //                     .contains(player::Flags::IMMORTAL);
-    //
-    //                 match self.commands.parse(*player, &input, !immortal) {
-    //                     Ok(action) => self.game_world.player_action(action),
-    //                     Err(message) => {
-    //                         client.send_prompted(self.tick, message.into()).await;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     } else {
-    //         tracing::error!("received message from unknown client ({:?})", client_id);
-    //     }
-    //
-    //     if let Some(player) = spawned_player {
-    //         self.clients.insert(client_id, player);
-    //     }
-    // }
 }
 
 pub fn name_valid(name: &str) -> bool {

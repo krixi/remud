@@ -1,21 +1,20 @@
-use crate::engine::client::{ClientSender, SendPrompt};
-use crate::engine::db::{verify_password, AuthDb, Db, GameDb, VerifyError};
-use crate::engine::name_valid;
-use crate::world::action::commands::Commands;
-use crate::world::action::observe::Look;
-use crate::world::action::system::Login;
-use crate::world::action::Action;
-use crate::world::types::player;
-use crate::world::types::player::PlayerFlags;
-use crate::world::GameWorld;
-use crate::{engine::EngineResponse, ClientId};
+use crate::{
+    engine::client::{ClientSender, SendPrompt},
+    engine::db::{verify_password, AuthDb, Db, GameDb, VerifyError},
+    engine::name_valid,
+    world::action::commands::Commands,
+    world::action::observe::Look,
+    world::action::system::Login,
+    world::action::Action,
+    world::types::player,
+    world::types::player::PlayerFlags,
+    world::GameWorld,
+    ClientId,
+};
 use anyhow::bail;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
-use async_trait::async_trait;
 use bevy_ecs::prelude::Entity;
-use futures::future::err;
-use futures::TryFutureExt;
 use rand::rngs::OsRng;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -43,7 +42,6 @@ pub enum Transition {
     Then,
     FailLogin { msg: String },
     ExistsOffline,
-    ExistsOnline,
     PlayerDoesNotExist,
     CreatedPassword { hash: String },
     VerifiedPassword,
@@ -94,18 +92,6 @@ impl ClientData {
     pub fn player(&self) -> Option<Entity> {
         self.player
     }
-
-    pub fn username(&self) -> Option<String> {
-        self.username.as_ref().map(|s| s.clone())
-    }
-
-    pub fn pw_hash(&self) -> Option<String> {
-        self.pw_hash.as_ref().map(|s| s.clone())
-    }
-
-    pub fn reason(&self) -> Option<String> {
-        self.reason.as_ref().map(|s| s.clone())
-    }
 }
 
 #[async_trait::async_trait]
@@ -120,7 +106,10 @@ pub trait ClientState: Send + Sync {
         self.output_state(&Transition::Then).is_some()
     }
 
+    #[allow(unused_variables)]
     async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
+
+    #[allow(unused_variables)]
     async fn decide<'a>(
         &mut self,
         data: &mut ClientData,
@@ -128,7 +117,9 @@ pub trait ClientState: Send + Sync {
     ) -> Option<Transition> {
         None
     }
+    #[allow(unused_variables)]
     async fn act<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
+    #[allow(unused_variables)]
     async fn on_exit<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
 }
 
@@ -283,7 +274,7 @@ impl ClientState for ConnectionReady {
     async fn on_enter<'a>(&mut self, _data: &mut ClientData, params: &'a mut Params) {
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::None,
@@ -326,7 +317,7 @@ impl ClientState for LoginNameState {
         data.username = None;
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::Prompt,
@@ -376,7 +367,7 @@ impl ClientState for LoginNameState {
             // they were offline
             params
                 .sender
-                .send_batch(
+                .send(
                     0,
                     params.id,
                     SendPrompt::None,
@@ -397,7 +388,7 @@ impl ClientState for LoginNameState {
         // they didn't exist
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::None,
@@ -429,7 +420,7 @@ impl ClientState for LoginPasswordState {
         data.pw_hash = None;
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::SensitivePrompt,
@@ -453,7 +444,7 @@ impl ClientState for LoginPasswordState {
                         if verified {
                             params
                                 .sender
-                                .send_batch(
+                                .send(
                                     0,
                                     params.id,
                                     SendPrompt::None,
@@ -533,7 +524,7 @@ impl ClientState for CreatePasswordState {
         data.pw_hash = None;
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::SensitivePrompt,
@@ -544,7 +535,7 @@ impl ClientState for CreatePasswordState {
 
     async fn decide<'a>(
         &mut self,
-        data: &mut ClientData,
+        _: &mut ClientData,
         params: &'a mut Params,
     ) -> Option<Transition> {
         if let Some(input) = params.input {
@@ -562,7 +553,7 @@ impl ClientState for CreatePasswordState {
             };
             params
                 .sender
-                .send_batch(
+                .send(
                     0,
                     params.id,
                     SendPrompt::None,
@@ -594,10 +585,10 @@ impl ClientState for VerifyPasswordState {
         }
     }
 
-    async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
+    async fn on_enter<'a>(&mut self, _: &mut ClientData, params: &'a mut Params) {
         params
             .sender
-            .send_batch(
+            .send(
                 0,
                 params.id,
                 SendPrompt::SensitivePrompt,
@@ -654,12 +645,12 @@ impl ClientState for LoginFailedState {
         if let Some(reason) = data.reason.as_ref() {
             params
                 .sender
-                .send_batch(0, params.id, SendPrompt::None, vec![reason.into()])
+                .send(0, params.id, SendPrompt::None, vec![reason.into()])
                 .await
         } else {
             params
                 .sender
-                .send_batch(
+                .send(
                     0,
                     params.id,
                     SendPrompt::None,
@@ -777,7 +768,7 @@ impl ClientState for CreateNewPlayerState {
         })
     }
 
-    async fn on_exit<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
+    async fn on_exit<'a>(&mut self, data: &mut ClientData, _: &'a mut Params) {
         data.pw_hash = None;
     }
 }
@@ -801,7 +792,7 @@ impl ClientState for InGameState {
         if let Some(player) = data.player {
             params
                 .sender
-                .send_batch(
+                .send(
                     0,
                     params.id,
                     SendPrompt::None,
@@ -835,7 +826,7 @@ impl ClientState for InGameState {
                     Err(message) => {
                         params
                             .sender
-                            .send_batch(0, params.id, SendPrompt::Prompt, vec![message.into()])
+                            .send(0, params.id, SendPrompt::Prompt, vec![message.into()])
                             .await;
                     }
                 }
