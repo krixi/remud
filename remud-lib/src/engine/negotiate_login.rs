@@ -20,6 +20,7 @@ pub enum StateId {
     CreatePassword,
     VerifyPassword,
     AlreadyOnline,
+    SpawnPlayer,
     InGame,
 }
 
@@ -30,6 +31,7 @@ pub enum Transition {
     Then,
     FailLogin { msg: String },
     ExistsOffline,
+    ExistsOnline,
     DoesNotExist,
     PasswordEntered { hash: String },
     PlayerLoaded { player: Entity },
@@ -145,8 +147,15 @@ impl Default for ClientFSM {
     fn default() -> Self {
         let fsm = ClientFSMBuilder::default()
             .with_state(Box::new(NotConnectedState::default()))
+            .with_state(Box::new(ConnectionReady::default()))
+            .with_state(Box::new(LoginNameState::default()))
+            .with_state(Box::new(LoginPasswordState::default()))
+            .with_state(Box::new(LoginFailedState::default()))
+            .with_state(Box::new(CreatePasswordState::default()))
+            .with_state(Box::new(VerifyPasswordState::default()))
+            .with_state(Box::new(SpawnPlayerState::default()))
+            .with_state(Box::new(InGameState::default()))
             .build();
-
         fsm.unwrap()
     }
 }
@@ -203,19 +212,6 @@ impl ClientFSM {
     }
 }
 
-/**
-
-,
-,
-LoginName,
-LoginPassword,
-CreatePassword,
-VerifyPassword,
-PasswordRejected,
-AlreadyOnline,
-InGame,
-**/
-
 // Not connected (default) state.
 #[derive(Default)]
 pub struct NotConnectedState {}
@@ -253,9 +249,10 @@ impl ClientState for ConnectionReady {
                 0,
                 params.id,
                 SendPrompt::None,
-                vec![Cow::from(
-                    "|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|\r\n",
-                )],
+                vec![
+                    Cow::from("|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|"),
+                    Cow::from(""),
+                ],
             )
             .await;
     }
@@ -270,9 +267,7 @@ impl ClientState for ConnectionReady {
 
 // in this state we introduce ourselves
 #[derive(Default)]
-pub struct LoginNameState {
-    name: Option<String>,
-}
+pub struct LoginNameState {}
 
 #[async_trait::async_trait]
 impl ClientState for LoginNameState {
@@ -320,8 +315,6 @@ impl ClientState for LoginNameState {
             return None; // shouldn't happen? :shrug:
         };
 
-        data.username = Some(name.to_string());
-
         let has_user = match params.db.has_player(name).await {
             Ok(has_user) => has_user,
             Err(e) => {
@@ -332,73 +325,118 @@ impl ClientState for LoginNameState {
             }
         };
 
-        // do tests needed to figure out transition out of this state.
-        None
+        data.username = Some(name.to_string());
+
+        // check if online
+        if has_user && params.game_world.player_online(name) {
+            return Some(Transition::FailLogin {
+                msg: "|Red1|User currently online.|-|".to_string(),
+            });
+            // return Some(Transition::ExistsOnline);
+        }
+
+        // they were offline
+        if has_user {
+            return Some(Transition::ExistsOffline);
+        }
+
+        // they didn't exist
+        return Some(Transition::DoesNotExist);
     }
 }
 
-pub struct AlreadyOnlineState {}
-
-impl ClientState for AlreadyOnlineState {
-    fn id(&self) -> StateId {
-        todo!()
-    }
-    fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
-    }
-}
-
+#[derive(Default)]
 pub struct LoginPasswordState {}
 
+#[async_trait::async_trait]
 impl ClientState for LoginPasswordState {
     fn id(&self) -> StateId {
-        todo!()
+        StateId::LoginPassword
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
     }
 }
 
+#[derive(Default)]
 pub struct CreatePasswordState {}
 
+#[async_trait::async_trait]
 impl ClientState for CreatePasswordState {
     fn id(&self) -> StateId {
-        todo!()
+        StateId::CreatePassword
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
     }
 }
 
+#[derive(Default)]
 pub struct VerifyPasswordState {}
 
+#[async_trait::async_trait]
 impl ClientState for VerifyPasswordState {
     fn id(&self) -> StateId {
-        todo!()
+        StateId::VerifyPassword
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
     }
 }
 
-pub struct PasswordRejectedState {}
+#[derive(Default)]
+pub struct LoginFailedState {}
 
-impl ClientState for PasswordRejectedState {
+#[async_trait::async_trait]
+impl ClientState for LoginFailedState {
     fn id(&self) -> StateId {
-        todo!()
+        StateId::LoginFailed
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
     }
 }
 
+#[derive(Default)]
+pub struct SpawnPlayerState {}
+
+#[async_trait::async_trait]
+impl ClientState for SpawnPlayerState {
+    fn id(&self) -> StateId {
+        StateId::SpawnPlayer
+    }
+    fn output_state(&self, next: &Transition) -> Option<StateId> {
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct InGameState {}
 
+#[async_trait::async_trait]
 impl ClientState for InGameState {
     fn id(&self) -> StateId {
-        todo!()
+        StateId::InGame
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
-        todo!()
+        match next {
+            Transition::Disconnect => Some(StateId::NotConnected),
+            _ => None,
+        }
     }
 }

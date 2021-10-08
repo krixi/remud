@@ -315,10 +315,12 @@ impl Engine {
                 // TODO: this is where we invoke the character login fsm
 
                 if let Some(mut client) = self.clients.get_mut(client_id) {
-                    client.transition(Transition::Ready, &mut self.game_world, &self.db);
+                    client
+                        .transition(Transition::Ready, &mut self.game_world, &self.db)
+                        .await;
 
                     // manually drive the state machine in certain cases.
-                    client.update(None, &mut self.game_world, &self.db);
+                    client.update(None, &mut self.game_world, &self.db).await;
                 } else {
                     tracing::error!("received message from unknown client: {:?}", message);
                 }
@@ -326,7 +328,9 @@ impl Engine {
             ClientMessage::Input(client_id, input) => {
                 tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
                 if let Some(mut client) = self.clients.get_mut(client_id) {
-                    client.update(Some(input.as_str()), &mut self.game_world, &self.db);
+                    client
+                        .update(Some(input.as_str()), &mut self.game_world, &self.db)
+                        .await;
                 }
                 //self.process_input(client_id, input).await;
             }

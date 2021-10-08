@@ -58,7 +58,8 @@ impl Client {
     // TODO : get rid of this probably?
     pub async fn send_prompted(&self, tick: u64, message: Cow<'_, str>) {
         self.sender
-            .send_batch(tick, self.id, SendPrompt::Prompt, vec![message]);
+            .send_batch(tick, self.id, SendPrompt::Prompt, vec![message])
+            .await;
     }
 
     pub async fn send_batch<'a>(
@@ -67,7 +68,9 @@ impl Client {
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = Cow<'a, str>>,
     ) {
-        self.sender.send_batch(tick, self.id, prompt, messages);
+        self.sender
+            .send_batch(tick, self.id, prompt, messages)
+            .await;
     }
 
     pub fn get_state(&self) -> &State {
