@@ -1,17 +1,13 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use bevy_ecs::prelude::*;
+use bevy_ecs::prelude::Entity;
 use tokio::sync::mpsc;
 
+use crate::engine::db::Db;
+use crate::engine::negotiate_login::{ClientData, ClientFSM, Params, Transition};
+use crate::world::action::commands::Commands;
+use crate::world::GameWorld;
 use crate::{engine::EngineResponse, ClientId};
-
-pub enum State {
-    LoginName,
-    CreatePassword { name: String },
-    VerifyPassword { name: String, hash: String },
-    LoginPassword { name: String },
-    InGame { player: Entity },
-}
 
 pub enum SendPrompt {
     None,
@@ -21,33 +17,84 @@ pub enum SendPrompt {
 
 pub struct Client {
     id: ClientId,
-    tx: mpsc::Sender<EngineResponse>,
-    state: State,
+    sender: ClientSender,
+    fsm: ClientFSM,
+    data: ClientData,
 }
 
 impl Client {
-    pub fn get_player(&self) -> Option<Entity> {
-        match self.state {
-            State::InGame { player } => Some(player),
-            _ => None,
-        }
+    pub fn player(&self) -> Option<Entity> {
+        self.data.player()
     }
 
-    pub async fn send_prompted(&self, tick: u64, message: Cow<'_, str>) {
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-        if self
-            .tx
-            .send(EngineResponse::with_message(message))
+    pub async fn update(
+        &mut self,
+        input: Option<&str>,
+        world: &mut GameWorld,
+        db: &Db,
+        commands: &Commands,
+    ) {
+        let data = &mut self.data;
+        let sender = &self.sender;
+
+        let mut update_count = 0;
+        while self
+            .fsm
+            .on_update(
+                None,
+                data,
+                &mut Params::new(self.id, sender, world, db, commands).with_input(input),
+            )
             .await
-            .is_err()
         {
-            tracing::error!("failed to send message to client {:?}", self.id);
+            // just go again
+            update_count += 1;
+
+            if update_count > 5 {
+                tracing::warn!("HOLY **** there were FIVE updates what even");
+                break;
+            }
         }
     }
 
-    pub async fn send_batch<'a>(
+    pub async fn transition(
+        &mut self,
+        tx: Transition,
+        world: &mut GameWorld,
+        db: &Db,
+        commands: &Commands,
+    ) {
+        let data = &mut self.data;
+        let sender = &self.sender;
+        self.fsm
+            .on_update(
+                Some(tx),
+                data,
+                &mut Params::new(self.id, sender, world, db, commands),
+            )
+            .await;
+    }
+
+    pub async fn send<'a>(
         &self,
         tick: u64,
+        prompt: SendPrompt,
+        messages: impl IntoIterator<Item = Cow<'a, str>>,
+    ) {
+        self.sender.send(tick, self.id, prompt, messages).await;
+    }
+}
+
+#[derive(Clone)]
+pub struct ClientSender {
+    tx: mpsc::Sender<EngineResponse>,
+}
+
+impl ClientSender {
+    pub async fn send<'a>(
+        &self,
+        tick: u64,
+        id: ClientId,
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = Cow<'a, str>>,
     ) {
@@ -56,74 +103,10 @@ impl Client {
             SendPrompt::Prompt => EngineResponse::from_messages(messages, false),
             SendPrompt::SensitivePrompt => EngineResponse::from_messages(messages, true),
         };
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, self.id, message);
-        if self.tx.send(message).await.is_err() {
-            tracing::error!("failed to send message to client {:?}", self.id);
+        tracing::debug!("[{}] {:?} <- {:?}.", tick, id, message);
+        if let Err(e) = self.tx.send(message).await {
+            tracing::error!("failed to send message to client {:?}: {}", id, e);
         }
-    }
-
-    pub fn get_state(&self) -> &State {
-        &self.state
-    }
-
-    pub fn set_state(&mut self, new_state: State) {
-        self.state = new_state;
-    }
-
-    pub async fn verification_failed_creation(&mut self, tick: u64, name: &str) {
-        self.send_batch(
-            tick,
-            SendPrompt::SensitivePrompt,
-            vec![
-                Cow::from("|Red1|Verification failed.|-|"),
-                Cow::from("|SteelBlue3|Password?|-|"),
-            ],
-        )
-        .await;
-
-        self.set_state(State::CreatePassword {
-            name: name.to_string(),
-        });
-    }
-
-    pub async fn verification_failed_login(&mut self, tick: u64) {
-        self.send_batch(
-            tick,
-            SendPrompt::Prompt,
-            vec![
-                Cow::from("|Red1|Verification failed.|-|"),
-                Cow::from("|SteelBlue3|Name?|-|"),
-            ],
-        )
-        .await;
-        self.set_state(State::LoginName {});
-    }
-
-    pub async fn spawn_failed(&mut self, tick: u64) {
-        self.send_batch(
-            tick,
-            SendPrompt::Prompt,
-            vec![
-                Cow::from("|Red1|User instantiation failed.|-|"),
-                Cow::from("|SteelBlue3|Name?|-|"),
-            ],
-        )
-        .await;
-        self.set_state(State::LoginName {});
-    }
-
-    pub async fn verified(&mut self, tick: u64) {
-        self.send_batch(
-            tick,
-            SendPrompt::None,
-            vec![
-                Cow::from("|SteelBlue3|Password verified.|-|"),
-                Cow::from(""),
-                Cow::from("|white|Welcome to City Six."),
-                Cow::from(""),
-            ],
-        )
-        .await;
     }
 }
 
@@ -139,10 +122,15 @@ impl Clients {
             client_id,
             Client {
                 id: client_id,
-                tx,
-                state: State::LoginName,
+                sender: ClientSender { tx },
+                fsm: ClientFSM::default(),
+                data: ClientData::default(),
             },
         );
+    }
+
+    pub fn init_player(&mut self, client: ClientId, player: Entity) {
+        self.by_player.entry(player).or_insert(client);
     }
 
     pub fn get(&self, client: ClientId) -> Option<&Client> {
@@ -153,19 +141,8 @@ impl Clients {
         self.clients.get_mut(&client)
     }
 
-    pub fn insert(&mut self, client: ClientId, player: Entity) {
-        self.by_player.insert(player, client);
-    }
-
     pub fn remove(&mut self, client: ClientId) {
-        let player =
-            self.clients
-                .get(&client)
-                .map(Client::get_state)
-                .and_then(|state| match state {
-                    State::InGame { player } => Some(*player),
-                    _ => None,
-                });
+        let player = self.clients.get(&client).and_then(Client::player);
 
         if let Some(player) = player {
             self.by_player.remove(&player);
