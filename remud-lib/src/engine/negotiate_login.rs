@@ -15,11 +15,14 @@ use anyhow::bail;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
 use bevy_ecs::prelude::Entity;
+use bevy_ecs::schedule::IntoRunCriteria;
 use rand::rngs::OsRng;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 
 static DEFAULT_LOGIN_ERROR: &'static str = "|Red1|Error retrieving user.|-|";
+static DEFAULT_PASSWORD_ERROR: &'static str = "|Red1|Verification failed.|-|";
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
 pub enum StateId {
@@ -35,7 +38,7 @@ pub enum StateId {
     InGame,
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub enum Transition {
     Disconnect,
     Ready,
@@ -44,9 +47,28 @@ pub enum Transition {
     ExistsOffline,
     PlayerDoesNotExist,
     CreatedPassword { hash: String },
+    FailPassword,
     VerifiedPassword,
     PlayerCreated,
     PlayerLoaded { player: Entity },
+}
+
+impl Debug for Transition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transition::Disconnect => write!(f, "Disconnect"),
+            Transition::Ready => write!(f, "Ready"),
+            Transition::Then => write!(f, "Then"),
+            Transition::FailLogin { .. } => write!(f, "FailLogin"),
+            Transition::ExistsOffline => write!(f, "ExistsOffline"),
+            Transition::PlayerDoesNotExist => write!(f, "PlayerDoesNotExist"),
+            Transition::CreatedPassword { .. } => write!(f, "CreatedPassword"),
+            Transition::VerifiedPassword => write!(f, "VerifiedPassword"),
+            Transition::FailPassword => write!(f, "FailPassword"),
+            Transition::PlayerCreated => write!(f, "PlayerCreated"),
+            Transition::PlayerLoaded { .. } => write!(f, "PlayerLoaded"),
+        }
+    }
 }
 
 pub struct Params<'a> {
@@ -78,6 +100,41 @@ impl<'a> Params<'a> {
         self.input = input;
         self
     }
+
+    pub async fn send<M: Into<Cow<'a, str>>>(&self, messages: impl IntoIterator<Item = M>) {
+        self.sender
+            .send(
+                0,
+                self.id,
+                SendPrompt::None,
+                messages.into_iter().map(Into::into),
+            )
+            .await;
+    }
+
+    pub async fn send_prompt<M: Into<Cow<'a, str>>>(&self, messages: impl IntoIterator<Item = M>) {
+        self.sender
+            .send(
+                0,
+                self.id,
+                SendPrompt::Prompt,
+                messages.into_iter().map(Into::into),
+            )
+            .await;
+    }
+    pub async fn send_sensitive_prompt<M: Into<Cow<'a, str>>>(
+        &self,
+        messages: impl IntoIterator<Item = M>,
+    ) {
+        self.sender
+            .send(
+                0,
+                self.id,
+                SendPrompt::SensitivePrompt,
+                messages.into_iter().map(Into::into),
+            )
+            .await;
+    }
 }
 
 #[derive(Default)]
@@ -100,10 +157,23 @@ pub trait ClientState: Send + Sync {
 
     // TODO: add wrapper that logs None as a warning with state information
     fn output_state(&self, next: &Transition) -> Option<StateId>;
+    fn next_state(&self, tx: &Transition) -> Option<StateId> {
+        return match self.output_state(tx) {
+            Some(state_id) => Some(state_id),
+            None => {
+                tracing::warn!(
+                    "{:?} -> {:?} -> ? (unable to find output state)",
+                    self.id(),
+                    tx
+                );
+                None
+            }
+        };
+    }
 
     // whether or not to call the state update again.
     fn keep_going(&self) -> bool {
-        self.output_state(&Transition::Then).is_some()
+        self.next_state(&Transition::Then).is_some()
     }
 
     #[allow(unused_variables)]
@@ -169,6 +239,7 @@ impl Default for ClientFSM {
             .with_state(Box::new(CreatePasswordState::default()))
             .with_state(Box::new(VerifyPasswordState::default()))
             .with_state(Box::new(SpawnPlayerState::default()))
+            .with_state(Box::new(CreateNewPlayerState::default()))
             .with_state(Box::new(InGameState::default()))
             .build();
         fsm.unwrap()
@@ -188,11 +259,11 @@ impl ClientFSM {
         // check if called with a direct transition or not, if not - decide
         // gets the new current state after any transitions occur
         let current_state = if let Some((next, tx)) = match tx {
-            Some(tx) => Some((current_state.output_state(&tx), tx)),
+            Some(tx) => Some((current_state.next_state(&tx), tx)),
             None => current_state
                 .decide(data, params)
                 .await
-                .map(|tx| (current_state.output_state(&tx), tx)),
+                .map(|tx| (current_state.next_state(&tx), tx)),
         } {
             let tx_copy = tx.clone();
             // store any transition data
@@ -213,7 +284,8 @@ impl ClientFSM {
             // update states if needed
             match next {
                 Some(state) => {
-                    tracing::info!("{:?} - {:?} -> {:?}", current_state.id(), tx_copy, state);
+                    tracing::info!("{:?} - {:?} -> {:?}", current_state.id(), tx_copy, state); // TODO shane make this better
+                    drop(tx_copy);
                     // exit outgoing state.
                     current_state.on_exit(data, params).await;
                     // assert that the new state exists
@@ -336,7 +408,7 @@ impl ClientState for LoginNameState {
             let name = input.trim();
             if !name_valid(name) {
                 return Some(Transition::FailLogin {
-                    msg: DEFAULT_LOGIN_ERROR.to_string(),
+                    msg: "Invalid username.".to_string(),
                 });
             }
             name
@@ -411,7 +483,7 @@ impl ClientState for LoginPasswordState {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::VerifiedPassword => Some(StateId::SpawnPlayer),
-            Transition::FailLogin { .. } => Some(StateId::LoginFailed),
+            Transition::FailPassword => Some(StateId::LoginFailed),
             _ => None,
         }
     }
@@ -419,13 +491,7 @@ impl ClientState for LoginPasswordState {
     async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
         data.pw_hash = None;
         params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::SensitivePrompt,
-                vec![Cow::from("|SteelBlue3|Password?|-|")],
-            )
+            .send_sensitive_prompt(vec!["|SteelBlue3|Password?|-|"])
             .await;
     }
 
@@ -434,41 +500,42 @@ impl ClientState for LoginPasswordState {
         data: &mut ClientData,
         params: &'a mut Params,
     ) -> Option<Transition> {
-        if let Some(input) = params.input {
-            if let Some(tx) = verify_len(input) {
-                return Some(tx); // these will be error transitions.
+        if params.input.is_none() {
+            params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+            return Some(Transition::FailPassword);
+        }
+        let input = params.input.unwrap();
+
+        // these will be error transitions.
+        if let Some(tx) = verify_len(input) {
+            if let Transition::FailLogin { msg } = tx {
+                params.send(vec![msg]).await;
             }
-            if let Some(name) = data.username.as_ref().map(|s| s.as_str()) {
-                return match params.db.verify_player(name, input).await {
-                    Ok(verified) => {
-                        if verified {
-                            params
-                                .sender
-                                .send(
-                                    0,
-                                    params.id,
-                                    SendPrompt::None,
-                                    vec![
-                                        Cow::from("|SteelBlue3|Password verified.|-|"),
-                                        Cow::from(""),
-                                    ],
-                                )
-                                .await;
-                            Some(Transition::VerifiedPassword)
-                        } else {
-                            Some(Transition::FailLogin {
-                                msg: DEFAULT_LOGIN_ERROR.to_string(),
-                            })
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("get user hash error: {:?}", e);
+            return Some(Transition::FailPassword);
+        }
+
+        if let Some(name) = data.username.as_ref().map(|s| s.as_str()) {
+            return match params.db.verify_player(name, input).await {
+                Ok(verified) => {
+                    if verified {
+                        params
+                            .send(vec!["|SteelBlue3|Password verified.|-|", ""])
+                            .await;
+                        Some(Transition::VerifiedPassword)
+                    } else {
+                        tracing::info!("verification failed for user {}", name);
                         Some(Transition::FailLogin {
                             msg: DEFAULT_LOGIN_ERROR.to_string(),
                         })
                     }
-                };
-            }
+                }
+                Err(e) => {
+                    tracing::error!("get user hash error: {:?}", e);
+                    Some(Transition::FailLogin {
+                        msg: DEFAULT_LOGIN_ERROR.to_string(),
+                    })
+                }
+            };
         }
         None
     }
@@ -516,6 +583,7 @@ impl ClientState for CreatePasswordState {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::CreatedPassword { .. } => Some(StateId::VerifyPassword),
+            Transition::FailPassword => Some(StateId::CreatePassword),
             _ => None,
         }
     }
@@ -523,13 +591,7 @@ impl ClientState for CreatePasswordState {
     async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
         data.pw_hash = None;
         params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::SensitivePrompt,
-                vec![Cow::from("|SteelBlue3|Password?|-|")],
-            )
+            .send_sensitive_prompt(vec!["|SteelBlue3|Password?|-|"])
             .await;
     }
 
@@ -538,33 +600,39 @@ impl ClientState for CreatePasswordState {
         _: &mut ClientData,
         params: &'a mut Params,
     ) -> Option<Transition> {
-        if let Some(input) = params.input {
-            if let Some(tx) = verify_len(input) {
-                return Some(tx); // these will be error transitions.
+        if params.input.is_none() {
+            params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+            return Some(Transition::FailPassword);
+        }
+
+        let input = params.input.unwrap();
+        if let Some(tx) = verify_len(input) {
+            if let Transition::FailLogin { msg } = tx {
+                params
+                    .sender
+                    .send(0, params.id, SendPrompt::None, vec![Cow::from(msg)])
+                    .await;
             }
-            // do something with input
-            let hash = match hash_input(input) {
-                Ok(hash) => hash,
-                Err(_) => {
-                    return Some(Transition::FailLogin {
-                        msg: DEFAULT_LOGIN_ERROR.to_string(),
-                    })
-                }
-            };
-            params
-                .sender
-                .send(
-                    0,
-                    params.id,
-                    SendPrompt::None,
-                    vec![Cow::from("|SteelBlue3|Password accepted.|-|")],
-                )
-                .await;
-            return Some(Transition::CreatedPassword { hash });
+            return Some(Transition::FailPassword); // these will be error transitions.
+        }
+        // do something with input
+        let hash = match hash_input(input) {
+            Ok(hash) => hash,
+            Err(_) => {
+                params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+                return Some(Transition::FailPassword);
+            }
         };
-        Some(Transition::FailLogin {
-            msg: DEFAULT_LOGIN_ERROR.to_string(),
-        })
+        params
+            .sender
+            .send(
+                0,
+                params.id,
+                SendPrompt::None,
+                vec![Cow::from("|SteelBlue3|Password accepted.|-|")],
+            )
+            .await;
+        return Some(Transition::CreatedPassword { hash });
     }
 }
 
@@ -579,21 +647,15 @@ impl ClientState for VerifyPasswordState {
     fn output_state(&self, next: &Transition) -> Option<StateId> {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
-            Transition::FailLogin { .. } => Some(StateId::LoginFailed),
-            Transition::Then => Some(StateId::CreateNewPlayer),
+            Transition::FailPassword => Some(StateId::CreatePassword),
+            Transition::VerifiedPassword => Some(StateId::CreateNewPlayer),
             _ => None,
         }
     }
 
     async fn on_enter<'a>(&mut self, _: &mut ClientData, params: &'a mut Params) {
         params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::SensitivePrompt,
-                vec![Cow::from("|SteelBlue3|Verify?|-|")],
-            )
+            .send_sensitive_prompt(vec!["|SteelBlue3|Verify?|-|"])
             .await;
     }
 
@@ -602,25 +664,25 @@ impl ClientState for VerifyPasswordState {
         data: &mut ClientData,
         params: &'a mut Params,
     ) -> Option<Transition> {
-        if let Some(input) = params.input {
-            if let Some(hash) = data.pw_hash.as_ref() {
-                return match verify_password(hash.as_str(), input) {
-                    Ok(_) => Some(Transition::VerifiedPassword),
-                    Err(e) => {
-                        if let VerifyError::Unknown(e) = e {
-                            tracing::error!("create verify password failure: {}", e);
-                        }
-                        Some(Transition::FailLogin {
-                            msg: "|Red1|Verification failed.|-|".to_string(),
-                        })
-                    }
-                };
-            }
+        if params.input.is_none() || data.pw_hash.is_none() {
+            params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+            return Some(Transition::FailPassword);
         }
-
-        Some(Transition::FailLogin {
-            msg: DEFAULT_LOGIN_ERROR.to_string(),
-        })
+        let input = params.input.unwrap();
+        let hash = data.pw_hash.as_ref().unwrap();
+        return match verify_password(hash.as_str(), input) {
+            Ok(_) => {
+                params.send(vec!["|SteelBlue3|Password verified.|-|"]).await;
+                Some(Transition::VerifiedPassword)
+            }
+            Err(e) => {
+                if let VerifyError::Unknown(e) = e {
+                    tracing::error!("create verify password failure: {}", e);
+                }
+                params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+                Some(Transition::FailPassword)
+            }
+        };
     }
 }
 
@@ -643,22 +705,9 @@ impl ClientState for LoginFailedState {
 
     async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
         if let Some(reason) = data.reason.as_ref() {
-            params
-                .sender
-                .send(0, params.id, SendPrompt::None, vec![reason.into()])
-                .await
-        } else {
-            params
-                .sender
-                .send(
-                    0,
-                    params.id,
-                    SendPrompt::None,
-                    vec![DEFAULT_LOGIN_ERROR.into()],
-                )
-                .await
-            // TODO
+            params.send(vec![format!("|Red1|{}|-|", reason)]).await;
         }
+        data.reason = None;
     }
 
     async fn decide<'a>(&mut self, _: &mut ClientData, _: &'a mut Params) -> Option<Transition> {
@@ -708,6 +757,24 @@ impl ClientState for SpawnPlayerState {
                     });
                 }
             };
+
+            params
+                .sender
+                .send(
+                    0,
+                    params.id,
+                    SendPrompt::None,
+                    vec![Cow::from("|white|Welcome to City Six."), Cow::from("")],
+                )
+                .await;
+            params
+                .game_world
+                .player_action(Action::from(Login { actor: player }));
+            params.game_world.player_action(Action::from(Look {
+                actor: player,
+                direction: None,
+                // TODO: one-shot in the FSM to let the engine know the player is ready / in game?
+            }));
 
             return Some(Transition::PlayerLoaded { player });
         }
@@ -788,29 +855,11 @@ impl ClientState for InGameState {
         }
     }
 
-    async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
-        if let Some(player) = data.player {
-            params
-                .sender
-                .send(
-                    0,
-                    params.id,
-                    SendPrompt::None,
-                    vec![Cow::from("|white|Welcome to City Six."), Cow::from("")],
-                )
-                .await;
-            params
-                .game_world
-                .player_action(Action::from(Login { actor: player }));
-            params.game_world.player_action(Action::from(Look {
-                actor: player,
-                direction: None,
-                // TODO: one-shot in the FSM to let the engine know the player is ready / in game?
-            }));
-        }
-    }
-
-    async fn act<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
+    async fn decide<'a>(
+        &mut self,
+        data: &mut ClientData,
+        params: &'a mut Params,
+    ) -> Option<Transition> {
         if let Some(input) = params.input {
             tracing::debug!("{:?} sent {:?}", params.id, input);
             if let Some(player) = data.player {
@@ -832,5 +881,6 @@ impl ClientState for InGameState {
                 }
             }
         }
+        None
     }
 }

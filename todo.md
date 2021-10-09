@@ -46,6 +46,8 @@
 
 - add currency
 
+- resolve player with same name character creation race condition
+
 
 Things that would benefit from a state machine:
 - figure out how to factor out Engine.process_input (needed for character creation)

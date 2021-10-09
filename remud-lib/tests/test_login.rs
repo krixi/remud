@@ -78,7 +78,7 @@ async fn test_login_already_online() {
     t2.test(
         "enter name",
         "Shane",
-        vec!["User currently online.", "Name?"],
+        vec!["Error retrieving user.", "Name?"],
     )
     .await;
 
@@ -193,7 +193,7 @@ async fn test_login_verify_failed() {
     t.test(
         "enter bad password",
         "ok",
-        vec!["Verification failed.", "Name?"],
+        vec!["Weak password detected.", "Name?"],
     )
     .await;
 

@@ -50,8 +50,8 @@ impl Client {
             // just go again
             update_count += 1;
 
-            if update_count > 3 {
-                tracing::warn!("HOLY **** there were THREEE updates what even");
+            if update_count > 5 {
+                tracing::warn!("HOLY **** there were FIVE updates what even");
                 break;
             }
         }
