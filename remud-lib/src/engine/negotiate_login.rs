@@ -15,7 +15,6 @@ use anyhow::bail;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
 use bevy_ecs::prelude::Entity;
-use bevy_ecs::schedule::IntoRunCriteria;
 use rand::rngs::OsRng;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -873,10 +872,7 @@ impl ClientState for InGameState {
                 match params.commands.parse(player, &input, !immortal) {
                     Ok(action) => params.game_world.player_action(action),
                     Err(message) => {
-                        params
-                            .sender
-                            .send(0, params.id, SendPrompt::Prompt, vec![message.into()])
-                            .await;
+                        params.send_prompt(vec![message]).await;
                     }
                 }
             }
