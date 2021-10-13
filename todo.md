@@ -24,8 +24,6 @@
 
 - password verification is slow - do it in another task
 
-- *figure out how to factor out Engine.process_input (needed for character creation)
-
 - consider cleaning up timers at the end of a tick
 
 - finish building the dog
@@ -36,8 +34,6 @@
 
 - support graceful shutdown handling via signals
 
-- *add change password command
-
 - add persist feedback for immortal commands (?)
 
 - add support for metrics (statsd -> telegraf -> influxdb -> grafana)
@@ -46,11 +42,8 @@
 
 - add currency
 
-- resolve player with same name character creation race condition
-
-
 Things that would benefit from a state machine:
-- figure out how to factor out Engine.process_input (needed for character creation)
+
 - add change password command
+
 - Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)
-- 

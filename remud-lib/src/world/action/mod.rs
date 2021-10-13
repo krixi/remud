@@ -16,8 +16,8 @@ use crate::{
         action::{
             attributes::{stats_system, Stats},
             communicate::{
-                emote_system, message_system, say_system, send_system, Emote, Message, Say,
-                SendMessage,
+                emote_system, message_system, say_system, send_message_system, whisper_system,
+                Emote, Message, Say, SendMessage, Whisper,
             },
             immortal::{
                 initialize_system,
@@ -140,6 +140,7 @@ pub enum Action {
     UpdateName(UpdateName),
     UpdateObjectFlags(UpdateObjectFlags),
     Use(Use),
+    Whisper(Whisper),
     Who(Who),
 }
 
@@ -186,6 +187,7 @@ impl Action {
             Action::UpdateName(action) => action.actor,
             Action::UpdateObjectFlags(action) => action.actor,
             Action::Use(action) => action.actor,
+            Action::Whisper(action) => action.actor,
             Action::Who(action) => action.actor,
         }
     }
@@ -233,6 +235,7 @@ pub enum ActionSystem {
     UpdateName,
     UpdateObjectFlags,
     Use,
+    Whisper,
     Who,
 }
 
@@ -422,7 +425,7 @@ impl Plugin for ActionsPlugin {
             .add_system(
                 Step::Main,
                 Phase::Update,
-                send_system
+                send_message_system
                     .system()
                     .label(ActionSystem::Send)
                     .after(ActionSystem::Look),
@@ -477,6 +480,14 @@ impl Plugin for ActionsPlugin {
                 Step::Main,
                 Phase::Update,
                 use_system.system().label(ActionSystem::Use),
+            )
+            .add_system(
+                Step::Main,
+                Phase::Update,
+                whisper_system
+                    .system()
+                    .label(ActionSystem::Whisper)
+                    .after(ActionSystem::Look),
             )
             .add_system(
                 Step::Main,

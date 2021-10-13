@@ -218,7 +218,7 @@ pub fn room_create_system(
 ) {
     for action in action_reader.iter() {
         if let Action::RoomCreate(RoomCreate { actor, direction }) = action {
-            let current_room_entity = get_room_std(*actor, &room_set.q0());
+            let current_room_entity = get_room_std(*actor, room_set.q0());
 
             if let Some(direction) = direction {
                 if room_set
@@ -473,7 +473,7 @@ pub fn room_link_system(
                 continue;
             };
 
-            let from_room_entity = get_room_std(*actor, &room_set.q0());
+            let from_room_entity = get_room_std(*actor, room_set.q0());
 
             let from_room_id = {
                 let mut from_room = room_set.q1_mut().get_mut(from_room_entity).unwrap();
@@ -521,7 +521,7 @@ pub fn room_remove_system(
 ) {
     for action in action_reader.iter() {
         if let Action::RoomRemove(RoomRemove { actor }) = action {
-            let room_entity = get_room_std(*actor, &room_set.q0());
+            let room_entity = get_room_std(*actor, room_set.q0());
 
             // Retrieve information about the current room.
             let (room, contents) = room_set.q1_mut().get_mut(room_entity).unwrap();
@@ -657,7 +657,7 @@ pub fn room_unlink_system(
 ) {
     for action in action_reader.iter() {
         if let Action::RoomUnlink(RoomUnlink { actor, direction }) = action {
-            let room_entity = get_room_std(*actor, &room_set.q0());
+            let room_entity = get_room_std(*actor, room_set.q0());
 
             let mut room = room_set.q1_mut().get_mut(room_entity).unwrap();
 

@@ -1,6 +1,7 @@
 mod client;
 pub mod db;
 pub mod dialog;
+pub mod fsm;
 pub mod negotiate_login;
 pub mod persist;
 
@@ -14,12 +15,12 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
-use crate::engine::negotiate_login::Transition;
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
         client::{Client, Clients, SendPrompt},
         db::{Db, GameDb},
+        negotiate_login::Transition,
         persist::PersistPlugin,
     },
     macros::regex,
@@ -73,14 +74,16 @@ pub enum EngineResponse {
 }
 
 impl EngineResponse {
-    pub fn from_messages<'a>(
-        messages: impl IntoIterator<Item = Cow<'a, str>>,
+    pub fn from_messages_prompt<'a, M: Into<Cow<'a, str>>>(
+        messages: impl IntoIterator<Item = M>,
         sensitive: bool,
     ) -> Self {
         EngineResponse::Output(
             messages
                 .into_iter()
-                .map(|message| Output::Message(message.to_owned().to_string()))
+                .map(Into::into)
+                .map(|m| m.to_string())
+                .map(Output::Message)
                 .chain(std::iter::once(Output::Prompt {
                     format: "> ".to_string(),
                     sensitive,
@@ -89,11 +92,13 @@ impl EngineResponse {
         )
     }
 
-    pub fn from_messages_noprompt<'a>(messages: impl IntoIterator<Item = Cow<'a, str>>) -> Self {
+    pub fn from_messages<'a, M: Into<Cow<'a, str>>>(messages: impl IntoIterator<Item = M>) -> Self {
         EngineResponse::Output(
             messages
                 .into_iter()
-                .map(|message| Output::Message(message.to_owned().to_string()))
+                .map(Into::into)
+                .map(|m| m.to_string())
+                .map(Output::Message)
                 .collect(),
         )
     }
@@ -227,13 +232,7 @@ impl Engine {
         // Dispatch all queued messages to players
         for (player, messages) in self.game_world.messages() {
             if let Some(client) = self.clients.by_player(player) {
-                client
-                    .send(
-                        self.tick,
-                        SendPrompt::Prompt,
-                        messages.into_iter().map(Into::into),
-                    )
-                    .await;
+                client.send(SendPrompt::Prompt, messages).await;
             } else {
                 tracing::error!(
                     "attempting to send messages to player without client: {:?}",

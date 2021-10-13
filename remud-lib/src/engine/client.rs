@@ -3,30 +3,34 @@ use std::{borrow::Cow, collections::HashMap};
 use bevy_ecs::prelude::Entity;
 use tokio::sync::mpsc;
 
-use crate::engine::db::Db;
-use crate::engine::negotiate_login::{ClientData, ClientFSM, Params, Transition};
-use crate::world::action::commands::Commands;
-use crate::world::GameWorld;
-use crate::{engine::EngineResponse, ClientId};
+use crate::{
+    engine::{
+        db::Db,
+        negotiate_login::{ClientLoginFsm, Params, Transition},
+        EngineResponse,
+    },
+    world::{action::commands::Commands, GameWorld},
+    ClientId,
+};
 
 pub enum SendPrompt {
     None,
     Prompt,
-    SensitivePrompt,
+    Sensitive,
 }
 
 pub struct Client {
     id: ClientId,
     sender: ClientSender,
-    fsm: ClientFSM,
-    data: ClientData,
+    fsm: ClientLoginFsm,
 }
 
 impl Client {
     pub fn player(&self) -> Option<Entity> {
-        self.data.player()
+        self.fsm.player()
     }
 
+    #[tracing::instrument(name = "update client fsm", skip(self, world, db, commands))]
     pub async fn update(
         &mut self,
         input: Option<&str>,
@@ -34,7 +38,6 @@ impl Client {
         db: &Db,
         commands: &Commands,
     ) {
-        let data = &mut self.data;
         let sender = &self.sender;
 
         let mut update_count = 0;
@@ -42,7 +45,6 @@ impl Client {
             .fsm
             .on_update(
                 None,
-                data,
                 &mut Params::new(self.id, sender, world, db, commands).with_input(input),
             )
             .await
@@ -57,6 +59,7 @@ impl Client {
         }
     }
 
+    #[tracing::instrument(name = "transition client fsm", skip(self, world, db, commands))]
     pub async fn transition(
         &mut self,
         tx: Transition,
@@ -64,24 +67,21 @@ impl Client {
         db: &Db,
         commands: &Commands,
     ) {
-        let data = &mut self.data;
         let sender = &self.sender;
         self.fsm
             .on_update(
                 Some(tx),
-                data,
                 &mut Params::new(self.id, sender, world, db, commands),
             )
             .await;
     }
 
-    pub async fn send<'a>(
+    pub async fn send<'a, M: Into<Cow<'a, str>>>(
         &self,
-        tick: u64,
         prompt: SendPrompt,
-        messages: impl IntoIterator<Item = Cow<'a, str>>,
+        messages: impl IntoIterator<Item = M>,
     ) {
-        self.sender.send(tick, self.id, prompt, messages).await;
+        self.sender.send(self.id, prompt, messages).await;
     }
 }
 
@@ -91,19 +91,18 @@ pub struct ClientSender {
 }
 
 impl ClientSender {
-    pub async fn send<'a>(
+    pub async fn send<'a, M: Into<Cow<'a, str>>>(
         &self,
-        tick: u64,
         id: ClientId,
         prompt: SendPrompt,
-        messages: impl IntoIterator<Item = Cow<'a, str>>,
+        messages: impl IntoIterator<Item = M>,
     ) {
         let message = match prompt {
-            SendPrompt::None => EngineResponse::from_messages_noprompt(messages),
-            SendPrompt::Prompt => EngineResponse::from_messages(messages, false),
-            SendPrompt::SensitivePrompt => EngineResponse::from_messages(messages, true),
+            SendPrompt::None => EngineResponse::from_messages(messages),
+            SendPrompt::Prompt => EngineResponse::from_messages_prompt(messages, false),
+            SendPrompt::Sensitive => EngineResponse::from_messages_prompt(messages, true),
         };
-        tracing::debug!("[{}] {:?} <- {:?}.", tick, id, message);
+        tracing::debug!("{:?} <- {:?}.", id, message);
         if let Err(e) = self.tx.send(message).await {
             tracing::error!("failed to send message to client {:?}: {}", id, e);
         }
@@ -123,8 +122,7 @@ impl Clients {
             Client {
                 id: client_id,
                 sender: ClientSender { tx },
-                fsm: ClientFSM::default(),
-                data: ClientData::default(),
+                fsm: ClientLoginFsm::default(),
             },
         );
     }

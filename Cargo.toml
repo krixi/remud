@@ -2,5 +2,6 @@
 
 members = [
   "remud-lib",
+  "remud-lib/remud-macros",
   "remud-bin",
 ]

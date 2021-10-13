@@ -23,7 +23,7 @@ async fn test_communicate_emote() {
 
     t2.test(
         "shane also emotes with shortcut command",
-        ";does the sprinkler.",
+        "/does the sprinkler.",
         vec!["Shane does the sprinkler."],
     )
     .await;

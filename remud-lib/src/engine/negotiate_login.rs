@@ -1,34 +1,77 @@
 use crate::{
-    engine::client::{ClientSender, SendPrompt},
-    engine::db::{verify_password, AuthDb, Db, GameDb, VerifyError},
-    engine::name_valid,
-    world::action::commands::Commands,
-    world::action::observe::Look,
-    world::action::system::Login,
-    world::action::Action,
-    world::types::player,
-    world::types::player::PlayerFlags,
-    world::GameWorld,
+    engine::{
+        client::{ClientSender, SendPrompt},
+        db::{verify_password, AuthDb, Db, GameDb, VerifyError},
+        fsm::{self, Fsm, FsmBuilder, State},
+        name_valid,
+    },
+    world::{
+        action::{commands::Commands, observe::Look, system::Login, Action},
+        types::player::{self, PlayerFlags},
+        GameWorld,
+    },
     ClientId,
 };
+
 use anyhow::bail;
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use bevy_ecs::prelude::Entity;
 use rand::rngs::OsRng;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Formatter},
+};
 
-static DEFAULT_LOGIN_ERROR: &'static str = "|Red1|Error retrieving user.|-|";
-static DEFAULT_PASSWORD_ERROR: &'static str = "|Red1|Verification failed.|-|";
+static DEFAULT_LOGIN_ERROR: &str = "|Red1|Error retrieving user.|-|";
+static DEFAULT_PASSWORD_ERROR: &str = "|Red1|Verification failed.|-|";
+
+pub struct ClientLoginFsm {
+    fsm: Fsm<Transition, StateId>,
+    data: ClientData,
+}
+
+impl ClientLoginFsm {
+    pub async fn on_update<'a>(
+        &mut self,
+        tx: Option<Transition>,
+        params: &'a mut Params<'a>,
+    ) -> bool {
+        self.fsm.on_update(tx, &mut self.data, params).await
+    }
+
+    pub fn player(&self) -> Option<Entity> {
+        self.data.player()
+    }
+}
+
+// this state machine will always have the same shape, and there's only one of them,
+// so implement default to construct it.
+impl Default for ClientLoginFsm {
+    fn default() -> Self {
+        let fsm = FsmBuilder::new()
+            .with_state(Box::new(NotConnectedState::default()))
+            .with_state(Box::new(ConnectionReady::default()))
+            .with_state(Box::new(LoginNameState::default()))
+            .with_state(Box::new(LoginPasswordState::default()))
+            .with_state(Box::new(CreatePasswordState::default()))
+            .with_state(Box::new(VerifyPasswordState::default()))
+            .with_state(Box::new(SpawnPlayerState::default()))
+            .with_state(Box::new(CreateNewPlayerState::default()))
+            .with_state(Box::new(InGameState::default()))
+            .build();
+
+        ClientLoginFsm {
+            fsm: fsm.unwrap(),
+            data: ClientData::default(),
+        }
+    }
+}
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
 pub enum StateId {
     NotConnected,
     ConnectionReady,
     LoginName,
-    LoginFailed,
     LoginPassword,
     CreatePassword,
     VerifyPassword,
@@ -37,20 +80,24 @@ pub enum StateId {
     InGame,
 }
 
+impl fsm::StateId for StateId {}
+
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub enum Transition {
     Disconnect,
     Ready,
     Then,
-    FailLogin { msg: String },
+    FailLogin,
     ExistsOffline,
     PlayerDoesNotExist,
-    CreatedPassword { hash: String },
+    CreatedPassword,
     FailPassword,
     VerifiedPassword,
     PlayerCreated,
-    PlayerLoaded { player: Entity },
+    PlayerLoaded,
 }
+
+impl fsm::Transition for Transition {}
 
 impl Debug for Transition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -58,14 +105,14 @@ impl Debug for Transition {
             Transition::Disconnect => write!(f, "Disconnect"),
             Transition::Ready => write!(f, "Ready"),
             Transition::Then => write!(f, "Then"),
-            Transition::FailLogin { .. } => write!(f, "FailLogin"),
+            Transition::FailLogin => write!(f, "FailLogin"),
             Transition::ExistsOffline => write!(f, "ExistsOffline"),
             Transition::PlayerDoesNotExist => write!(f, "PlayerDoesNotExist"),
-            Transition::CreatedPassword { .. } => write!(f, "CreatedPassword"),
+            Transition::CreatedPassword => write!(f, "CreatedPassword"),
             Transition::VerifiedPassword => write!(f, "VerifiedPassword"),
             Transition::FailPassword => write!(f, "FailPassword"),
             Transition::PlayerCreated => write!(f, "PlayerCreated"),
-            Transition::PlayerLoaded { .. } => write!(f, "PlayerLoaded"),
+            Transition::PlayerLoaded => write!(f, "PlayerLoaded"),
         }
     }
 }
@@ -78,6 +125,7 @@ pub struct Params<'a> {
     pub db: &'a Db,
     pub commands: &'a Commands,
 }
+
 impl<'a> Params<'a> {
     pub fn new(
         id: ClientId,
@@ -103,7 +151,6 @@ impl<'a> Params<'a> {
     pub async fn send<M: Into<Cow<'a, str>>>(&self, messages: impl IntoIterator<Item = M>) {
         self.sender
             .send(
-                0,
                 self.id,
                 SendPrompt::None,
                 messages.into_iter().map(Into::into),
@@ -114,7 +161,6 @@ impl<'a> Params<'a> {
     pub async fn send_prompt<M: Into<Cow<'a, str>>>(&self, messages: impl IntoIterator<Item = M>) {
         self.sender
             .send(
-                0,
                 self.id,
                 SendPrompt::Prompt,
                 messages.into_iter().map(Into::into),
@@ -127,9 +173,8 @@ impl<'a> Params<'a> {
     ) {
         self.sender
             .send(
-                0,
                 self.id,
-                SendPrompt::SensitivePrompt,
+                SendPrompt::Sensitive,
                 messages.into_iter().map(Into::into),
             )
             .await;
@@ -138,192 +183,41 @@ impl<'a> Params<'a> {
 
 #[derive(Default)]
 pub struct ClientData {
-    username: Option<String>,
-    pw_hash: Option<String>,
-    player: Option<Entity>,
-    reason: Option<String>,
+    pub username: Option<String>,
+    pub pw_hash: Option<String>,
+    pub player: Option<Entity>,
+    pub reason: Option<String>,
 }
 
 impl ClientData {
     pub fn player(&self) -> Option<Entity> {
         self.player
     }
-}
 
-#[async_trait::async_trait]
-pub trait ClientState: Send + Sync {
-    fn id(&self) -> StateId;
-
-    // TODO: add wrapper that logs None as a warning with state information
-    fn output_state(&self, next: &Transition) -> Option<StateId>;
-    fn next_state(&self, tx: &Transition) -> Option<StateId> {
-        return match self.output_state(tx) {
-            Some(state_id) => Some(state_id),
-            None => {
-                tracing::warn!(
-                    "{:?} -> {:?} -> ? (unable to find output state)",
-                    self.id(),
-                    tx
-                );
-                None
-            }
-        };
-    }
-
-    // whether or not to call the state update again.
-    fn keep_going(&self) -> bool {
-        self.next_state(&Transition::Then).is_some()
-    }
-
-    #[allow(unused_variables)]
-    async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
-
-    #[allow(unused_variables)]
-    async fn decide<'a>(
-        &mut self,
-        data: &mut ClientData,
-        params: &'a mut Params,
-    ) -> Option<Transition> {
-        None
-    }
-    #[allow(unused_variables)]
-    async fn act<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
-    #[allow(unused_variables)]
-    async fn on_exit<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {}
-}
-
-#[derive(Default)]
-pub struct ClientFSMBuilder {
-    states: Vec<(StateId, Box<dyn ClientState>)>,
-}
-
-impl ClientFSMBuilder {
-    pub fn build(self) -> anyhow::Result<ClientFSM> {
-        let mut states = HashMap::new();
-        let mut first = None;
-        for (id, state) in self.states {
-            if first == None {
-                first = Some(id)
-            }
-            states.insert(id, state);
-        }
-
-        if let Some(current) = first {
-            Ok(ClientFSM { states, current })
-        } else {
-            bail!("No states found for client fsm")
-        }
-    }
-    pub fn with_state(mut self, state: Box<dyn ClientState>) -> Self {
-        self.states.push((state.id(), state));
-        self
-    }
-}
-
-pub struct ClientFSM {
-    states: HashMap<StateId, Box<dyn ClientState>>,
-    current: StateId,
-}
-
-// this state machine will always have the same shape, and there's only one of them,
-// so implement default to construct it.
-impl Default for ClientFSM {
-    fn default() -> Self {
-        let fsm = ClientFSMBuilder::default()
-            .with_state(Box::new(NotConnectedState::default()))
-            .with_state(Box::new(ConnectionReady::default()))
-            .with_state(Box::new(LoginNameState::default()))
-            .with_state(Box::new(LoginPasswordState::default()))
-            .with_state(Box::new(LoginFailedState::default()))
-            .with_state(Box::new(CreatePasswordState::default()))
-            .with_state(Box::new(VerifyPasswordState::default()))
-            .with_state(Box::new(SpawnPlayerState::default()))
-            .with_state(Box::new(CreateNewPlayerState::default()))
-            .with_state(Box::new(InGameState::default()))
-            .build();
-        fsm.unwrap()
-    }
-}
-
-impl ClientFSM {
-    pub async fn on_update<'a>(
-        &mut self,
-        tx: Option<Transition>,
-        data: &mut ClientData,
-        params: &'a mut Params<'a>,
-    ) -> bool {
-        // delegate to current state -
-        let current_state = self.states.get_mut(&self.current).unwrap();
-
-        // check if called with a direct transition or not, if not - decide
-        // gets the new current state after any transitions occur
-        let current_state = if let Some((next, tx)) = match tx {
-            Some(tx) => Some((current_state.next_state(&tx), tx)),
-            None => current_state
-                .decide(data, params)
-                .await
-                .map(|tx| (current_state.next_state(&tx), tx)),
-        } {
-            let tx_copy = tx.clone();
-            // store any transition data
-            match tx {
-                Transition::FailLogin { msg } => data.reason = Some(msg),
-                Transition::PlayerLoaded { player } => data.player = Some(player),
-                Transition::CreatedPassword { hash } => data.pw_hash = Some(hash),
-                Transition::Disconnect => {
-                    // TODO: data.clear() or data.reset()?
-                    data.reason = None;
-                    data.username = None;
-                    data.pw_hash = None;
-                    data.player = None;
-                }
-                _ => (),
-            };
-
-            // update states if needed
-            match next {
-                Some(state) => {
-                    tracing::info!("{:?} - {:?} -> {:?}", current_state.id(), tx_copy, state); // TODO shane make this better
-                    drop(tx_copy);
-                    // exit outgoing state.
-                    current_state.on_exit(data, params).await;
-                    // assert that the new state exists
-                    let next_state = self
-                        .states
-                        .get_mut(&state)
-                        .expect("missing state implementation for");
-                    // update the current state reference
-                    self.current = state;
-                    // enter the new state
-                    next_state.on_enter(data, params).await;
-                    next_state
-                }
-                None => current_state,
-            }
-        } else {
-            current_state
-        };
-
-        // finally: let the new current state act.
-        current_state.act(data, params).await;
-
-        // the new current state knows best if it should be called again right away.
-        current_state.keep_going()
+    pub fn clear(&mut self) {
+        *self = ClientData::default();
     }
 }
 
 // Not connected (default) state.
 #[derive(Default)]
 pub struct NotConnectedState {}
-impl ClientState for NotConnectedState {
+
+#[async_trait::async_trait]
+impl State<Transition, StateId> for NotConnectedState {
     fn id(&self) -> StateId {
         StateId::NotConnected
     }
     fn output_state(&self, next: &Transition) -> Option<StateId> {
         match next {
             Transition::Ready => Some(StateId::ConnectionReady),
+            Transition::Disconnect => Some(StateId::NotConnected),
             _ => None,
         }
+    }
+
+    async fn on_enter<'a>(&mut self, data: &mut ClientData, _params: &'a mut Params) {
+        data.clear();
     }
 }
 
@@ -331,7 +225,7 @@ impl ClientState for NotConnectedState {
 pub struct ConnectionReady {}
 
 #[async_trait::async_trait]
-impl ClientState for ConnectionReady {
+impl State<Transition, StateId> for ConnectionReady {
     fn id(&self) -> StateId {
         StateId::ConnectionReady
     }
@@ -344,16 +238,10 @@ impl ClientState for ConnectionReady {
     }
     async fn on_enter<'a>(&mut self, _data: &mut ClientData, params: &'a mut Params) {
         params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::None,
-                vec![
-                    Cow::from("|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|"),
-                    Cow::from(""),
-                ],
-            )
+            .send(vec![
+                "|SteelBlue3|Connected to|-| |white|ucs://uplink.six.city|-|",
+                "",
+            ])
             .await;
     }
     async fn decide<'a>(
@@ -370,7 +258,7 @@ impl ClientState for ConnectionReady {
 pub struct LoginNameState {}
 
 #[async_trait::async_trait]
-impl ClientState for LoginNameState {
+impl State<Transition, StateId> for LoginNameState {
     fn id(&self) -> StateId {
         StateId::LoginName
     }
@@ -379,22 +267,14 @@ impl ClientState for LoginNameState {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::ExistsOffline => Some(StateId::LoginPassword),
             Transition::PlayerDoesNotExist => Some(StateId::CreatePassword),
-            Transition::FailLogin { .. } => Some(StateId::LoginFailed),
+            Transition::FailLogin { .. } => Some(StateId::LoginName),
             _ => None,
         }
     }
 
     async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
         data.username = None;
-        params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::Prompt,
-                vec![Cow::from("|SteelBlue3|Name?|-|")],
-            )
-            .await;
+        params.send_prompt(vec!["|SteelBlue3|Name?|-|"]).await;
     }
 
     // handle input
@@ -406,9 +286,8 @@ impl ClientState for LoginNameState {
         let name = if let Some(input) = params.input {
             let name = input.trim();
             if !name_valid(name) {
-                return Some(Transition::FailLogin {
-                    msg: "Invalid username.".to_string(),
-                });
+                params.send(vec!["Invalid username."]).await;
+                return Some(Transition::FailLogin);
             }
             name
         } else {
@@ -419,9 +298,8 @@ impl ClientState for LoginNameState {
             Ok(has_user) => (has_user, params.game_world.player_online(name)),
             Err(e) => {
                 tracing::error!("player presence check error: {}", e);
-                return Some(Transition::FailLogin {
-                    msg: DEFAULT_LOGIN_ERROR.to_string(),
-                });
+                params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                return Some(Transition::FailLogin);
             }
         };
 
@@ -430,42 +308,22 @@ impl ClientState for LoginNameState {
         // was there a user and what is their connection status?
         if has_user {
             if user_online {
-                return Some(Transition::FailLogin {
-                    msg: DEFAULT_LOGIN_ERROR.to_string(), //TODO?
-                });
+                params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                return Some(Transition::FailLogin);
             }
 
             // they were offline
-            params
-                .sender
-                .send(
-                    0,
-                    params.id,
-                    SendPrompt::None,
-                    vec![Cow::from("|SteelBlue3|User located.|-|")],
-                )
-                .await;
+            params.send(vec!["|SteelBlue3|User located.|-|"]).await;
             return Some(Transition::ExistsOffline);
-        } else {
-            if user_online {
-                // how??
-                tracing::error!("player is online but not found in db: {}", name);
-                return Some(Transition::FailLogin {
-                    msg: DEFAULT_LOGIN_ERROR.to_string(),
-                });
-            }
+        } else if user_online {
+            // how??
+            tracing::error!("player is online but not found in db: {}", name);
+            params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+            return Some(Transition::FailLogin);
         }
 
         // they didn't exist
-        params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::None,
-                vec![Cow::from("|SteelBlue3|New user detected.|-|")],
-            )
-            .await;
+        params.send(vec!["|SteelBlue3|New user detected.|-|"]).await;
         return Some(Transition::PlayerDoesNotExist);
     }
 }
@@ -474,7 +332,7 @@ impl ClientState for LoginNameState {
 pub struct LoginPasswordState {}
 
 #[async_trait::async_trait]
-impl ClientState for LoginPasswordState {
+impl State<Transition, StateId> for LoginPasswordState {
     fn id(&self) -> StateId {
         StateId::LoginPassword
     }
@@ -482,7 +340,7 @@ impl ClientState for LoginPasswordState {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::VerifiedPassword => Some(StateId::SpawnPlayer),
-            Transition::FailPassword => Some(StateId::LoginFailed),
+            Transition::FailPassword => Some(StateId::LoginName),
             _ => None,
         }
     }
@@ -506,14 +364,12 @@ impl ClientState for LoginPasswordState {
         let input = params.input.unwrap();
 
         // these will be error transitions.
-        if let Some(tx) = verify_len(input) {
-            if let Transition::FailLogin { msg } = tx {
-                params.send(vec![msg]).await;
-            }
+        if let Some(msg) = verify_len(input) {
+            params.send(vec![msg]).await;
             return Some(Transition::FailPassword);
         }
 
-        if let Some(name) = data.username.as_ref().map(|s| s.as_str()) {
+        if let Some(name) = data.username.as_deref() {
             return match params.db.verify_player(name, input).await {
                 Ok(verified) => {
                     if verified {
@@ -523,16 +379,14 @@ impl ClientState for LoginPasswordState {
                         Some(Transition::VerifiedPassword)
                     } else {
                         tracing::info!("verification failed for user {}", name);
-                        Some(Transition::FailLogin {
-                            msg: DEFAULT_LOGIN_ERROR.to_string(),
-                        })
+                        params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                        Some(Transition::FailLogin)
                     }
                 }
                 Err(e) => {
                     tracing::error!("get user hash error: {:?}", e);
-                    Some(Transition::FailLogin {
-                        msg: DEFAULT_LOGIN_ERROR.to_string(),
-                    })
+                    params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                    Some(Transition::FailLogin)
                 }
             };
         }
@@ -540,41 +394,11 @@ impl ClientState for LoginPasswordState {
     }
 }
 
-fn verify_len(input: &str) -> Option<Transition> {
-    if input.len() < 5 {
-        return Some(Transition::FailLogin {
-            msg: "|Red1|Weak password detected.|-|".to_string(),
-        });
-    } else if input.len() > 1024 {
-        return Some(Transition::FailLogin {
-            msg: "|Red1|Password too strong :(|-|".to_string(),
-        });
-    }
-    None
-}
-
-fn hash_input(input: &str) -> Result<String, anyhow::Error> {
-    // TODO: Add zeroizing library to clear password input from memory
-    let hasher = Argon2::default();
-    let salt = SaltString::generate(&mut OsRng);
-    let hash = match hasher
-        .hash_password(input.as_bytes(), &salt)
-        .map(|hash| hash.to_string())
-    {
-        Ok(hash) => hash,
-        Err(e) => {
-            tracing::error!("create password hash error: {}", e);
-            bail!(e.to_string())
-        }
-    };
-    Ok(hash.to_string())
-}
-
 #[derive(Default)]
 pub struct CreatePasswordState {}
 
 #[async_trait::async_trait]
-impl ClientState for CreatePasswordState {
+impl State<Transition, StateId> for CreatePasswordState {
     fn id(&self) -> StateId {
         StateId::CreatePassword
     }
@@ -596,7 +420,7 @@ impl ClientState for CreatePasswordState {
 
     async fn decide<'a>(
         &mut self,
-        _: &mut ClientData,
+        data: &mut ClientData,
         params: &'a mut Params,
     ) -> Option<Transition> {
         if params.input.is_none() {
@@ -605,13 +429,8 @@ impl ClientState for CreatePasswordState {
         }
 
         let input = params.input.unwrap();
-        if let Some(tx) = verify_len(input) {
-            if let Transition::FailLogin { msg } = tx {
-                params
-                    .sender
-                    .send(0, params.id, SendPrompt::None, vec![Cow::from(msg)])
-                    .await;
-            }
+        if let Some(msg) = verify_len(input) {
+            params.send(vec![msg]).await;
             return Some(Transition::FailPassword); // these will be error transitions.
         }
         // do something with input
@@ -622,16 +441,10 @@ impl ClientState for CreatePasswordState {
                 return Some(Transition::FailPassword);
             }
         };
-        params
-            .sender
-            .send(
-                0,
-                params.id,
-                SendPrompt::None,
-                vec![Cow::from("|SteelBlue3|Password accepted.|-|")],
-            )
-            .await;
-        return Some(Transition::CreatedPassword { hash });
+        params.send(vec!["|SteelBlue3|Password accepted.|-|"]).await;
+
+        data.pw_hash = Some(hash);
+        return Some(Transition::CreatedPassword);
     }
 }
 
@@ -639,7 +452,7 @@ impl ClientState for CreatePasswordState {
 pub struct VerifyPasswordState {}
 
 #[async_trait::async_trait]
-impl ClientState for VerifyPasswordState {
+impl State<Transition, StateId> for VerifyPasswordState {
     fn id(&self) -> StateId {
         StateId::VerifyPassword
     }
@@ -686,39 +499,10 @@ impl ClientState for VerifyPasswordState {
 }
 
 #[derive(Default)]
-pub struct LoginFailedState {}
-
-#[async_trait::async_trait]
-impl ClientState for LoginFailedState {
-    fn id(&self) -> StateId {
-        StateId::LoginFailed
-    }
-
-    fn output_state(&self, next: &Transition) -> Option<StateId> {
-        match next {
-            Transition::Disconnect => Some(StateId::NotConnected),
-            Transition::Then => Some(StateId::LoginName), // this results in :magic:
-            _ => None,
-        }
-    }
-
-    async fn on_enter<'a>(&mut self, data: &mut ClientData, params: &'a mut Params) {
-        if let Some(reason) = data.reason.as_ref() {
-            params.send(vec![format!("|Red1|{}|-|", reason)]).await;
-        }
-        data.reason = None;
-    }
-
-    async fn decide<'a>(&mut self, _: &mut ClientData, _: &'a mut Params) -> Option<Transition> {
-        Some(Transition::Then)
-    }
-}
-
-#[derive(Default)]
 pub struct SpawnPlayerState {}
 
 #[async_trait::async_trait]
-impl ClientState for SpawnPlayerState {
+impl State<Transition, StateId> for SpawnPlayerState {
     fn id(&self) -> StateId {
         StateId::SpawnPlayer
     }
@@ -726,7 +510,7 @@ impl ClientState for SpawnPlayerState {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::PlayerLoaded { .. } => Some(StateId::InGame),
-            Transition::FailLogin { .. } => Some(StateId::LoginFailed),
+            Transition::FailLogin { .. } => Some(StateId::LoginName),
             _ => None,
         }
     }
@@ -751,21 +535,12 @@ impl ClientState for SpawnPlayerState {
                 Ok(player) => (player),
                 Err(e) => {
                     tracing::error!("failed to load player: {}", e);
-                    return Some(Transition::FailLogin {
-                        msg: DEFAULT_LOGIN_ERROR.to_string(),
-                    });
+                    params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                    return Some(Transition::FailLogin);
                 }
             };
 
-            params
-                .sender
-                .send(
-                    0,
-                    params.id,
-                    SendPrompt::None,
-                    vec![Cow::from("|white|Welcome to City Six."), Cow::from("")],
-                )
-                .await;
+            params.send(vec!["|white|Welcome to City Six.", ""]).await;
             params
                 .game_world
                 .player_action(Action::from(Login { actor: player }));
@@ -775,12 +550,12 @@ impl ClientState for SpawnPlayerState {
                 // TODO: one-shot in the FSM to let the engine know the player is ready / in game?
             }));
 
-            return Some(Transition::PlayerLoaded { player });
+            data.player = Some(player);
+            return Some(Transition::PlayerLoaded);
         }
 
-        Some(Transition::FailLogin {
-            msg: DEFAULT_LOGIN_ERROR.to_string(),
-        })
+        params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+        Some(Transition::FailLogin)
     }
 }
 
@@ -788,7 +563,7 @@ impl ClientState for SpawnPlayerState {
 pub struct CreateNewPlayerState {}
 
 #[async_trait::async_trait]
-impl ClientState for CreateNewPlayerState {
+impl State<Transition, StateId> for CreateNewPlayerState {
     fn id(&self) -> StateId {
         StateId::CreateNewPlayer
     }
@@ -797,7 +572,7 @@ impl ClientState for CreateNewPlayerState {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::PlayerCreated => Some(StateId::SpawnPlayer),
-            Transition::FailLogin { .. } => Some(StateId::LoginFailed),
+            Transition::FailLogin { .. } => Some(StateId::LoginName),
             _ => None,
         }
     }
@@ -822,16 +597,14 @@ impl ClientState for CreateNewPlayerState {
                     Ok(_) => Some(Transition::PlayerCreated),
                     Err(e) => {
                         tracing::error!("user creation error: {}", e);
-                        Some(Transition::FailLogin {
-                            msg: DEFAULT_LOGIN_ERROR.to_string(),
-                        })
+                        params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+                        Some(Transition::FailLogin)
                     }
                 };
             }
         }
-        Some(Transition::FailLogin {
-            msg: DEFAULT_LOGIN_ERROR.to_string(),
-        })
+        params.send(vec![DEFAULT_LOGIN_ERROR]).await;
+        Some(Transition::FailLogin)
     }
 
     async fn on_exit<'a>(&mut self, data: &mut ClientData, _: &'a mut Params) {
@@ -843,7 +616,7 @@ impl ClientState for CreateNewPlayerState {
 pub struct InGameState {}
 
 #[async_trait::async_trait]
-impl ClientState for InGameState {
+impl State<Transition, StateId> for InGameState {
     fn id(&self) -> StateId {
         StateId::InGame
     }
@@ -869,7 +642,7 @@ impl ClientState for InGameState {
                     .unwrap()
                     .contains(player::Flags::IMMORTAL);
 
-                match params.commands.parse(player, &input, !immortal) {
+                match params.commands.parse(player, input, !immortal) {
                     Ok(action) => params.game_world.player_action(action),
                     Err(message) => {
                         params.send_prompt(vec![message]).await;
@@ -879,4 +652,30 @@ impl ClientState for InGameState {
         }
         None
     }
+}
+
+fn verify_len(input: &str) -> Option<String> {
+    if input.len() < 5 {
+        return Some("|Red1|Weak password detected.|-|".to_string());
+    } else if input.len() > 1024 {
+        return Some("|Red1|Password too strong :(|-|".to_string());
+    }
+    None
+}
+
+fn hash_input(input: &str) -> Result<String, anyhow::Error> {
+    // TODO: Add zeroizing library to clear password input from memory
+    let hasher = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = match hasher
+        .hash_password(input.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+    {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::error!("create password hash error: {}", e);
+            bail!(e.to_string())
+        }
+    };
+    Ok(hash)
 }

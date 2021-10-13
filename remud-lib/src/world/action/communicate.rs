@@ -182,8 +182,8 @@ impl From<SendMessage> for Action {
     }
 }
 
-#[tracing::instrument(name = "send system", skip_all)]
-pub fn send_system(
+#[tracing::instrument(name = "send message system", skip_all)]
+pub fn send_message_system(
     mut action_reader: EventReader<Action>,
     players: Res<Players>,
     saying_query: Query<&Named>,
@@ -232,6 +232,35 @@ pub fn send_system(
             if let Ok(mut messages) = messages_query.get_mut(*actor) {
                 messages.queue("Your term chirps happily: \"Message sent.\"".to_string());
             };
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Whisper {
+    pub actor: Entity,
+    pub target: Entity,
+    pub message: String,
+}
+
+into_action!(Whisper);
+
+#[tracing::instrument(name = "whisper system", skip_all)]
+pub fn whisper_system(
+    mut action_reader: EventReader<Action>,
+    mut target_query: Query<&mut Messages>,
+) {
+    for action in action_reader.iter() {
+        if let Action::Whisper(Whisper {
+            actor,
+            target,
+            message,
+        }) = action
+        {
+            tracing::debug!(r#"{:?} => {:?}: "{}""#, actor, target, message);
+            if let Ok(mut messages) = target_query.get_mut(*target) {
+                messages.queue(message.clone());
+            }
         }
     }
 }

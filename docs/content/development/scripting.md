@@ -86,6 +86,10 @@ The entity that this script is attached to.
 
 `send(duration, recipient, message)` - Causes self to send the message to the provided recipient after the duration has elapsed.
 
+`whisper(entity, text)` - Sends the message to target player. No additional text is added to the message.
+
+`whisper_after(duration, entity, text)` - Sends the message to target player afer the duration has elapsed.
+
 `timer(name, duration)` - Creates a new timer for this entity with the specified duration.
 When the timer duration elapses, any timer scripts attached to this timer name will be
 executed, then the timer will be removed.

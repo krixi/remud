@@ -1,6 +1,7 @@
 use std::{fmt, ops::Index};
 
 use bevy_ecs::prelude::Entity;
+use itertools::Itertools;
 
 use crate::{
     ecs::{Ecs, Plugin},
@@ -188,6 +189,16 @@ impl Contents {
 
     pub fn get_objects(&self) -> Vec<Entity> {
         self.objects.clone()
+    }
+
+    pub fn as_array(&self) -> rhai::Array {
+        rhai::Array::from(
+            self.objects
+                .as_slice()
+                .into_iter()
+                .map(|object| rhai::Dynamic::from(object.clone()))
+                .collect_vec(),
+        )
     }
 }
 

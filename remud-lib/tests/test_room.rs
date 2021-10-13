@@ -11,22 +11,27 @@ async fn assert_there_and_back_again(t: &mut TelnetPlayer, from: (u32, &str), to
         vec![format!("Created room {}", to_id)],
     )
     .await;
+
     t.test("move to the new room", there, vec!["An empty room"])
         .await;
+
     t.test(
         format!("should be in room {} now", to_id),
         "room info",
         vec![format!("Room {}", to_id).as_str(), "krixi", back],
     )
     .await;
+
     t.test("make sure exits command works", "exits", vec![back])
         .await;
+
     t.test(
         format!("go {}, back to room {}", back, from_id),
         back,
         vec!["An empty room"],
     )
     .await;
+
     t.test(
         format!(
             "check the room again, should be back in room {} with an exit {}",
@@ -41,6 +46,7 @@ async fn assert_there_and_back_again(t: &mut TelnetPlayer, from: (u32, &str), to
         ],
     )
     .await;
+
     t.test("", "exits", vec![there]).await;
 }
 
@@ -51,8 +57,10 @@ async fn test_room_new() {
 
     t.test("create a new room", "room new", vec!["Created room 1"])
         .await;
+
     t.test("teleport to it", "teleport 1", vec!["An empty room"])
         .await;
+
     t.test(
         "check info - should be room 1 and should contain the player",
         "room info",
@@ -79,18 +87,21 @@ async fn test_room_name() {
         vec!["The Void"],
     )
     .await;
+
     t.test(
         "rename the void room",
         "room name Super Happy Fun Palace",
         vec!["Updated current room name."],
     )
     .await;
+
     t.test(
         "Room now has updated name via room info",
         "room info",
         vec!["name: Super Happy Fun Palace"],
     )
     .await;
+
     t.test(
         "Room now has updated name via look",
         "look",
@@ -109,18 +120,21 @@ async fn test_room_desc() {
         vec!["description: A dark void extends infinitely in all directions"],
     )
     .await;
+
     t.test(
         "change the description of the void room",
         "room desc A waterslide spirals infinitely in every direction.",
         vec!["Updated current room description."],
     )
     .await;
+
     t.test(
         "Room now has updated desc via room info",
         "room info",
         vec!["description: A waterslide spirals infinitely in every direction."],
     )
     .await;
+
     t.test(
         "Room now has updated desc via look",
         "look",
@@ -142,32 +156,40 @@ async fn assert_link_and_unlink(t: &mut TelnetPlayer, there: &str, back: &str) {
         vec!["This room has no obvious exits."],
     )
     .await;
+
     t.test(
         "link from void -> new in a direction",
         format!("room link {} 1", there),
         vec!["Linked", there, "room 1"],
     )
     .await;
+
     t.test(format!("exits now has {}", there), "exits", vec![there])
         .await;
+
     t.test(format!("move {}", there), there, vec!["An empty room"])
         .await;
+
     t.test("should be in new room", "room info", vec!["Room 1"])
         .await;
+
     t.test(
         "new room has no exits",
         "exits",
         vec!["This room has no obvious exits."],
     )
     .await;
+
     t.test(
         format!("link from new room -> void via {}", back),
         format!("room link {} 0", back),
         vec!["Linked", back, "room 0"],
     )
     .await;
+
     t.test(format!("new room has exit {}", back), "exits", vec![back])
         .await;
+
     t.test(format!("move {}", back), back, vec!["The Void"])
         .await;
 
@@ -178,22 +200,27 @@ async fn assert_link_and_unlink(t: &mut TelnetPlayer, there: &str, back: &str) {
         vec!["Removed exit", there],
     )
     .await;
+
     t.test(
         "void room has 0 exits again",
         "exits",
         vec!["This room has no obvious exits."],
     )
     .await;
+
     t.test("teleport to new room", "teleport 1", vec!["An empty room"])
         .await;
+
     t.test("verify it still has an exit", "exits", vec![back])
         .await;
+
     t.test(
         "unlink exit in new room",
         format!("room unlink {}", back),
         vec!["Removed exit", back],
     )
     .await;
+
     t.test(
         "verify no exits",
         "exits",
@@ -223,6 +250,7 @@ async fn test_room_region() {
         vec!["Updated room 0 regions."],
     )
     .await;
+
     t.test(
         "new region appears in room info",
         "room info",
@@ -246,6 +274,7 @@ async fn test_room_region() {
         vec!["Updated room 0 regions."],
     )
     .await;
+
     t.test(
         "two regions appear in room info",
         "room info",
@@ -268,6 +297,7 @@ async fn test_room_region() {
         vec!["Updated room 0 regions."],
     )
     .await;
+
     t.test(
         "multiple regions appear in room info",
         "room info",
@@ -290,6 +320,7 @@ async fn test_room_region() {
         vec!["Updated room 0 regions."],
     )
     .await;
+
     t.test(
         "room info shows remaining regions",
         "room info",
@@ -312,6 +343,7 @@ async fn test_room_region() {
         vec!["Updated room 0 regions."],
     )
     .await;
+
     t.test(
         "room info shows no regions",
         "room info",
@@ -346,15 +378,19 @@ async fn test_room_remove() {
         vec!["Created room 1"],
     )
     .await;
+
     t.test("move to it", "north", vec!["An empty room"]).await;
+
     t.test(
         "make a prototype",
         "prototype new",
         vec!["Created prototype 1."],
     )
     .await;
+
     t.test("make an items", "object new 1", vec!["Created object 1."])
         .await;
+
     t.test("check it", "room info", vec!["Room 1", "krixi", "object 1"])
         .await;
 

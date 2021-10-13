@@ -525,6 +525,7 @@ impl TriggerEvent {
             Action::UpdateName(_) => None,
             Action::UpdateObjectFlags(_) => None,
             Action::Use(_) => Some(TriggerEvent::Use),
+            Action::Whisper(_) => None,
             Action::Who(_) => None,
         }
     }

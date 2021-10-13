@@ -64,7 +64,7 @@ impl JsonScript {
     {
         JsonScript {
             name: name.into().to_owned().to_string(),
-            trigger: trigger,
+            trigger,
             code: code.into().to_owned().to_string(),
         }
     }

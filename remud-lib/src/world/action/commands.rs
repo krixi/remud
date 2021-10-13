@@ -350,13 +350,13 @@ fn default_commands() -> Vec<Command> {
             "me",
             parse_me,
             Help::new(
-                "me <text> || ;<text>",
+                "me <text> || /<text>",
                 "Causes your character to emote the given text. The example would read: \"Ted \
                  dances around.\" for someone named Ted",
             )
-            .with_example("me dances around. || ;dances around."),
+            .with_example("me dances around. || /dances around."),
         )
-        .with_shortcut(';'),
+        .with_shortcut('/'),
     );
     commands.push(Command::new(
         "north",

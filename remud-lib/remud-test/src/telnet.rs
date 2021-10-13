@@ -229,7 +229,7 @@ impl TelnetConnection {
                 let mut lines = output.iter();
                 matchers.into_iter().all(|m| match m {
                     Match::Include(value) => {
-                        while let Some(line) = lines.next() {
+                        for line in &mut lines {
                             if line.contains(value.as_ref()) {
                                 return true;
                             }

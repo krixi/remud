@@ -4,16 +4,14 @@ use rhai::plugin::*;
 use crate::ecs::SharedWorld;
 
 #[derive(Clone)]
-pub struct Me {
-    pub entity: Entity,
-    pub world: SharedWorld,
+pub structAction  communicate::{Emote, Message, Say, SendMessage, Whisper}or ld,
 }
 
 #[export_module]
-pub mod event_api {
+pub mod event_api  {
     use rhai::Dynamic;
 
-    use crate::world::action::{communicate::Emote, Action};
+    use crate::world::action::{communicate::Emote,}ction};
 
     #[rhai_fn(get = "actor", pure)]
     pub fn get_actor(action_event: &mut Action) -> Dynamic {
@@ -113,7 +111,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn get_contents(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(contents) = world.read().unwrap().get::<Contents>(entity) {
-            Dynamic::from(contents.get_objects())
+            Dynamic::from(contents.as_array())
         } else {
             Dynamic::UNIT
         }
@@ -376,6 +374,40 @@ pub mod self_api {
             timers.add_repeating(name.to_string(), duration);
             world.entity_mut(me.entity).insert(timers);
         }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn whisper(me: &mut Me, recipient: Entity, message: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(Whisper{
+                    actor: me.entity,
+                    recipient,
+                    message,
+                })
+                .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn whisper_after(me: &mut Me, duration: Duration, recipient: Entity, message: String) {
+        me.world
+            .write()
+            .unwrap()
+            .get_resource_mut::<TimedActions>()
+            .unwrap()
+            .send_after(
+                Action::from(Whisper {
+                    actor: me.entity,
+                    recipient,
+                    message,
+                }),
+                duration,
+            );
     }
 }
 
