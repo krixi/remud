@@ -13,11 +13,20 @@ pub struct Me {
 pub mod event_api {
     use rhai::Dynamic;
 
-    use crate::world::action::{communicate::Emote, Action};
+    use crate::world::action::{communicate::Emote, movement::Move, Action};
 
     #[rhai_fn(get = "actor", pure)]
     pub fn get_actor(action_event: &mut Action) -> Dynamic {
         Dynamic::from(action_event.actor())
+    }
+
+    #[rhai_fn(get = "direction", pure)]
+    pub fn get_direction(action_event: &mut Action) -> Dynamic {
+        if let Action::Move(Move { direction, .. }) = action_event {
+            Dynamic::from(rhai::ImmutableString::from(direction.as_str()))
+        } else {
+            Dynamic::UNIT
+        }
     }
 
     #[rhai_fn(get = "emote", pure)]
@@ -26,6 +35,24 @@ pub mod event_api {
             Dynamic::from(rhai::ImmutableString::from(emote.as_str()))
         } else {
             Dynamic::UNIT
+        }
+    }
+
+    #[rhai_fn(get = "is_move", pure)]
+    pub fn get_is_move(action_event: &mut Action) -> Dynamic {
+        if matches!(action_event, Action::Move(_)) {
+            Dynamic::TRUE
+        } else {
+            Dynamic::FALSE
+        }
+    }
+
+    #[rhai_fn(get = "is_emote", pure)]
+    pub fn get_is_emote(action_event: &mut Action) -> Dynamic {
+        if matches!(action_event, Action::Emote(_)) {
+            Dynamic::TRUE
+        } else {
+            Dynamic::FALSE
         }
     }
 }
