@@ -45,3 +45,5 @@ Things that would benefit from a state machine:
 - add change password command
 
 - Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)
+
+- check places with player names, make sure they allow spaces in their parsing (unlike player <name> info)

@@ -136,7 +136,6 @@ pub struct Engine {
     game_world: GameWorld,
     commands: Commands,
     db: Db,
-    tick: u64,
 }
 
 #[derive(Debug, Error)]
@@ -169,7 +168,7 @@ impl Engine {
         let mut game_world = GameWorld::new(ecs);
 
         // Run a tick to perform initialization of loaded objects.
-        game_world.run();
+        game_world.run_pre_init();
 
         let commands = Commands::default();
 
@@ -182,7 +181,6 @@ impl Engine {
             game_world,
             commands,
             db,
-            tick: 0,
         })
     }
 
@@ -191,8 +189,13 @@ impl Engine {
         loop {
             tokio::select! {
                 _ = self.ticker.tick() => {
-                    self.game_world.run();
+                    self.game_world.run_pre_init();
+                    self.dispatch_engine_messages().await;
 
+                    self.game_world.run_main();
+                    self.dispatch_engine_messages().await;
+
+                    self.game_world.run_post_timed();
                     self.dispatch_engine_messages().await;
 
                     self.persist_updates().await;
@@ -210,8 +213,6 @@ impl Engine {
                         self.engine_tx.send(EngineMessage::Restart).await.ok();
                         break
                     }
-
-                    self.tick += 1;
                 }
                 maybe_message = self.client_rx.recv() => {
                     if let Some(message) = maybe_message {
@@ -278,12 +279,12 @@ impl Engine {
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client_id, tx) => {
-                tracing::info!("[{}] {} connected", self.tick, client_id);
+                tracing::info!("{} connected", client_id);
 
                 self.clients.add(client_id, tx);
             }
             ClientMessage::Disconnect(client_id) => {
-                tracing::info!("[{}] {} disconnected", self.tick, client_id);
+                tracing::info!("{} disconnected", client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::player) {
                     if let Err(e) = self.game_world.despawn_player(player) {
@@ -309,7 +310,7 @@ impl Engine {
                     .ok();
             }
             ClientMessage::Ready(client_id) => {
-                tracing::info!("[{}] {} ready", self.tick, client_id);
+                tracing::info!("{} ready", client_id);
 
                 // this is where we invoke the character login fsm
                 if let Some(client) = self.clients.get_mut(client_id) {
@@ -333,9 +334,9 @@ impl Engine {
             ClientMessage::Input(client_id, input) => {
                 if let Some(client) = self.clients.get_mut(client_id) {
                     if client.expecting_sensitive_input() {
-                        tracing::debug!("[{}] {} -> ****** (redacted)", self.tick, client_id);
+                        tracing::debug!("{} -> ****** (redacted)", client_id);
                     } else {
-                        tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
+                        tracing::debug!("{} -> {}", client_id, input.as_str());
                     }
 
                     client

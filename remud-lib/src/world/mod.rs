@@ -53,18 +53,24 @@ impl GameWorld {
         GameWorld { ecs }
     }
 
-    #[tracing::instrument(name = "ticking world", skip_all)]
-    pub fn run(&mut self) {
+    #[tracing::instrument(name = "run pre/init", skip_all)]
+    pub fn run_pre_init(&mut self) {
         self.ecs.run(Step::PreEvent);
 
         self.ecs.with_shared_world(|world| {
             run_init_scripts(world.clone());
             run_pre_action_scripts(world);
         });
+    }
 
+    #[tracing::instrument(name = "run main", skip_all)]
+    pub fn run_main(&mut self) {
         self.ecs.run(Step::Main);
         self.ecs.run(Step::PostEvent);
+    }
 
+    #[tracing::instrument(name = "run post/timed", skip_all)]
+    pub fn run_post_timed(&mut self) {
         self.ecs.with_shared_world(|world| {
             run_timed_scripts(world.clone());
             run_post_action_scripts(world);
