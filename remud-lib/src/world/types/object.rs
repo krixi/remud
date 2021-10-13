@@ -130,12 +130,10 @@ impl Keywords {
     }
 
     pub fn as_array(&self) -> rhai::Array {
-        rhai::Array::from(
-            self.list
-                .iter()
-                .map(|s| rhai::Dynamic::from(ImmutableString::from(s)))
-                .collect_vec(),
-        )
+        self.list
+            .iter()
+            .map(|s| rhai::Dynamic::from(ImmutableString::from(s)))
+            .collect_vec()
     }
 }
 

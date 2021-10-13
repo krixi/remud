@@ -1,16 +1,24 @@
-use crate::engine::negotiate_login::{ClientData, Params};
-
 use anyhow::bail;
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 pub trait Transition: Debug {}
 pub trait StateId: Debug + Copy + Clone + Eq + PartialEq + Hash {}
 
+pub trait FsmState: Send + Sync {}
+
+pub trait ParamsInfo {
+    type Params<'p>: Params<'p> + Send + Sync;
+}
+
+pub trait Params<'a> {}
+
 #[async_trait::async_trait]
-pub trait State<T, SID>: Send + Sync
+pub trait State<T, SID, S, P>: Send + Sync
 where
     T: Transition,
     SID: StateId,
+    S: FsmState,
+    P: ParamsInfo,
 {
     fn id(&self) -> SID;
 
@@ -36,38 +44,42 @@ where
     }
 
     #[allow(unused_variables)]
-    async fn on_enter<'p>(&mut self, data: &mut ClientData, params: &'p mut Params) {}
+    async fn on_enter<'p>(&mut self, state: &mut S, params: &'p mut P::Params<'_>) {}
 
     #[allow(unused_variables)]
-    async fn decide<'p>(&mut self, data: &mut ClientData, params: &'p mut Params) -> Option<T> {
+    async fn decide<'p>(&mut self, state: &mut S, params: &'p mut P::Params<'_>) -> Option<T> {
         None
     }
 
     #[allow(unused_variables)]
-    async fn act<'p>(&mut self, data: &mut ClientData, params: &'p mut Params) {}
+    async fn act<'p>(&mut self, state: &mut S, params: &'p mut P::Params<'_>) {}
 
     #[allow(unused_variables)]
-    async fn on_exit<'p>(&mut self, data: &mut ClientData, params: &'p mut Params) {}
+    async fn on_exit<'p>(&mut self, state: &mut S, params: &'p mut P::Params<'_>) {}
 }
 
-pub struct FsmBuilder<T, SID>
+pub struct FsmBuilder<T, SID, S, P>
 where
     T: Transition,
     SID: StateId,
+    S: FsmState,
+    P: ParamsInfo,
 {
-    states: Vec<(SID, Box<dyn State<T, SID>>)>,
+    states: Vec<(SID, Box<dyn State<T, SID, S, P>>)>,
 }
 
-impl<T, SID> FsmBuilder<T, SID>
+impl<T, SID, S, P> FsmBuilder<T, SID, S, P>
 where
     T: Transition,
     SID: StateId,
+    S: FsmState,
+    P: ParamsInfo,
 {
     pub fn new() -> Self {
         FsmBuilder { states: Vec::new() }
     }
 
-    pub fn build(self) -> anyhow::Result<Fsm<T, SID>> {
+    pub fn build(self) -> anyhow::Result<Fsm<T, SID, S, P>> {
         let mut states = HashMap::new();
         let mut first = None;
         for (id, state) in self.states {
@@ -84,31 +96,35 @@ where
         }
     }
 
-    pub fn with_state(mut self, state: Box<dyn State<T, SID>>) -> Self {
+    pub fn with_state(mut self, state: Box<dyn State<T, SID, S, P>>) -> Self {
         self.states.push((state.id(), state));
         self
     }
 }
 
-pub struct Fsm<T, SID>
+pub struct Fsm<T, SID, S, P>
 where
     T: Transition,
     SID: StateId,
+    S: FsmState,
+    P: ParamsInfo,
 {
-    states: HashMap<SID, Box<dyn State<T, SID>>>,
+    states: HashMap<SID, Box<dyn State<T, SID, S, P>>>,
     current: SID,
 }
 
-impl<T, SID> Fsm<T, SID>
+impl<T, SID, S, P> Fsm<T, SID, S, P>
 where
     T: Transition,
     SID: StateId,
+    S: FsmState,
+    P: ParamsInfo,
 {
-    pub async fn on_update<'a>(
+    pub async fn on_update(
         &mut self,
         tx: Option<T>,
-        data: &mut ClientData,
-        params: &'a mut Params<'a>,
+        data: &mut S,
+        params: &mut P::Params<'_>,
     ) -> bool {
         // delegate to current state -
         let current_state = self.states.get_mut(&self.current).unwrap();

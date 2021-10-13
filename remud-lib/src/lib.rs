@@ -1,3 +1,4 @@
+#![feature(generic_associated_types)]
 // #![warn(clippy::pedantic)]
 #![allow(clippy::too_many_arguments)]
 
@@ -5,7 +6,6 @@ mod color;
 mod ecs;
 mod engine;
 mod macros;
-mod stash;
 mod telnet;
 mod text;
 mod web;

@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use crate::{
     engine::{
         db::Db,
-        negotiate_login::{ClientLoginFsm, Params, Transition},
+        negotiate_login::{ClientLoginFsm, ClientParams, Transition},
         EngineResponse,
     },
     world::{action::commands::Commands, GameWorld},
@@ -50,7 +50,7 @@ impl Client {
             .fsm
             .on_update(
                 None,
-                &mut Params::new(self.id, sender, world, db, commands).with_input(input),
+                &mut ClientParams::new(self.id, sender, world, db, commands).with_input(input),
             )
             .await
         {
@@ -76,7 +76,7 @@ impl Client {
         self.fsm
             .on_update(
                 Some(tx),
-                &mut Params::new(self.id, sender, world, db, commands),
+                &mut ClientParams::new(self.id, sender, world, db, commands),
             )
             .await;
     }

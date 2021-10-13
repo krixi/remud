@@ -119,6 +119,14 @@ This is the event that triggered the script.
 
 `actor` - The entity that sent the event.
 
+`is_emote` - True if the event is an Emote event, false otherwise.
+
+`is_move` - True if the event is a Move event, false otherwise.
+
+`emote` - Retrieves the emote of an Emote event, or unit if not.
+
+`direction` - Retrieves the movement direction of a Move event, or unit if not.
+
 ---
 
 ## `WORLD`

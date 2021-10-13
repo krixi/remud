@@ -196,13 +196,11 @@ impl Contents {
     }
 
     pub fn as_array(&self) -> rhai::Array {
-        rhai::Array::from(
-            self.objects
-                .as_slice()
-                .into_iter()
-                .map(|object| rhai::Dynamic::from(object.clone()))
-                .collect_vec(),
-        )
+        self.objects
+            .as_slice()
+            .iter()
+            .map(|object| rhai::Dynamic::from(*object))
+            .collect_vec()
     }
 }
 

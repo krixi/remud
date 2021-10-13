@@ -643,6 +643,7 @@ impl TerminalTypes {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct TerminalType {
     pub name: Bytes,
