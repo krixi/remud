@@ -102,43 +102,16 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_name(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(named) = world.read().unwrap().get::<Named>(entity) {
-            Dynamic::from(named.to_string())
+    pub fn contains(world: &mut SharedWorld, container: Entity, object: Entity) -> Dynamic {
+        if let Some(contents) = world.read().unwrap().get::<Contents>(container) {
+            Dynamic::from(contents.contains(&object))
         } else {
             Dynamic::UNIT
         }
     }
 
     #[rhai_fn(pure)]
-    pub fn get_description(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(description) = world.read().unwrap().get::<Description>(entity) {
-            Dynamic::from(description.to_string())
-        } else {
-            Dynamic::UNIT
-        }
-    }
-
-    #[rhai_fn(pure)]
-    pub fn get_keywords(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(keywords) = world.read().unwrap().get::<Keywords>(entity) {
-            Dynamic::from(keywords.get_list())
-        } else {
-            Dynamic::UNIT
-        }
-    }
-
-    #[rhai_fn(pure)]
-    pub fn get_location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
-        if let Some(location) = world.read().unwrap().get::<Location>(entity) {
-            Dynamic::from(location.location())
-        } else {
-            Dynamic::UNIT
-        }
-    }
-
-    #[rhai_fn(pure)]
-    pub fn get_contents(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+    pub fn contents(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(contents) = world.read().unwrap().get::<Contents>(entity) {
             Dynamic::from(contents.as_array())
         } else {
@@ -147,7 +120,43 @@ pub mod world_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn get_players(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+    pub fn description(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+        if let Some(description) = world.read().unwrap().get::<Description>(entity) {
+            Dynamic::from(description.to_string())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn keywords(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+        if let Some(keywords) = world.read().unwrap().get::<Keywords>(entity) {
+            Dynamic::from(keywords.as_array())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+        if let Some(location) = world.read().unwrap().get::<Location>(entity) {
+            Dynamic::from(location.location())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn name(world: &mut SharedWorld, entity: Entity) -> Dynamic {
+        if let Some(named) = world.read().unwrap().get::<Named>(entity) {
+            Dynamic::from(named.to_string())
+        } else {
+            Dynamic::UNIT
+        }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn players(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(room) = world.read().unwrap().get::<Room>(entity) {
             Dynamic::from(room.get_players())
         } else {

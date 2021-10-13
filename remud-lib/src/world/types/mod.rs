@@ -167,6 +167,10 @@ impl Contents {
         self.objects.is_empty()
     }
 
+    pub fn contains(&self, entity: &Entity) -> bool {
+        self.objects.contains(entity)
+    }
+
     pub fn find(&self, mut predicate: impl FnMut(Entity) -> bool) -> Option<Entity> {
         self.objects
             .iter()

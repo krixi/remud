@@ -2,6 +2,7 @@ use std::{collections::HashMap, convert::TryFrom, error, fmt, str::FromStr};
 
 use bevy_ecs::prelude::*;
 use bitflags::bitflags;
+use rhai::ImmutableString;
 use strum::EnumString;
 use thiserror::Error;
 
@@ -126,6 +127,15 @@ impl Keywords {
 
     pub fn as_word_list(&self) -> String {
         sorted_word_list(self.list.clone())
+    }
+
+    pub fn as_array(&self) -> rhai::Array {
+        rhai::Array::from(
+            self.list
+                .iter()
+                .map(|s| rhai::Dynamic::from(ImmutableString::from(s)))
+                .collect_vec(),
+        )
     }
 }
 
