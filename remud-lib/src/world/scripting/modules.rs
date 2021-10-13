@@ -4,14 +4,16 @@ use rhai::plugin::*;
 use crate::ecs::SharedWorld;
 
 #[derive(Clone)]
-pub structAction  communicate::{Emote, Message, Say, SendMessage, Whisper}or ld,
+pub struct Me {
+    pub entity: Entity,
+    pub world: SharedWorld,
 }
 
 #[export_module]
-pub mod event_api  {
+pub mod event_api {
     use rhai::Dynamic;
 
-    use crate::world::action::{communicate::Emote,}ction};
+    use crate::world::action::{communicate::Emote, Action};
 
     #[rhai_fn(get = "actor", pure)]
     pub fn get_actor(action_event: &mut Action) -> Dynamic {
@@ -146,7 +148,7 @@ pub mod self_api {
 
     use crate::world::{
         action::{
-            communicate::{Emote, Message, Say, SendMessage},
+            communicate::{Emote, Message, Say, SendMessage, Whisper},
             Action,
         },
         fsm::{StateMachineBuilder, StateMachines},
@@ -377,16 +379,16 @@ pub mod self_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn whisper(me: &mut Me, recipient: Entity, message: String) {
+    pub fn whisper(me: &mut Me, target: Entity, message: String) {
         me.world
             .write()
             .unwrap()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
             .send(
-                Action::from(Whisper{
+                Action::from(Whisper {
                     actor: me.entity,
-                    recipient,
+                    target,
                     message,
                 })
                 .into(),
@@ -394,7 +396,7 @@ pub mod self_api {
     }
 
     #[rhai_fn(pure)]
-    pub fn whisper_after(me: &mut Me, duration: Duration, recipient: Entity, message: String) {
+    pub fn whisper_after(me: &mut Me, duration: Duration, target: Entity, message: String) {
         me.world
             .write()
             .unwrap()
@@ -403,7 +405,7 @@ pub mod self_api {
             .send_after(
                 Action::from(Whisper {
                     actor: me.entity,
-                    recipient,
+                    target,
                     message,
                 }),
                 duration,
