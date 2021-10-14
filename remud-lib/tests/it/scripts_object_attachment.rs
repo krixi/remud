@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use remud_test::{JsonScript, Match, Matcher, Server, Trigger};
+use crate::support::{JsonScript, Match, Matcher, Server, Trigger};
 
 /// test scripts object interface
 #[tokio::test]

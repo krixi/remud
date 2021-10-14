@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use std::{borrow::Cow, collections::VecDeque, time::Duration};
 
-use ::telnet::{NegotiationAction, Telnet, TelnetEvent, TelnetOption};
+use ::telnet::{Action as NegotiationAction, Event as TelnetEvent, Telnet, TelnetOption};
 
 use itertools::Itertools;
 use tokio::sync::mpsc;
@@ -42,7 +44,9 @@ impl TelnetConnection {
                 .expect("did not receive DO TTYPE")
             {
                 TelnetEvent::Negotiation(NegotiationAction::Do, TelnetOption::TTYPE) => {
-                    connection.negotiate(NegotiationAction::Wont, TelnetOption::TTYPE)
+                    connection
+                        .negotiate(&NegotiationAction::Wont, TelnetOption::TTYPE)
+                        .unwrap();
                 }
                 other => panic!(
                     "received unexpected message waiting for DO TTYPE: {:?}",

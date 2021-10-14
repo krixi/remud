@@ -83,7 +83,7 @@ pub fn parse_object(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                                 match tokenizer
                                     .rest()
                                     .split_whitespace()
-                                    .map(|s| InheritableFields::from_str(s))
+                                    .map(InheritableFields::from_str)
                                     .try_collect()
                                 {
                                     Ok(fields) => Ok(Action::from(ObjectInheritFields {

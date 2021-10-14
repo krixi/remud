@@ -1,6 +1,5 @@
-#![allow(dead_code)]
+use crate::support::{Matcher, Server};
 
-use remud_test::{Matcher, Server};
 #[tokio::test]
 async fn test_communicate_emote() {
     let (mut server, mut t) = Server::new_create_player("krixi", "(*&%(*#&%*&").await;

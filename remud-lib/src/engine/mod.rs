@@ -4,6 +4,7 @@ pub mod dialog;
 pub mod fsm;
 pub mod negotiate_login;
 pub mod persist;
+pub mod update_password;
 
 use std::{borrow::Cow, collections::VecDeque};
 
@@ -18,7 +19,7 @@ use tokio::{
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
-        client::{Client, Clients, SendPrompt},
+        client::{Clients, SendPrompt},
         db::{Db, GameDb},
         negotiate_login::Transition,
         persist::PersistPlugin,
@@ -286,13 +287,13 @@ impl Engine {
             ClientMessage::Disconnect(client_id) => {
                 tracing::info!("{} disconnected", client_id);
 
-                if let Some(player) = self.clients.get(client_id).and_then(Client::player) {
-                    if let Err(e) = self.game_world.despawn_player(player) {
-                        tracing::error!("failed to despawn player: {}", e);
-                    }
-                }
-
                 if let Some(client) = self.clients.get_mut(client_id) {
+                    if let Some(player) = client.player() {
+                        if let Err(e) = self.game_world.despawn_player(player) {
+                            tracing::error!("failed to despawn player: {}", e);
+                        }
+                    }
+
                     client
                         .transition(
                             Transition::Disconnect,

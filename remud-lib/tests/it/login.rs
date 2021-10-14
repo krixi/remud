@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use remud_test::Server;
+use crate::support::Server;
 
 #[tokio::test]
 async fn test_login_create_player() {

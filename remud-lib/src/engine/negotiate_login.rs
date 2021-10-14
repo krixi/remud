@@ -2,7 +2,7 @@ use crate::{
     engine::{
         client::{ClientSender, SendPrompt},
         db::{verify_password, AuthDb, Db, GameDb, VerifyError},
-        fsm::{self, Fsm, FsmBuilder, FsmState, Params, ParamsInfo, State},
+        fsm::{Fsm, FsmBuilder, Params, ParamsInfo, State},
         name_valid,
     },
     world::{
@@ -17,10 +17,7 @@ use anyhow::bail;
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use bevy_ecs::prelude::Entity;
 use rand::rngs::OsRng;
-use std::{
-    borrow::Cow,
-    fmt::{Debug, Formatter},
-};
+use std::{borrow::Cow, fmt::Debug};
 
 static DEFAULT_LOGIN_ERROR: &str = "|Red1|Error retrieving user.|-|";
 static DEFAULT_PASSWORD_ERROR: &str = "|Red1|Verification failed.|-|";
@@ -67,22 +64,7 @@ impl Default for ClientLoginFsm {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
-pub enum StateId {
-    NotConnected,
-    ConnectionReady,
-    LoginName,
-    LoginPassword,
-    CreatePassword,
-    VerifyPassword,
-    CreateNewPlayer,
-    SpawnPlayer,
-    InGame,
-}
-
-impl fsm::StateId for StateId {}
-
-#[derive(Hash, Eq, PartialEq, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum Transition {
     Disconnect,
     Ready,
@@ -97,23 +79,34 @@ pub enum Transition {
     PlayerLoaded,
 }
 
-impl fsm::Transition for Transition {}
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
+pub enum StateId {
+    NotConnected,
+    ConnectionReady,
+    LoginName,
+    LoginPassword,
+    CreatePassword,
+    VerifyPassword,
+    CreateNewPlayer,
+    SpawnPlayer,
+    InGame,
+}
 
-impl Debug for Transition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Transition::Disconnect => write!(f, "Disconnect"),
-            Transition::Ready => write!(f, "Ready"),
-            Transition::Then => write!(f, "Then"),
-            Transition::FailLogin => write!(f, "FailLogin"),
-            Transition::ExistsOffline => write!(f, "ExistsOffline"),
-            Transition::PlayerDoesNotExist => write!(f, "PlayerDoesNotExist"),
-            Transition::CreatedPassword => write!(f, "CreatedPassword"),
-            Transition::VerifiedPassword => write!(f, "VerifiedPassword"),
-            Transition::FailPassword => write!(f, "FailPassword"),
-            Transition::PlayerCreated => write!(f, "PlayerCreated"),
-            Transition::PlayerLoaded => write!(f, "PlayerLoaded"),
-        }
+#[derive(Default)]
+pub struct ClientState {
+    pub username: Option<String>,
+    pub pw_hash: Option<String>,
+    pub player: Option<Entity>,
+    pub reason: Option<String>,
+}
+
+impl ClientState {
+    pub fn player(&self) -> Option<Entity> {
+        self.player
+    }
+
+    pub fn clear(&mut self) {
+        *self = ClientState::default();
     }
 }
 
@@ -188,26 +181,6 @@ impl<'p> ClientParams<'p> {
                 messages.into_iter().map(Into::into),
             )
             .await;
-    }
-}
-
-#[derive(Default)]
-pub struct ClientState {
-    pub username: Option<String>,
-    pub pw_hash: Option<String>,
-    pub player: Option<Entity>,
-    pub reason: Option<String>,
-}
-
-impl FsmState for ClientState {}
-
-impl ClientState {
-    pub fn player(&self) -> Option<Entity> {
-        self.player
-    }
-
-    pub fn clear(&mut self) {
-        *self = ClientState::default();
     }
 }
 
@@ -290,7 +263,7 @@ impl State<Transition, StateId, ClientState, ClientParamsInfo> for LoginNameStat
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::ExistsOffline => Some(StateId::LoginPassword),
             Transition::PlayerDoesNotExist => Some(StateId::CreatePassword),
-            Transition::FailLogin { .. } => Some(StateId::LoginName),
+            Transition::FailLogin => Some(StateId::LoginName),
             _ => None,
         }
     }
@@ -439,7 +412,7 @@ impl State<Transition, StateId, ClientState, ClientParamsInfo> for CreatePasswor
     fn output_state(&self, next: &Transition) -> Option<StateId> {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
-            Transition::CreatedPassword { .. } => Some(StateId::VerifyPassword),
+            Transition::CreatedPassword => Some(StateId::VerifyPassword),
             Transition::FailPassword => Some(StateId::CreatePassword),
             _ => None,
         }
@@ -552,8 +525,8 @@ impl State<Transition, StateId, ClientState, ClientParamsInfo> for SpawnPlayerSt
     fn output_state(&self, next: &Transition) -> Option<StateId> {
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
-            Transition::PlayerLoaded { .. } => Some(StateId::InGame),
-            Transition::FailLogin { .. } => Some(StateId::LoginName),
+            Transition::PlayerLoaded => Some(StateId::InGame),
+            Transition::FailLogin => Some(StateId::LoginName),
             _ => None,
         }
     }
@@ -621,7 +594,7 @@ impl State<Transition, StateId, ClientState, ClientParamsInfo> for CreateNewPlay
         match next {
             Transition::Disconnect => Some(StateId::NotConnected),
             Transition::PlayerCreated => Some(StateId::SpawnPlayer),
-            Transition::FailLogin { .. } => Some(StateId::LoginName),
+            Transition::FailLogin => Some(StateId::LoginName),
             _ => None,
         }
     }

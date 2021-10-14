@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{borrow::Cow, time::Duration};
 
 use reqwest::StatusCode;
@@ -23,7 +25,7 @@ struct JsonRefresh {
     refresh_token: String,
 }
 
-#[derive(Debug, strum::ToString, strum::EnumString)]
+#[derive(Debug, strum::Display, strum::EnumString)]
 pub enum Trigger {
     Drop,
     Emote,

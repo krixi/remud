@@ -131,7 +131,8 @@ pub async fn run_remud(
             Ok(_) => (),
             Err(e) => {
                 if !e.is_cancelled() {
-                    tracing::error!("error halting web server: {}", e)
+                    tracing::error!("error halting web server: {}", e);
+                    break;
                 }
             }
         };
@@ -139,7 +140,10 @@ pub async fn run_remud(
         tracing::info!("joining engine");
         match engine_handle.await {
             Ok(_) => (),
-            Err(e) => tracing::error!("error halting engine: {}", e),
+            Err(e) => {
+                tracing::error!("error halting engine: {}", e);
+                break;
+            }
         }
 
         tracing::warn!("servers halted, restarting game server");

@@ -190,7 +190,7 @@ impl FollowState {
                     .clone()
                     .cast::<Array>()
                     .iter()
-                    .filter_map(|p| p.clone().as_string().ok())
+                    .filter_map(|p| p.clone().into_string().ok())
                     .collect_vec();
 
                 if list.is_empty() {
@@ -199,7 +199,7 @@ impl FollowState {
                     Some(list)
                 }
             } else if found_say.is::<ImmutableString>() {
-                Some(vec![found_say.clone().as_string().unwrap()])
+                Some(vec![found_say.clone().into_string().unwrap()])
             } else {
                 None
             }

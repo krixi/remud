@@ -29,11 +29,7 @@ pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
     );
     scope.push_constant("WORLD", world.clone());
 
-    match engine
-        .read()
-        .unwrap()
-        .consume_ast_with_scope(&mut scope, &ast)
-    {
+    match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("init script {} execution error: {}", script, error);
@@ -80,11 +76,7 @@ pub fn run_post_event_script(
     scope.push_constant("WORLD", world.clone());
     scope.push_constant("EVENT", event.clone());
 
-    match engine
-        .read()
-        .unwrap()
-        .consume_ast_with_scope(&mut scope, &ast)
-    {
+    match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("post-event script {} execution error: {}", script, error);
@@ -132,11 +124,7 @@ pub fn run_pre_event_script(
     scope.push_constant("EVENT", event.clone());
     scope.push_dynamic("allow_action", Dynamic::from(true));
 
-    match engine
-        .read()
-        .unwrap()
-        .consume_ast_with_scope(&mut scope, &ast)
-    {
+    match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("pre-event script {} execution error: {}", script, error);
@@ -179,11 +167,7 @@ pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) 
     );
     scope.push_constant("WORLD", world.clone());
 
-    match engine
-        .read()
-        .unwrap()
-        .consume_ast_with_scope(&mut scope, &ast)
-    {
+    match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
             tracing::warn!("timed script {} execution error: {}", script, error);

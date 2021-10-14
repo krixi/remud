@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod telnet;
 mod web;
 
@@ -14,8 +16,8 @@ use remud_lib::{run_remud, RemudError, WebOptions};
 use tokio::time::timeout;
 use tracing_subscriber::{fmt::MakeWriter, EnvFilter, FmtSubscriber};
 
-pub use crate::telnet::{Match, Matcher, TelnetConnection, TelnetPlayer};
-pub use crate::web::{
+pub use crate::support::telnet::{Match, Matcher, TelnetConnection, TelnetPlayer};
+pub use crate::support::web::{
     AuthenticatedWebClient, JsonScript, JsonScriptName, JsonScriptResponse, Trigger, WebClient,
 };
 pub use reqwest::StatusCode;

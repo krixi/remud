@@ -1,4 +1,4 @@
-use remud_test::{Match, Matcher, Server};
+use crate::support::{Match, Matcher, Server};
 // all other object commands are tested as part of prototype testing.
 
 // test inventory, get and drop

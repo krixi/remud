@@ -2,9 +2,13 @@ use anyhow::bail;
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 pub trait Transition: Debug {}
+impl<T> Transition for T where T: Debug {}
+
 pub trait StateId: Debug + Copy + Clone + Eq + PartialEq + Hash {}
+impl<SID> StateId for SID where SID: Debug + Copy + Clone + Eq + PartialEq + Hash {}
 
 pub trait FsmState: Send + Sync {}
+impl<S> FsmState for S where S: Send + Sync {}
 
 pub trait ParamsInfo {
     type Params<'p>: Params<'p> + Send + Sync;

@@ -302,9 +302,6 @@ fn colorize_web(message: &str) -> Vec<WsMessageSegment> {
 
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
-    use remud_test::TRACING;
-
     use crate::{
         color::ColorTrue,
         web::ws::{colorize_web, WsMessageSegment},
@@ -321,7 +318,6 @@ mod tests {
 
     #[test]
     fn colorize_web_wrapped() {
-        Lazy::force(&TRACING);
         tracing::info!("wrapped");
         let result = colorize_web("|white|some text|-|");
         tracing::info!("wrapped check");
@@ -350,7 +346,6 @@ mod tests {
 
     #[test]
     fn colorize_web_auto_close_twice() {
-        Lazy::force(&TRACING);
         tracing::info!("auto close twice");
         let result = colorize_web("|white|some |black|text");
         tracing::info!("auto close twice check");
@@ -369,7 +364,6 @@ mod tests {
 
     #[test]
     fn colorize_web_pipe_escape() {
-        Lazy::force(&TRACING);
         let result = colorize_web("|white||||-|");
         assert_eq!(
             &[
@@ -394,7 +388,6 @@ mod tests {
 
     #[test]
     fn colorize_web_preserve_whitespace() {
-        Lazy::force(&TRACING);
         let result = colorize_web("|white|ID 10|-|\ta flower pot");
         assert_eq!(
             &[

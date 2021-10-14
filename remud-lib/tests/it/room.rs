@@ -1,4 +1,4 @@
-use remud_test::{Server, TelnetPlayer};
+use crate::support::{Server, TelnetPlayer};
 
 // Validate a room connection
 async fn assert_there_and_back_again(t: &mut TelnetPlayer, from: (u32, &str), to: (u32, &str)) {

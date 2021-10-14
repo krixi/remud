@@ -45,12 +45,12 @@ impl Client {
     ) {
         let sender = &self.sender;
 
-        let mut update_count = 0;
+        let mut update_count: i32 = 0;
         while self
             .fsm
             .on_update(
                 None,
-                &mut ClientParams::new(self.id, sender, world, db, commands).with_input(input),
+                ClientParams::new(self.id, sender, world, db, commands).with_input(input),
             )
             .await
         {
@@ -142,10 +142,6 @@ impl Clients {
 
     pub fn init_player(&mut self, client: ClientId, player: Entity) {
         self.by_player.entry(player).or_insert(client);
-    }
-
-    pub fn get(&self, client: ClientId) -> Option<&Client> {
-        self.clients.get(&client)
     }
 
     pub fn get_mut(&mut self, client: ClientId) -> Option<&mut Client> {

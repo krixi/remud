@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use remud_test::{Server, StatusCode};
+use crate::support::{Server, StatusCode};
 
 #[tokio::test]
 async fn test_web_auth_success() {

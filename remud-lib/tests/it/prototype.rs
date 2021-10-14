@@ -1,4 +1,4 @@
-use remud_test::{Matcher, Server};
+use crate::support::{Matcher, Server};
 
 #[tokio::test]
 async fn test_prototype_new() {

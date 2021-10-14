@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use remud_test::{JsonScript, JsonScriptName, JsonScriptResponse, Server, StatusCode, Trigger};
+use crate::support::{JsonScript, JsonScriptName, JsonScriptResponse, Server, StatusCode, Trigger};
 
 #[tokio::test]
 async fn test_web_script_create() {

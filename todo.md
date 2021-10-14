@@ -47,3 +47,13 @@ Things that would benefit from a state machine:
 - Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)
 
 - check places with player names, make sure they allow spaces in their parsing (unlike player <name> info)
+
+- make get player aware - you can't pick up player x.
+
+- say what? and get what? are prompts, avoid prompts that indicate an interface where there isn't one (new player)
+
+- add sidebars - help/commands list, inventory
+
+- consider look just working on objects - overload look <direction> w/ look <keyword> [<keyword>..]
+
+- add aliases (these would be applied before command lookup)
