@@ -91,7 +91,6 @@ impl TelnetConnection {
 
         // server requires \r\n to indicate command entry
         let line = line.into();
-        tracing::debug!("input> {}", line.as_ref());
         let message = format!("{}\r\n", line.as_ref());
 
         self.req_tx
@@ -207,12 +206,13 @@ impl TelnetConnection {
 
         let matched = match matcher.clone() {
             Matcher::Exact(matchers) => {
-                assert!(
-                    matchers.len() == output.len(),
+                assert_eq!(
+                    matchers.len(),
+                    output.len(),
                     "wanted exact match, found different line counts for matcher and output: \
                      {:?}, {:?}",
                     matcher,
-                    output,
+                    output
                 );
 
                 let mut lines = output.iter();
@@ -313,21 +313,16 @@ impl TelnetConnection {
                     break;
                 }
             }
-        } else {
-            tracing::info!("skipping recv, have output");
         }
 
         // split off lines into output until a prompt, keeping the rest in the buffer
         let mut next = self.buffer.as_str();
         loop {
             if next.starts_with("> ") {
-                tracing::info!("found prompt - must be consumed before receiving");
-                tracing::info!("next is: {}", next);
                 break;
             }
 
             if let Some((output, rest)) = next.split_once("\r\n") {
-                tracing::info!("splitting: {} <-> {}", output, rest);
                 if !output.is_empty() {
                     self.output.push_back(output.trim().to_string());
                 }
@@ -338,7 +333,6 @@ impl TelnetConnection {
         }
         self.buffer = next.to_string();
 
-        tracing::info!("read result:");
         tracing::info!("output: {:?}", self.output);
         tracing::info!("buffer: {:?}", self.buffer);
     }

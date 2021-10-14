@@ -12,6 +12,7 @@ use crate::{
     world::{action::commands::Commands, GameWorld},
     ClientId,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub enum SendPrompt {
     None,
@@ -30,7 +31,11 @@ impl Client {
         self.fsm.player()
     }
 
-    #[tracing::instrument(name = "update client fsm", skip(self, world, db, commands))]
+    pub fn expecting_sensitive_input(&self) -> bool {
+        self.sender.expecting_sensitive_input.load(Ordering::SeqCst)
+    }
+
+    #[tracing::instrument(name = "update client fsm", fields(input = if self.expecting_sensitive_input() { "****" } else { input.unwrap_or("") }), skip(self, world, db, commands))]
     pub async fn update(
         &mut self,
         input: Option<&str>,
@@ -85,9 +90,9 @@ impl Client {
     }
 }
 
-#[derive(Clone)]
 pub struct ClientSender {
     tx: mpsc::Sender<EngineResponse>,
+    expecting_sensitive_input: AtomicBool,
 }
 
 impl ClientSender {
@@ -97,10 +102,15 @@ impl ClientSender {
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = M>,
     ) {
+        self.expecting_sensitive_input
+            .store(false, Ordering::SeqCst);
         let message = match prompt {
             SendPrompt::None => EngineResponse::from_messages(messages),
             SendPrompt::Prompt => EngineResponse::from_messages_prompt(messages, false),
-            SendPrompt::Sensitive => EngineResponse::from_messages_prompt(messages, true),
+            SendPrompt::Sensitive => {
+                self.expecting_sensitive_input.store(true, Ordering::SeqCst);
+                EngineResponse::from_messages_prompt(messages, true)
+            }
         };
         tracing::debug!("{:?} <- {:?}.", id, message);
         if let Err(e) = self.tx.send(message).await {
@@ -121,7 +131,10 @@ impl Clients {
             client_id,
             Client {
                 id: client_id,
-                sender: ClientSender { tx },
+                sender: ClientSender {
+                    tx,
+                    expecting_sensitive_input: AtomicBool::new(false),
+                },
                 fsm: ClientLoginFsm::default(),
             },
         );
