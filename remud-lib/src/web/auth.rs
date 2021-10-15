@@ -129,7 +129,7 @@ where
         .and_then(handle_logout)
 }
 
-#[tracing::instrument(name = "verify access", skip(db, jwt_key))]
+#[tracing::instrument(name = "verify access", skip(auth_header, db, jwt_key))]
 async fn handle_verify_access<DB: AuthDb>(
     auth_header: String,
     db: DB,
@@ -209,7 +209,7 @@ async fn handle_verify_access<DB: AuthDb>(
     })
 }
 
-#[tracing::instrument(name = "login", skip(db, jwt_key))]
+#[tracing::instrument(name = "login", fields(player = request.username.as_str()), skip(db, jwt_key, request))]
 async fn handle_login<DB: AuthDb>(
     request: JsonTokenRequest,
     db: DB,
@@ -363,6 +363,7 @@ async fn handle_logout<DB: AuthDb>(db: DB, player: Player) -> Result<impl warp::
     Ok(warp::reply())
 }
 
+#[tracing::instrument(name = "generate tokens", skip(jwt_key))]
 fn generate_tokens(
     jwt_key: &ES256KeyPair,
     player: &str,
@@ -395,13 +396,7 @@ fn generate_tokens(
     let access_issued_secs = i64::try_from(access_issued.as_secs())?;
     let refresh_issued_secs = i64::try_from(refresh_issued.as_secs())?;
 
-    tracing::debug!(
-        "generated tokens. access issued: {}, refresh issued: {}, access: {}, refresh: {}",
-        access_issued_secs,
-        refresh_issued_secs,
-        access_token,
-        refresh_token,
-    );
+    tracing::debug!("generated tokens.");
 
     Ok((
         access_token,

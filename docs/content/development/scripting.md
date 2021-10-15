@@ -52,7 +52,7 @@ timer must be named when the script is attached, and only that timer will trigge
 
 ```
 if WORLD.is_player(EVENT.actor) {
-  let name = WORLD.get_name(EVENT.actor);
+  let name = WORLD.name(EVENT.actor);
   SELF.say(`Hello there, ${name}. I am a bear! Rawr`);
 }
 ```
@@ -133,7 +133,7 @@ The handle to the world and its APIs.
 
 `is_object(entity)` - Returns true if the provided entity is a object, false otherwise.
 
-`get_name(entity)` - Returns the name of the given entity, or unit if it doesn't have one. Players and objects have names.
+`name(entity)` - Returns the name of the given entity, or unit if it doesn't have one. Players and objects have names.
 
 `description(entity)` - Returns the description of the given entity, or unit if it doesn't have one. Rooms and objects have descriptions.
 
@@ -146,6 +146,8 @@ The handle to the world and its APIs.
 `contents(entity)` - Returns the contents of the given container, or unit if it is not a container. Players and rooms are containers and can hold objects.
 
 `players(entity)` - Returns the players in the given room, or unit if it isn't a room.
+
+`object_new(prototype_id)` - Creates a new instance of the given prototype, and drops it on the floor of the current room.   
 
 ---
 
@@ -168,3 +170,9 @@ of the time.
 `choose(array)` - Randomly selects and returns an item from the specified array.
 
 `range(start, end)` - Randomly returns a value between start and end, inclusive.
+
+
+### state machines
+
+`let builder = fsm_builder()` - creates a new FSM builder. See [the page on FSM's]({{< relref "./fsm" >}}) 
+for details on how to configure these objects.

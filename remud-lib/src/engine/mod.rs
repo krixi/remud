@@ -331,8 +331,13 @@ impl Engine {
                 }
             }
             ClientMessage::Input(client_id, input) => {
-                tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
                 if let Some(client) = self.clients.get_mut(client_id) {
+                    if client.expecting_sensitive_input() {
+                        tracing::debug!("[{}] {} -> ****** (redacted)", self.tick, client_id);
+                    } else {
+                        tracing::debug!("[{}] {} -> {}", self.tick, client_id, input.as_str());
+                    }
+
                     client
                         .update(
                             Some(input.as_str()),

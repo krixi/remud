@@ -38,8 +38,6 @@
 
 - add support for metrics (statsd -> telegraf -> influxdb -> grafana)
 
-- add ability to spawn objects from prefabs in script
-
 - add currency
 
 Things that would benefit from a state machine:

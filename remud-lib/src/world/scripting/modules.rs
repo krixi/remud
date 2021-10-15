@@ -180,12 +180,16 @@ pub mod self_api {
     use std::time::Duration;
 
     use bevy_app::Events;
-    use rhai::ImmutableString;
+    use rhai::{Dynamic, ImmutableString};
 
     use crate::world::{
         action::{
             communicate::{Emote, Message, Say, SendMessage, Whisper},
-            Action,
+            immortal::{
+                object::{ObjectCreate, ObjectRemove, UpdateKeywords},
+                UpdateDescription, UpdateName,
+            },
+            Action, Mode,
         },
         fsm::{StateMachineBuilder, StateMachines},
         scripting::{
@@ -193,7 +197,12 @@ pub mod self_api {
             time::{TimedActions, Timers},
             QueuedAction, ScriptData,
         },
+        types::object::{Object, ObjectOrPrototype, PrototypeId},
+        types::{ActionTarget, Id},
     };
+    use bevy_ecs::prelude::Entity;
+    use itertools::Itertools;
+    use std::convert::TryFrom;
 
     #[rhai_fn(pure, get = "entity")]
     pub fn get_entity(me: &mut Me) -> Entity {
@@ -388,6 +397,125 @@ pub mod self_api {
                 .entity_mut(me.entity)
                 .insert(ScriptData::new_with_entry(key, value));
         }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn set_description(me: &mut Me, target: Entity, description: String) {
+        let mut world = me.world.write().unwrap();
+
+        let target = match world.get::<Id>(target).unwrap() {
+            Id::Object(id) => ActionTarget::Object(*id),
+            Id::Prototype(id) => ActionTarget::Prototype(*id),
+            Id::Room(_) => return,
+            Id::Player(_) => return,
+        };
+
+        world
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(UpdateDescription {
+                    actor: me.entity,
+                    target,
+                    description,
+                })
+                .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn set_name(me: &mut Me, target: Entity, name: String) {
+        let mut world = me.world.write().unwrap();
+
+        let target = match world.get::<Id>(target).unwrap() {
+            Id::Object(id) => ActionTarget::Object(*id),
+            Id::Prototype(id) => ActionTarget::Prototype(*id),
+            Id::Room(_) => return,
+            Id::Player(_) => return,
+        };
+
+        world
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(UpdateName {
+                    actor: me.entity,
+                    target,
+                    name,
+                })
+                .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn set_keywords(me: &mut Me, target: Entity, keywords: String) {
+        let mut world = me.world.write().unwrap();
+
+        let target = match world.get::<Id>(target).unwrap() {
+            Id::Object(id) => ObjectOrPrototype::Object(*id),
+            Id::Prototype(id) => ObjectOrPrototype::Prototype(*id),
+            Id::Room(_) => return,
+            Id::Player(_) => return,
+        };
+
+        let words = keywords
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect_vec();
+
+        world
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(UpdateKeywords {
+                    actor: me.entity,
+                    mode: Mode::Set,
+                    id: target,
+                    keywords: words,
+                })
+                .into(),
+            );
+    }
+
+    #[rhai_fn(pure)]
+    pub fn object_new(me: &mut Me, prototype_id: i64) {
+        if let Ok(id) = PrototypeId::try_from(prototype_id) {
+            me.world
+                .write()
+                .unwrap()
+                .get_resource_mut::<Events<QueuedAction>>()
+                .unwrap()
+                .send(
+                    Action::from(ObjectCreate {
+                        actor: me.entity,
+                        prototype_id: id,
+                    })
+                    .into(),
+                );
+        };
+    }
+
+    #[rhai_fn(pure)]
+    pub fn object_remove(me: &mut Me, target: Entity) {
+        let mut world = me.world.write().unwrap();
+
+        let id = if let Some(object) = world.get::<Object>(target) {
+            object.id()
+        } else {
+            tracing::warn!("script requested to remove an entity that was not an object");
+            return;
+        };
+
+        world
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(ObjectRemove {
+                    actor: me.entity,
+                    id,
+                })
+                .into(),
+            );
     }
 
     #[rhai_fn(pure)]
