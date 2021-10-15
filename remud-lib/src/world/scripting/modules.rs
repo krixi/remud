@@ -182,8 +182,8 @@ pub mod self_api {
     use bevy_app::Events;
     use rhai::{Dynamic, ImmutableString};
 
-    use crate::world::action::immortal::object::ObjectCreate;
-    use crate::world::types::object::PrototypeId;
+    use crate::world::action::immortal::object::{ObjectCreate, ObjectRemove};
+    use crate::world::types::object::{Object, Objects, PrototypeId};
     use crate::world::{
         action::{
             communicate::{Emote, Message, Say, SendMessage, Whisper},
@@ -410,6 +410,29 @@ pub mod self_api {
                     .into(),
                 );
         };
+    }
+
+    #[rhai_fn(pure)]
+    pub fn object_remove(me: &mut Me, target: Entity) {
+        let mut world = me.world.write().unwrap();
+
+        let id = if let Some(object) = world.get::<Object>(target) {
+            object.id()
+        } else {
+            tracing::warn!("script requested to remove an entity that was not an object");
+            return;
+        };
+
+        world
+            .get_resource_mut::<Events<QueuedAction>>()
+            .unwrap()
+            .send(
+                Action::from(ObjectRemove {
+                    actor: me.entity,
+                    id,
+                })
+                .into(),
+            );
     }
 
     #[rhai_fn(pure)]
