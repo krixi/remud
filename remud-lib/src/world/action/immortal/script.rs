@@ -51,12 +51,17 @@ pub fn parse_script(player: Entity, mut tokenizer: Tokenizer) -> Result<Action, 
                 }
                 "detach" => parse_params(player, script, tokenizer, ScriptCommand::Detach),
                 _ => Err(
-                    "Enter a valid subcommand: attach-init, attach-post, attach-pre, or detach."
+                    "Enter a valid subcommand: attach-init, attach-post, attach-pre, \
+                     attach-timer, or detach."
                         .to_string(),
                 ),
             }
         } else {
-            Err("Enter a subcommand: attach-init, attach-post, attach-pre, or detach.".to_string())
+            Err(
+                "Enter a subcommand: attach-init, attach-post, attach-pre, attach-timer, or \
+                 detach."
+                    .to_string(),
+            )
         }
     } else {
         Err("Enter a script name.".to_string())

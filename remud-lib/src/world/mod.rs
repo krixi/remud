@@ -8,7 +8,7 @@ pub mod types;
 use std::{collections::VecDeque, convert::TryFrom, str::FromStr};
 
 use bevy_app::Events;
-use bevy_ecs::prelude::*;
+use bevy_ecs::prelude::{Entity, With, World};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use rhai::ParseError;
@@ -18,7 +18,7 @@ use crate::{
     engine::persist::{self, DynPersist, Updates},
     web::scripts::ScriptError,
     world::{
-        action::Action,
+        action::{commands::Commands, Action},
         scripting::{
             actions::compile_scripts, run_init_scripts, run_post_action_scripts,
             run_pre_action_scripts, run_timed_scripts, QueuedAction, Script, ScriptName,
@@ -26,7 +26,7 @@ use crate::{
         },
         types::{
             object::{Objects, PrototypeId},
-            player::{Messages, Player, Players},
+            player::{self, Messages, Player, PlayerFlags, Players},
             room::{Regions, Room, RoomBundle, RoomId, Rooms},
             Configuration, Contents, Description, Id, Location, Named,
         },
@@ -37,6 +37,7 @@ pub static VOID_ROOM_ID: Lazy<RoomId> = Lazy::new(|| RoomId::try_from(0).unwrap(
 
 pub struct GameWorld {
     ecs: Ecs,
+    commands: Commands,
 }
 
 impl GameWorld {
@@ -50,7 +51,10 @@ impl GameWorld {
         // Create emergency room
         add_void_room(world);
 
-        GameWorld { ecs }
+        GameWorld {
+            ecs,
+            commands: Commands::default(),
+        }
     }
 
     #[tracing::instrument(name = "run pre/init", skip_all)]
@@ -140,11 +144,27 @@ impl GameWorld {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player action", skip_all, fields(player = action.actor().to_bits()))]
-    pub fn player_action(&mut self, action: Action) {
-        let world = self.ecs.world_mut();
+    #[tracing::instrument(name = "player input", skip_all)]
+    pub fn player_input(&mut self, player: Entity, input: &str) -> Result<(), String> {
+        let immortal = self
+            .ecs
+            .world()
+            .get::<PlayerFlags>(player)
+            .unwrap()
+            .contains(player::Flags::IMMORTAL);
 
-        world
+        match self.commands.parse(player, input, !immortal) {
+            Ok(action) => self.player_action(action),
+            Err(message) => return Err(message),
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "player action", skip_all)]
+    pub fn player_action(&mut self, action: Action) {
+        self.ecs
+            .world_mut()
             .get_resource_mut::<Events<QueuedAction>>()
             .unwrap()
             .send(QueuedAction { action });
@@ -205,10 +225,6 @@ impl GameWorld {
             .get_resource_mut::<Updates>()
             .unwrap()
             .take_reloads()
-    }
-
-    pub fn world(&self) -> &World {
-        self.ecs.world()
     }
 
     pub fn world_mut(&mut self) -> &mut World {

@@ -6,10 +6,13 @@ use tokio::sync::mpsc;
 use crate::{
     engine::{
         db::Db,
-        negotiate_login::{ClientLoginFsm, ClientParams, Transition},
+        fsm::{
+            negotiate_login::{ClientLoginFsm, Transition},
+            ClientParams, StackFsm, UpdateResult,
+        },
         EngineResponse,
     },
-    world::{action::commands::Commands, GameWorld},
+    world::GameWorld,
     ClientId,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,7 +26,105 @@ pub enum SendPrompt {
 pub struct Client {
     id: ClientId,
     sender: ClientSender,
-    fsm: ClientLoginFsm,
+    fsm: ClientFsmStack,
+}
+
+pub struct ClientFsmStack {
+    root: ClientLoginFsm,
+    fsms: Vec<Box<dyn StackFsm + Send + Sync>>,
+}
+
+impl ClientFsmStack {
+    #[tracing::instrument(
+        name = "update client fsm",
+        fields(
+            input = if sender.expecting_sensitive_input() { "****" } else { input.unwrap_or("") }),
+            skip_all
+    )]
+    pub async fn update(
+        &mut self,
+        id: ClientId,
+        sender: &ClientSender,
+        input: Option<&str>,
+        world: &mut GameWorld,
+        db: &Db,
+    ) {
+        if let Some(fsm) = self.fsms.last_mut() {
+            let mut update_count: i32 = 0;
+            loop {
+                update_count += 1;
+
+                match fsm
+                    .on_update(ClientParams::new(id, sender, world, db).with_input(input))
+                    .await
+                {
+                    UpdateResult::PushFsm(fsm) => {
+                        self.fsms.push(fsm);
+                        break;
+                    }
+                    UpdateResult::PopFsm => {
+                        self.fsms.pop();
+                        break;
+                    }
+                    UpdateResult::Continue => (),
+                    UpdateResult::Stop => break,
+                }
+
+                if update_count > 5 {
+                    tracing::warn!("HOLY **** there were FIVE updates what even");
+                    break;
+                }
+            }
+        } else {
+            let mut update_count: i32 = 0;
+            loop {
+                update_count += 1;
+
+                match self
+                    .root
+                    .on_update(
+                        None,
+                        ClientParams::new(id, sender, world, db).with_input(input),
+                    )
+                    .await
+                {
+                    UpdateResult::PushFsm(fsm) => {
+                        self.fsms.push(fsm);
+                        break;
+                    }
+                    UpdateResult::PopFsm => {
+                        self.fsms.pop();
+                        break;
+                    }
+                    UpdateResult::Continue => (),
+                    UpdateResult::Stop => break,
+                }
+
+                if update_count > 5 {
+                    tracing::warn!("HOLY **** there were FIVE updates what even");
+                    break;
+                }
+            }
+        };
+    }
+
+    #[tracing::instrument(name = "transition client fsm", skip_all)]
+    pub async fn transition(
+        &mut self,
+        id: ClientId,
+        sender: &ClientSender,
+        tx: Transition,
+        world: &mut GameWorld,
+        db: &Db,
+    ) {
+        self.root
+            .on_update(Some(tx), &mut ClientParams::new(id, sender, world, db))
+            .await;
+    }
+
+    pub fn player(&self) -> Option<Entity> {
+        self.root.player()
+    }
 }
 
 impl Client {
@@ -35,50 +136,18 @@ impl Client {
         self.sender.expecting_sensitive_input.load(Ordering::SeqCst)
     }
 
-    #[tracing::instrument(name = "update client fsm", fields(input = if self.expecting_sensitive_input() { "****" } else { input.unwrap_or("") }), skip(self, world, db, commands))]
-    pub async fn update(
-        &mut self,
-        input: Option<&str>,
-        world: &mut GameWorld,
-        db: &Db,
-        commands: &Commands,
-    ) {
-        let sender = &self.sender;
-
-        let mut update_count: i32 = 0;
-        while self
-            .fsm
-            .on_update(
-                None,
-                ClientParams::new(self.id, sender, world, db, commands).with_input(input),
-            )
+    #[tracing::instrument(name = "update client fsm", fields(input = if self.expecting_sensitive_input() { "****" } else { input.unwrap_or("") }), skip(self, world, db, ))]
+    pub async fn update(&mut self, input: Option<&str>, world: &mut GameWorld, db: &Db) {
+        self.fsm
+            .update(self.id, &self.sender, input, world, db)
             .await
-        {
-            // just go again
-            update_count += 1;
-
-            if update_count > 5 {
-                tracing::warn!("HOLY **** there were FIVE updates what even");
-                break;
-            }
-        }
     }
 
-    #[tracing::instrument(name = "transition client fsm", skip(self, world, db, commands))]
-    pub async fn transition(
-        &mut self,
-        tx: Transition,
-        world: &mut GameWorld,
-        db: &Db,
-        commands: &Commands,
-    ) {
-        let sender = &self.sender;
+    #[tracing::instrument(name = "transition client fsm", skip(self, world, db,))]
+    pub async fn transition(&mut self, tx: Transition, world: &mut GameWorld, db: &Db) {
         self.fsm
-            .on_update(
-                Some(tx),
-                &mut ClientParams::new(self.id, sender, world, db, commands),
-            )
-            .await;
+            .transition(self.id, &self.sender, tx, world, db)
+            .await
     }
 
     pub async fn send<'a, M: Into<Cow<'a, str>>>(
@@ -117,6 +186,10 @@ impl ClientSender {
             tracing::error!("failed to send message to client {:?}: {}", id, e);
         }
     }
+
+    pub fn expecting_sensitive_input(&self) -> bool {
+        self.expecting_sensitive_input.load(Ordering::SeqCst)
+    }
 }
 
 #[derive(Default)]
@@ -135,13 +208,20 @@ impl Clients {
                     tx,
                     expecting_sensitive_input: AtomicBool::new(false),
                 },
-                fsm: ClientLoginFsm::default(),
+                fsm: ClientFsmStack {
+                    root: ClientLoginFsm::default(),
+                    fsms: Vec::new(),
+                },
             },
         );
     }
 
     pub fn init_player(&mut self, client: ClientId, player: Entity) {
         self.by_player.entry(player).or_insert(client);
+    }
+
+    pub fn get(&self, client: ClientId) -> Option<&Client> {
+        self.clients.get(&client)
     }
 
     pub fn get_mut(&mut self, client: ClientId) -> Option<&mut Client> {

@@ -2,9 +2,7 @@ mod client;
 pub mod db;
 pub mod dialog;
 pub mod fsm;
-pub mod negotiate_login;
 pub mod persist;
-pub mod update_password;
 
 use std::{borrow::Cow, collections::VecDeque};
 
@@ -19,9 +17,9 @@ use tokio::{
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
-        client::{Clients, SendPrompt},
+        client::{Client, Clients, SendPrompt},
         db::{Db, GameDb},
-        negotiate_login::Transition,
+        fsm::negotiate_login::Transition,
         persist::PersistPlugin,
     },
     macros::regex,
@@ -30,10 +28,7 @@ use crate::{
         ScriptsRequest, ScriptsResponse, WebMessage,
     },
     world::{
-        action::{commands::Commands, ActionsPlugin},
-        fsm::FsmPlugin,
-        scripting::ScriptPlugin,
-        types::TypesPlugin,
+        action::ActionsPlugin, fsm::FsmPlugin, scripting::ScriptPlugin, types::TypesPlugin,
         GameWorld,
     },
     ClientId,
@@ -135,7 +130,6 @@ pub struct Engine {
     clients: Clients,
     ticker: Interval,
     game_world: GameWorld,
-    commands: Commands,
     db: Db,
 }
 
@@ -171,8 +165,6 @@ impl Engine {
         // Run a tick to perform initialization of loaded objects.
         game_world.run_pre_init();
 
-        let commands = Commands::default();
-
         Ok(Engine {
             client_rx,
             engine_tx,
@@ -180,7 +172,6 @@ impl Engine {
             clients: Clients::default(),
             ticker: interval(Duration::from_millis(15)),
             game_world,
-            commands,
             db,
         })
     }
@@ -287,20 +278,15 @@ impl Engine {
             ClientMessage::Disconnect(client_id) => {
                 tracing::info!("{} disconnected", client_id);
 
-                if let Some(client) = self.clients.get_mut(client_id) {
-                    if let Some(player) = client.player() {
-                        if let Err(e) = self.game_world.despawn_player(player) {
-                            tracing::error!("failed to despawn player: {}", e);
-                        }
+                if let Some(player) = self.clients.get(client_id).and_then(Client::player) {
+                    if let Err(e) = self.game_world.despawn_player(player) {
+                        tracing::error!("failed to despawn player: {}", e);
                     }
+                }
 
+                if let Some(client) = self.clients.get_mut(client_id) {
                     client
-                        .transition(
-                            Transition::Disconnect,
-                            &mut self.game_world,
-                            &self.db,
-                            &self.commands,
-                        )
+                        .transition(Transition::Disconnect, &mut self.game_world, &self.db)
                         .await;
                 }
 
@@ -316,18 +302,11 @@ impl Engine {
                 // this is where we invoke the character login fsm
                 if let Some(client) = self.clients.get_mut(client_id) {
                     client
-                        .transition(
-                            Transition::Ready,
-                            &mut self.game_world,
-                            &self.db,
-                            &self.commands,
-                        )
+                        .transition(Transition::Ready, &mut self.game_world, &self.db)
                         .await;
 
                     // manually drive the state machine in certain cases.
-                    client
-                        .update(None, &mut self.game_world, &self.db, &self.commands)
-                        .await;
+                    client.update(None, &mut self.game_world, &self.db).await;
                 } else {
                     tracing::error!("received message from unknown client: {:?}", message);
                 }
@@ -341,12 +320,7 @@ impl Engine {
                     }
 
                     client
-                        .update(
-                            Some(input.as_str()),
-                            &mut self.game_world,
-                            &self.db,
-                            &self.commands,
-                        )
+                        .update(Some(input.as_str()), &mut self.game_world, &self.db)
                         .await;
 
                     if let Some(player) = client.player() {
