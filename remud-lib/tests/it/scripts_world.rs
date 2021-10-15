@@ -1,4 +1,4 @@
-use remud_test::{AuthenticatedWebClient, JsonScript, Server, TelnetPlayer, Trigger};
+use crate::support::{AuthenticatedWebClient, JsonScript, Server, TelnetPlayer, Trigger};
 
 async fn configure_test_object(
     web: &AuthenticatedWebClient,
