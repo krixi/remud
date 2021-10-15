@@ -1,8 +1,9 @@
 /target
-/keys
+/keys/
 /acme
 *.db
 *.db-shm
 *.db-wal
 .idea/
 *.exe
+remud-lib/keys/jwt_key

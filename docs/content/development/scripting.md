@@ -147,6 +147,8 @@ The handle to the world and its APIs.
 
 `players(entity)` - Returns the players in the given room, or unit if it isn't a room.
 
+`object_new(prototype_id)` - Creates a new instance of the given prototype, and drops it on the floor of the current room.   
+
 ---
 
 ## `Library`
@@ -168,3 +170,9 @@ of the time.
 `choose(array)` - Randomly selects and returns an item from the specified array.
 
 `range(start, end)` - Randomly returns a value between start and end, inclusive.
+
+
+### state machines
+
+`let builder = fsm_builder()` - creates a new FSM builder. See [the page on FSM's]({{< relref "./fsm" >}}) 
+for details on how to configure these objects.

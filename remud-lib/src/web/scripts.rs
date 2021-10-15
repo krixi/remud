@@ -336,17 +336,16 @@ async fn handle_read_all(
     name = "update script",
     skip_all,
     fields(
-        player = player.name.as_str(),
+        player = _player.name.as_str(),
         script = script.name.as_str()
     )
 )]
 async fn handle_update(
-    player: Player,
+    _player: Player,
     script: JsonScript,
     sender: mpsc::Sender<WebMessage>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    tracing::debug!("player {} updating script {}", player.name(), script.name());
-
+    tracing::debug!("start script update");
     let (tx, rx) = oneshot::channel();
     if let Err(err) = sender
         .send(WebMessage {
@@ -361,6 +360,7 @@ async fn handle_update(
 
     match rx.await {
         Ok(ScriptsResponse::ScriptCompiled(error)) => {
+            tracing::debug!("finished script update (success) w/err: {:?}", error);
             Ok(warp::reply::json(&CompileResponse { error }))
         }
         Ok(ScriptsResponse::Error(err)) => Err(warp::reject::custom(err)),

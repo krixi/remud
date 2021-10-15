@@ -180,8 +180,10 @@ pub mod self_api {
     use std::time::Duration;
 
     use bevy_app::Events;
-    use rhai::ImmutableString;
+    use rhai::{Dynamic, ImmutableString};
 
+    use crate::world::action::immortal::object::ObjectCreate;
+    use crate::world::types::object::PrototypeId;
     use crate::world::{
         action::{
             communicate::{Emote, Message, Say, SendMessage, Whisper},
@@ -194,6 +196,8 @@ pub mod self_api {
             QueuedAction, ScriptData,
         },
     };
+    use bevy_ecs::prelude::Entity;
+    use std::convert::TryFrom;
 
     #[rhai_fn(pure, get = "entity")]
     pub fn get_entity(me: &mut Me) -> Entity {
@@ -388,6 +392,24 @@ pub mod self_api {
                 .entity_mut(me.entity)
                 .insert(ScriptData::new_with_entry(key, value));
         }
+    }
+
+    #[rhai_fn(pure)]
+    pub fn object_new(me: &mut Me, prototype_id: i64) {
+        if let Ok(id) = PrototypeId::try_from(prototype_id) {
+            me.world
+                .write()
+                .unwrap()
+                .get_resource_mut::<Events<QueuedAction>>()
+                .unwrap()
+                .send(
+                    Action::from(ObjectCreate {
+                        actor: me.entity,
+                        prototype_id: id,
+                    })
+                    .into(),
+                );
+        };
     }
 
     #[rhai_fn(pure)]
