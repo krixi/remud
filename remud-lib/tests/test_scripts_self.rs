@@ -93,3 +93,119 @@ async fn test_self_object_remove() {
     t.test_exclude("it disappears!", "look", vec!["widget"])
         .await;
 }
+
+#[tokio::test]
+async fn test_self_set_description() {
+    const PLAYER_NAME: &'static str = "krixi";
+    let (server, mut t) = Server::new_create_player(PLAYER_NAME, "let me in").await;
+    let web = server.login_web(&t).await;
+
+    configure_test_object(
+        &web,
+        &mut t,
+        Trigger::Use,
+        "test_self_script",
+        r#"SELF.set_description(SELF.entity, "a whirly do-dad");"#,
+    )
+    .await;
+
+    t.test(
+        "there should be a widget on the ground",
+        "look",
+        vec!["widget"],
+    )
+    .await;
+    t.test(
+        "with a boring description",
+        "look at widget",
+        vec!["A nondescript object."],
+    )
+    .await;
+    t.test("Then you use it", "use widget", vec!["You use widget."])
+        .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    t.test(
+        "and suddenly it becomes interesting",
+        "look at widget",
+        vec!["a whirly do-dad"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_self_set_name() {
+    const PLAYER_NAME: &'static str = "krixi";
+    let (server, mut t) = Server::new_create_player(PLAYER_NAME, "let me in").await;
+    let web = server.login_web(&t).await;
+
+    configure_test_object(
+        &web,
+        &mut t,
+        Trigger::Use,
+        "test_self_script",
+        r#"SELF.set_name(SELF.entity, "comfy pillow");"#,
+    )
+    .await;
+
+    t.test(
+        "there should be a widget on the ground",
+        "look",
+        vec!["widget"],
+    )
+    .await;
+    t.test("Then you use it", "use widget", vec!["You use widget."])
+        .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    t.test(
+        "and it turned into a pillow! weird",
+        "look",
+        vec!["comfy pillow"],
+    )
+    .await;
+    t.test_exclude(
+        "with no sign of any widgets in sight",
+        "look",
+        vec!["widget"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_self_set_keywords() {
+    const PLAYER_NAME: &'static str = "krixi";
+    let (server, mut t) = Server::new_create_player(PLAYER_NAME, "let me in").await;
+    let web = server.login_web(&t).await;
+
+    configure_test_object(
+        &web,
+        &mut t,
+        Trigger::Use,
+        "test_self_script",
+        r#"SELF.set_keywords(SELF.entity, "shiny pebble");"#,
+    )
+    .await;
+
+    t.test(
+        "there should be a widget on the ground",
+        "look",
+        vec!["widget"],
+    )
+    .await;
+    t.test("Then you use it", "use widget", vec!["You use widget."])
+        .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    t.test("it's still called a widget", "look", vec!["widget"])
+        .await;
+    t.test(
+        "but now it has different keywords",
+        "look at shiny pebble",
+        vec!["A nondescript object."],
+    )
+    .await;
+    t.test(
+        "and will not respond to widget anymore",
+        "look at widget",
+        vec!["You find nothing called \"widget\" to look at."],
+    )
+    .await;
+}
