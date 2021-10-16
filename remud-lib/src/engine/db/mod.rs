@@ -46,6 +46,7 @@ pub enum Error {
 #[async_trait]
 pub trait AuthDb {
     async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error>;
+    async fn update_password(&self, player: &str, password: &str) -> Result<(), Error>;
     async fn is_immortal(&self, player: &str) -> Result<bool, Error>;
     async fn register_tokens(
         &self,
@@ -145,6 +146,16 @@ impl AuthDb for Db {
         } else {
             Ok(false)
         }
+    }
+
+    async fn update_password(&self, player: &str, password: &str) -> Result<(), Error> {
+        sqlx::query("UPDATE players SET password = ? WHERE username = ?")
+            .bind(password)
+            .bind(player)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 
     async fn is_immortal(&self, player: &str) -> Result<bool, Error> {

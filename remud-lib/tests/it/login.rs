@@ -209,3 +209,92 @@ async fn test_login_verify_failed() {
 
     t.assert_prompt().await;
 }
+
+#[tokio::test]
+async fn test_login_create_player_change_password() {
+    const NAME: &'static str = "Shane";
+    const FIRST_PW: &'static str = "my fine password";
+    const NEW_PW: &'static str = "my new and improved password";
+    let (mut server, mut t) = Server::new_create_player(NAME, FIRST_PW).await;
+
+    t.test(
+        "enter change password",
+        "password",
+        vec!["Password Update", "Current password?"],
+    )
+    .await;
+
+    t.test("invalid password", "ok", vec!["Verification failed."])
+        .await;
+
+    t.test(
+        "enter change password",
+        "password",
+        vec!["Password Update", "Current password?"],
+    )
+    .await;
+
+    t.test(
+        "enter password",
+        FIRST_PW,
+        vec!["Password verified.", "New password?"],
+    )
+    .await;
+
+    t.test("weak password", "ok", vec!["Weak password detected."])
+        .await;
+
+    t.test(
+        "enter change password",
+        "password",
+        vec!["Password Update", "Current password?"],
+    )
+    .await;
+
+    t.test(
+        "enter password",
+        FIRST_PW,
+        vec!["Password verified.", "New password?"],
+    )
+    .await;
+
+    t.test(
+        "new password",
+        NEW_PW,
+        vec!["Password accepted.", "Confirm?"],
+    )
+    .await;
+
+    t.test("fail confirm", "ok", vec!["Confirmation failed."])
+        .await;
+
+    t.test(
+        "enter change password",
+        "password",
+        vec!["Password Update", "Current password?"],
+    )
+    .await;
+
+    t.test(
+        "enter password",
+        FIRST_PW,
+        vec!["Password verified.", "New password?"],
+    )
+    .await;
+
+    t.test(
+        "new password",
+        NEW_PW,
+        vec!["Password accepted.", "Confirm?"],
+    )
+    .await;
+
+    t.test("confirm new password", NEW_PW, vec!["Password updated."])
+        .await;
+
+    drop(t);
+
+    let t = server.login_player(NAME, NEW_PW).await;
+
+    let _ = server.restart(t).await;
+}

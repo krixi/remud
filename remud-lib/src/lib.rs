@@ -1,4 +1,3 @@
-#![feature(generic_associated_types)]
 // #![warn(clippy::pedantic)]
 #![allow(clippy::too_many_arguments)]
 

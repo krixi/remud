@@ -2,6 +2,8 @@ pub mod negotiate_login;
 mod update_password;
 
 use anyhow::bail;
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+use rand::rngs::OsRng;
 use std::{borrow::Cow, collections::HashMap, fmt::Debug, hash::Hash};
 
 use crate::{
@@ -15,7 +17,7 @@ use crate::{
 
 #[async_trait::async_trait]
 pub trait StackFsm {
-    async fn on_update(&mut self, params: &mut ClientParams) -> UpdateResult;
+    async fn on_update(&mut self, params: &mut Params) -> UpdateResult;
 }
 
 pub trait Transition: Debug {}
@@ -27,7 +29,7 @@ impl<SID> StateId for SID where SID: Debug + Copy + Clone + Eq + PartialEq + Has
 pub trait FsmState: Send + Sync {}
 impl<S> FsmState for S where S: Send + Sync {}
 
-pub struct ClientParams<'p> {
+pub struct Params<'p> {
     pub id: ClientId,
     pub input: Option<&'p str>,
     pub sender: &'p ClientSender,
@@ -35,14 +37,14 @@ pub struct ClientParams<'p> {
     pub db: &'p Db,
 }
 
-impl<'p> ClientParams<'p> {
+impl<'p> Params<'p> {
     pub fn new(
         id: ClientId,
         sender: &'p ClientSender,
         world: &'p mut GameWorld,
         db: &'p Db,
     ) -> Self {
-        ClientParams {
+        Params {
             id,
             input: None,
             sender,
@@ -58,21 +60,13 @@ impl<'p> ClientParams<'p> {
 
     pub async fn send<M: Into<Cow<'p, str>>>(&self, messages: impl IntoIterator<Item = M>) {
         self.sender
-            .send(
-                self.id,
-                SendPrompt::None,
-                messages.into_iter().map(Into::into),
-            )
+            .send(SendPrompt::None, messages.into_iter().map(Into::into))
             .await;
     }
 
     pub async fn send_prompt<M: Into<Cow<'p, str>>>(&self, messages: impl IntoIterator<Item = M>) {
         self.sender
-            .send(
-                self.id,
-                SendPrompt::Prompt,
-                messages.into_iter().map(Into::into),
-            )
+            .send(SendPrompt::Prompt, messages.into_iter().map(Into::into))
             .await;
     }
 
@@ -81,11 +75,7 @@ impl<'p> ClientParams<'p> {
         messages: impl IntoIterator<Item = M>,
     ) {
         self.sender
-            .send(
-                self.id,
-                SendPrompt::Sensitive,
-                messages.into_iter().map(Into::into),
-            )
+            .send(SendPrompt::Sensitive, messages.into_iter().map(Into::into))
             .await;
     }
 }
@@ -137,22 +127,19 @@ where
     }
 
     #[allow(unused_variables)]
-    async fn on_enter<'p>(&mut self, state: &mut S, params: &'p mut ClientParams<'_>) {}
+    async fn on_enter<'p>(&mut self, state: &mut S, params: &'p mut Params<'_>) {}
 
     #[allow(unused_variables)]
     async fn decide<'p>(
         &mut self,
         state: &mut S,
-        params: &'p mut ClientParams<'_>,
+        params: &'p mut Params<'_>,
     ) -> Option<TransitionAction<T>> {
         None
     }
 
     #[allow(unused_variables)]
-    async fn act<'p>(&mut self, state: &mut S, params: &'p mut ClientParams<'_>) {}
-
-    #[allow(unused_variables)]
-    async fn on_exit<'p>(&mut self, state: &mut S, params: &'p mut ClientParams<'_>) {}
+    async fn on_exit<'p>(&mut self, state: &mut S, params: &'p mut Params<'_>) {}
 }
 
 pub struct FsmBuilder<T, SID, S>
@@ -217,7 +204,7 @@ where
         &mut self,
         tx: Option<T>,
         data: &mut S,
-        params: &mut ClientParams<'_>,
+        params: &mut Params<'_>,
     ) -> UpdateResult {
         // delegate to current state -
         let current_state = self.states.get_mut(&self.current).unwrap();
@@ -261,13 +248,36 @@ where
             current_state
         };
 
-        // finally: let the new current state act.
-        current_state.act(data, params).await;
-
         // the new current state knows best if it should be called again right away.
         match current_state.keep_going() {
             true => UpdateResult::Continue,
             false => UpdateResult::Stop,
         }
     }
+}
+
+pub fn verify_len(input: &str) -> Option<String> {
+    if input.len() < 5 {
+        return Some("|Red1|Weak password detected.|-|".to_string());
+    } else if input.len() > 1024 {
+        return Some("|Red1|Password too strong :(|-|".to_string());
+    }
+    None
+}
+
+pub fn hash_input(input: &str) -> Result<String, anyhow::Error> {
+    // TODO: Add zeroizing library to clear password input from memory
+    let hasher = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = match hasher
+        .hash_password(input.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+    {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::error!("create password hash error: {}", e);
+            bail!(e.to_string())
+        }
+    };
+    Ok(hash)
 }
