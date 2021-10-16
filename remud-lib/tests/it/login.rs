@@ -180,7 +180,7 @@ async fn test_login_verify_failed() {
     let (server, t) = Server::new_create_player("Shane", "password").await;
 
     drop(t);
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(100));
 
     let mut t = server.connect_telnet();
     t.line_contains("Connected to").await;
@@ -193,7 +193,7 @@ async fn test_login_verify_failed() {
     t.test(
         "enter bad password",
         "ok",
-        vec!["Weak password detected.", "Name?"],
+        vec!["Verification failed.", "Name?"],
     )
     .await;
 

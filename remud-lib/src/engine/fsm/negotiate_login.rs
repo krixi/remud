@@ -290,14 +290,14 @@ impl State<Transition, StateId, ClientState> for LoginPasswordState {
                     Some(Transition::VerifiedPassword.into())
                 } else {
                     tracing::info!("verification failed for user {}", name);
-                    params.send(vec![DEFAULT_LOGIN_ERROR]).await;
-                    Some(Transition::FailLogin.into())
+                    params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+                    Some(Transition::FailPassword.into())
                 }
             }
             Err(e) => {
                 tracing::error!("get user hash error: {:?}", e);
-                params.send(vec![DEFAULT_LOGIN_ERROR]).await;
-                Some(Transition::FailLogin.into())
+                params.send(vec![DEFAULT_PASSWORD_ERROR]).await;
+                Some(Transition::FailPassword.into())
             }
         }
     }
