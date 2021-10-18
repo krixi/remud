@@ -109,6 +109,16 @@ top machine is executed.
 
 `pop_fsm()` - Pops the top state machine from the entity's FSM stack.
 
+`set_description(entity, description)` - Sets the description of the given entity. 
+
+`set_keywords(entity, keywords)` - Sets the keywords of the given entity. Keywords should be a space-separated string.
+
+`set_name(entity, name)` - Sets the name of the given entity.
+
+`object_new(prototype_id)` - Creates a new instance of the given prototype, and drops it on the floor of the current room.
+
+`object_remove(entity)` - Removes the given entity from existence.
+
 ---
 
 ## `EVENT`
@@ -154,8 +164,6 @@ The handle to the world and its APIs.
 `contents(entity)` - Returns the contents of the given container, or unit if it is not a container. Players and rooms are containers and can hold objects.
 
 `players(entity)` - Returns the players in the given room, or unit if it isn't a room.
-
-`object_new(prototype_id)` - Creates a new instance of the given prototype, and drops it on the floor of the current room.   
 
 ---
 
