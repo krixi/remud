@@ -1,17 +1,13 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, iter};
 
 use bevy_ecs::prelude::Entity;
-use either::Either;
 use tokio::sync::mpsc;
 
 use crate::{
     engine::{
         db::Db,
-        fsm::{
-            negotiate_login::{ClientLoginFsm, Transition},
-            Params, StackFsm, UpdateResult,
-        },
-        EngineResponse,
+        fsm::{negotiate_login::ClientLoginFsm, Params, StackFsm, UpdateResult},
+        ClientMessage, EngineResponse,
     },
     world::GameWorld,
     ClientId,
@@ -25,63 +21,85 @@ pub enum SendPrompt {
     Sensitive,
 }
 
+#[derive(Debug, Clone)]
+pub enum ClientEvent<'a> {
+    Advance,
+    Disconnect,
+    Input(&'a str),
+    PasswordHash(Option<String>),
+    PasswordVerification(Option<bool>),
+    Ready,
+}
+
 pub struct Client {
-    id: ClientId,
-    sender: ClientSender,
+    engine_sender: EngineSender,
+    client_sender: ClientSender,
     root: ClientLoginFsm,
     fsms: Vec<Box<dyn StackFsm + Send + Sync>>,
 }
 
 impl Client {
     #[tracing::instrument(
-        name = "update current fsm", 
+        name = "process client event", 
         fields(
-            input = if self.expecting_sensitive_input() { "****" } else { input.unwrap_or("") },
+            event = match &event {
+                ClientEvent::Input(input) => if self.expecting_sensitive_input() { "******" } else { input },
+                ClientEvent::Ready => "ready",
+                ClientEvent::Disconnect => "disconnect",
+                ClientEvent::Advance => "advance",
+                ClientEvent::PasswordHash(_) => "pw-hash",
+                ClientEvent::PasswordVerification(verified) => 
+                    match verified {
+                        Some(true) => "verified",
+                        Some(false) => "not verified",
+                        None => "failed verification"
+                    }
+            }
         ),
-        skip(self, world, db, )
+        skip(self, world, db)
     )]
-    pub async fn update(&mut self, input: Option<&str>, world: &mut GameWorld, db: &Db) {
+    pub async fn process(&mut self, event: ClientEvent<'_>, world: &mut GameWorld, db: &Db) {
+        let mut event = iter::once(event).chain(iter::repeat(ClientEvent::Advance));
         let mut update_count: i32 = 0;
         while update_count < 5 {
             update_count += 1;
 
-            let mut params = Params::new(self.id, &mut self.sender, world, db);
-            params.with_input(input);
+            let mut params = Params::new(
+                self.engine_sender.clone(),
+                &self.client_sender,
+                world,
+                db,
+            );
 
-            let current_fsm = if let Some(stack_fsm) = self.fsms.last_mut() {
-                Either::Left(stack_fsm)
-            } else {
-                Either::Right(&mut self.root)
-            };
-
-            let result = match current_fsm {
-                Either::Left(fsm) => fsm.on_update(&mut params).await,
-                Either::Right(fsm) => fsm.on_update(None, &mut params).await,
-            };
-
-            match result {
-                UpdateResult::PushFsm(fsm) => {
-                    self.fsms.push(fsm);
-                    // don't break, allow the new FSM to start and run at least one cycle
-                }
-                UpdateResult::PopFsm => {
-                    self.fsms.pop();
+            let event = event.next().unwrap();
+            let mut result = None;
+            for fsm in self.fsms.iter_mut().rev() {
+                if let Some(r) = fsm.on_update(event.clone(), &mut params).await {
+                    result = Some(r);
                     break;
                 }
-                UpdateResult::Continue => (),
-                UpdateResult::Stop => break,
+            }
+            if result.is_none() {
+                result = self.root.on_update(event, &mut params).await
+            }
+
+            if let Some(result) = result {
+                match result {
+                    UpdateResult::PushFsm(fsm) => {
+                        self.fsms.push(fsm);
+                        // don't break, allow the new FSM's on_enter to run at minimum
+                    }
+                    UpdateResult::PopFsm => {
+                        self.fsms.pop();
+                        break;
+                    }
+                    UpdateResult::Continue => (),
+                    UpdateResult::Stop => break,
+                }
+            } else {
+                tracing::warn!("unhandled client FSM stack message");
             }
         }
-    }
-
-    #[tracing::instrument(name = "transition client fsm", skip(self, world, db))]
-    pub async fn transition(&mut self, tx: Transition, world: &mut GameWorld, db: &Db) {
-        self.root
-            .on_update(
-                Some(tx),
-                &mut Params::new(self.id, &mut self.sender, world, db),
-            )
-            .await;
     }
 
     pub fn player(&self) -> Option<Entity> {
@@ -89,7 +107,9 @@ impl Client {
     }
 
     pub fn expecting_sensitive_input(&self) -> bool {
-        self.sender.expecting_sensitive_input.load(Ordering::SeqCst)
+        self.client_sender
+            .expecting_sensitive_input
+            .load(Ordering::SeqCst)
     }
 
     pub async fn send<'a, M: Into<Cow<'a, str>>>(
@@ -97,7 +117,23 @@ impl Client {
         prompt: SendPrompt,
         messages: impl IntoIterator<Item = M>,
     ) {
-        self.sender.send(prompt, messages).await;
+        self.client_sender.send(prompt, messages).await;
+    }
+}
+
+#[derive(Clone)]
+pub struct EngineSender {
+    id: ClientId,
+    tx: mpsc::Sender<ClientMessage>,
+}
+
+impl EngineSender {
+    pub fn password_hash(&self, hash: Option<String>) {
+        self.tx.blocking_send(ClientMessage::PasswordHash(self.id, hash)).ok();
+    }
+
+    pub fn password_verification(&self, verified: Option<bool>) {
+        self.tx.blocking_send(ClientMessage::PasswordVerification(self.id, verified)).ok();
     }
 }
 
@@ -137,13 +173,21 @@ pub(crate) struct Clients {
 }
 
 impl Clients {
-    pub fn add(&mut self, client_id: ClientId, tx: mpsc::Sender<EngineResponse>) {
+    pub fn add(
+        &mut self,
+        client_id: ClientId,
+        client_tx: mpsc::Sender<ClientMessage>,
+        engine_tx: mpsc::Sender<EngineResponse>,
+    ) {
         self.clients.insert(
             client_id,
             Client {
-                id: client_id,
-                sender: ClientSender {
-                    tx,
+                engine_sender: EngineSender {
+                    id: client_id,
+                    tx: client_tx,
+                },
+                client_sender: ClientSender {
+                    tx: engine_tx,
                     expecting_sensitive_input: AtomicBool::new(false),
                 },
                 root: ClientLoginFsm::default(),

@@ -3,7 +3,6 @@ mod world;
 
 use std::{borrow::Cow, convert::TryFrom, str::FromStr};
 
-use argon2::{password_hash, Argon2, PasswordHash, PasswordVerifier};
 use async_trait::async_trait;
 use bevy_ecs::prelude::*;
 use futures::TryStreamExt;
@@ -45,7 +44,7 @@ pub enum Error {
 
 #[async_trait]
 pub trait AuthDb {
-    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error>;
+    async fn player_hash(&self, player: &str) -> Result<Option<String>, Error>;
     async fn update_password(&self, player: &str, password: &str) -> Result<(), Error>;
     async fn is_immortal(&self, player: &str) -> Result<bool, Error>;
     async fn register_tokens(
@@ -127,25 +126,13 @@ impl Db {
 
 #[async_trait]
 impl AuthDb for Db {
-    async fn verify_player(&self, player: &str, password: &str) -> Result<bool, Error> {
-        let results = sqlx::query("SELECT password FROM players WHERE username = ?")
+    async fn player_hash(&self, player: &str) -> Result<Option<String>, Error> {
+        let row = sqlx::query("SELECT password FROM players WHERE username = ?")
             .bind(player)
             .fetch_optional(&self.pool)
             .await?;
 
-        if let Some(row) = results {
-            let hash = row.get("password");
-
-            match verify_password(hash, password) {
-                Ok(_) => Ok(true),
-                Err(e) => match e {
-                    VerifyError::BadPassword => Ok(false),
-                    VerifyError::Unknown(s) => Err(Error::PasswordVerification(s)),
-                },
-            }
-        } else {
-            Ok(false)
-        }
+        Ok(row.map(|r| r.get("password")))
     }
 
     async fn update_password(&self, player: &str, password: &str) -> Result<(), Error> {
@@ -498,22 +485,4 @@ impl ObjectRow {
             .map(ToString::to_string)
             .collect_vec()
     }
-}
-
-pub enum VerifyError {
-    BadPassword,
-    Unknown(String),
-}
-
-pub fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
-    let password_hash = PasswordHash::new(hash)
-        .map_err(|e| VerifyError::Unknown(format!("Hash parsing error: {}", e)))?;
-    let hasher = Argon2::default();
-    hasher
-        .verify_password(password.as_bytes(), &password_hash)
-        .map_err(|e| match e {
-            password_hash::Error::Password => VerifyError::BadPassword,
-            e => VerifyError::Unknown(format!("Verify password error: {}", e)),
-        })?;
-    Ok(())
 }

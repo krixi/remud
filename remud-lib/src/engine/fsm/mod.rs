@@ -2,36 +2,47 @@ pub mod negotiate_login;
 mod update_password;
 
 use anyhow::bail;
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+use argon2::{
+    password_hash::{self, SaltString},
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+};
 use rand::rngs::OsRng;
-use std::{borrow::Cow, collections::HashMap, fmt::Debug, hash::Hash};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    hash::Hash,
+};
 
 use crate::{
     engine::{
-        client::{ClientSender, SendPrompt},
+        client::{ClientEvent, ClientSender, EngineSender, SendPrompt},
         db::Db,
     },
     world::GameWorld,
-    ClientId,
 };
 
 #[async_trait::async_trait]
 pub trait StackFsm {
-    async fn on_update(&mut self, params: &mut Params) -> UpdateResult;
+    async fn on_update(
+        &mut self,
+        event: ClientEvent<'_>,
+        params: &mut Params,
+    ) -> Option<UpdateResult>;
 }
 
-pub trait Transition: Debug {}
-impl<T> Transition for T where T: Debug {}
+pub trait Transition: Debug + Clone {}
+impl<T> Transition for T where T: Debug + Clone {}
 
 pub trait StateId: Debug + Copy + Clone + Eq + PartialEq + Hash {}
 impl<SID> StateId for SID where SID: Debug + Copy + Clone + Eq + PartialEq + Hash {}
 
-pub trait FsmState: Send + Sync {}
-impl<S> FsmState for S where S: Send + Sync {}
+pub trait FsmState<T>: Send + Sync {
+    fn update(&mut self, tx: &T);
+}
 
 pub struct Params<'p> {
-    pub id: ClientId,
-    pub input: Option<&'p str>,
+    pub engine_sender: EngineSender,
     pub sender: &'p ClientSender,
     pub game_world: &'p mut GameWorld,
     pub db: &'p Db,
@@ -39,23 +50,17 @@ pub struct Params<'p> {
 
 impl<'p> Params<'p> {
     pub fn new(
-        id: ClientId,
+        engine_sender: EngineSender,
         sender: &'p ClientSender,
         world: &'p mut GameWorld,
         db: &'p Db,
     ) -> Self {
         Params {
-            id,
-            input: None,
+            engine_sender,
             sender,
             game_world: world,
             db,
         }
-    }
-
-    pub fn with_input(&mut self, input: Option<&'p str>) -> &mut Self {
-        self.input = input;
-        self
     }
 
     pub async fn send<M: Into<Cow<'p, str>>>(&self, messages: impl IntoIterator<Item = M>) {
@@ -80,6 +85,27 @@ impl<'p> Params<'p> {
     }
 }
 
+pub enum FsmEvent<'a, T> {
+    Transition(T),
+    Advance,
+    Input(&'a str),
+}
+
+impl<'a, T> TryFrom<ClientEvent<'a>> for FsmEvent<'a, T>
+where
+    T: TryFrom<ClientEvent<'a>, Error = ()>,
+{
+    type Error = ();
+
+    fn try_from(value: ClientEvent<'a>) -> Result<Self, Self::Error> {
+        match value {
+            ClientEvent::Advance => Ok(FsmEvent::Advance),
+            ClientEvent::Input(input) => Ok(FsmEvent::Input(input)),
+            event => Ok(FsmEvent::Transition(event.try_into()?)),
+        }
+    }
+}
+
 pub enum TransitionAction<T>
 where
     T: Transition,
@@ -101,7 +127,7 @@ pub trait State<T, SID, S>: Send + Sync
 where
     T: Transition,
     SID: StateId,
-    S: FsmState,
+    S: FsmState<T>,
 {
     fn id(&self) -> SID;
 
@@ -130,8 +156,9 @@ where
     async fn on_enter<'p>(&mut self, state: &mut S, params: &'p mut Params<'_>) {}
 
     #[allow(unused_variables)]
-    async fn decide<'p>(
+    async fn process<'p>(
         &mut self,
+        input: Option<&str>,
         state: &mut S,
         params: &'p mut Params<'_>,
     ) -> Option<TransitionAction<T>> {
@@ -146,7 +173,7 @@ pub struct FsmBuilder<T, SID, S>
 where
     T: Transition,
     SID: StateId,
-    S: FsmState,
+    S: FsmState<T>,
 {
     states: Vec<(SID, Box<dyn State<T, SID, S>>)>,
 }
@@ -155,7 +182,7 @@ impl<T, SID, S> FsmBuilder<T, SID, S>
 where
     T: Transition,
     SID: StateId,
-    S: FsmState,
+    S: FsmState<T>,
 {
     pub fn new() -> Self {
         FsmBuilder { states: Vec::new() }
@@ -188,7 +215,7 @@ pub struct Fsm<T, SID, S>
 where
     T: Transition,
     SID: StateId,
-    S: FsmState,
+    S: FsmState<T>,
 {
     states: HashMap<SID, Box<dyn State<T, SID, S>>>,
     current: SID,
@@ -198,34 +225,57 @@ impl<T, SID, S> Fsm<T, SID, S>
 where
     T: Transition,
     SID: StateId,
-    S: FsmState,
+    S: FsmState<T>,
 {
     pub async fn on_update(
         &mut self,
-        tx: Option<T>,
+        event: FsmEvent<'_, T>,
         data: &mut S,
         params: &mut Params<'_>,
     ) -> UpdateResult {
         // delegate to current state -
         let current_state = self.states.get_mut(&self.current).unwrap();
 
-        // check if called with a direct transition or not, if not - decide
-        // gets the new current state after any transitions occur
-        let current_state = if let Some(next) = match tx {
-            Some(tx) => {
+        // determine the next state by applying a transition or processing input
+        let next = match event {
+            FsmEvent::Transition(tx) => {
+                data.update(&tx);
                 let next = current_state.next_state(&tx);
-                tracing::info!("{:?} - {:?} -> {:?}", current_state.id(), tx, next);
+                tracing::info!("{:?} * {:?} -> {:?}", current_state.id(), tx, next);
                 Some(next)
             }
-            None => match current_state.decide(data, params).await {
+            FsmEvent::Input(input) => {
+                match current_state.process(Some(input), data, params).await {
+                    Some(action) => match action {
+                        TransitionAction::Transition(tx) => {
+                            data.update(&tx);
+                            let next = current_state.next_state(&tx);
+                            tracing::info!("{:?} * {:?} -> {:?}", current_state.id(), tx, next);
+                            Some(next)
+                        }
+                        TransitionAction::PushFsm(fsm) => return UpdateResult::PushFsm(fsm),
+                        TransitionAction::PopFsm => return UpdateResult::PopFsm,
+                    },
+                    None => None,
+                }
+            }
+            FsmEvent::Advance => match current_state.process(None, data, params).await {
                 Some(action) => match action {
-                    TransitionAction::Transition(tx) => Some(current_state.next_state(&tx)),
+                    TransitionAction::Transition(tx) => {
+                        data.update(&tx);
+                        let next = current_state.next_state(&tx);
+                        tracing::info!("{:?} * {:?} -> {:?}", current_state.id(), tx, next);
+                        Some(next)
+                    }
                     TransitionAction::PushFsm(fsm) => return UpdateResult::PushFsm(fsm),
                     TransitionAction::PopFsm => return UpdateResult::PopFsm,
                 },
                 None => None,
             },
-        } {
+        };
+
+        // gets the new current state after any transitions occur
+        let current_state = if let Some(next) = next {
             // update states if needed
             match next {
                 Some(state) => {
@@ -280,4 +330,22 @@ pub fn hash_input(input: &str) -> Result<String, anyhow::Error> {
         }
     };
     Ok(hash)
+}
+
+pub enum VerifyError {
+    BadPassword,
+    Unknown(String),
+}
+
+pub fn verify_password(hash: &str, password: &str) -> Result<(), VerifyError> {
+    let password_hash = PasswordHash::new(hash)
+        .map_err(|e| VerifyError::Unknown(format!("Hash parsing error: {}", e)))?;
+    let hasher = Argon2::default();
+    hasher
+        .verify_password(password.as_bytes(), &password_hash)
+        .map_err(|e| match e {
+            password_hash::Error::Password => VerifyError::BadPassword,
+            e => VerifyError::Unknown(format!("Verify password error: {}", e)),
+        })?;
+    Ok(())
 }

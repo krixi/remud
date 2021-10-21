@@ -25,14 +25,14 @@ pub struct Server {
 }
 
 impl Server {
-    #[tracing::instrument(name = "initializing telnet server", skip(address))]
+    #[tracing::instrument(name = "initializing telnet server", skip_all)]
     pub async fn new<A: ToSocketAddrs>(address: A) -> Result<Self, Error> {
         let listener = TcpListener::bind(address).await?;
 
         Ok(Server { listener })
     }
 
-    #[tracing::instrument(name = "accepting telnet connection", skip(client_tx, self))]
+    #[tracing::instrument(name = "accepting telnet connection", skip_all)]
     pub(crate) async fn accept(
         &self,
         client_tx: mpsc::Sender<ClientMessage>,
@@ -48,7 +48,8 @@ impl Server {
                         let client_tx = client_tx;
                         let (engine_tx, engine_rx) = mpsc::channel(16);
 
-                        let message = ClientMessage::Connect(client_id, engine_tx);
+                        let message =
+                            ClientMessage::Connect(client_id, client_tx.clone(), engine_tx);
                         if client_tx.send(message).await.is_err() {
                             return;
                         }
@@ -62,7 +63,10 @@ impl Server {
                     });
                     Some((client_id, handle))
                 }
-                Err(_) => None,
+                Err(e) => {
+                    tracing::error!("failed to get new client: {}", e);
+                    None
+                }
             })
             .await
     }
