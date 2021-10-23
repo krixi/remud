@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use warp::{reject, Filter, Rejection};
 
 use crate::{
-    engine::db::AuthDb,
+    engine::{
+        db::AuthDb,
+        fsm::{verify_password, VerifyError},
+    },
     web::{security::with_jwt_key, with_db, InternalError, Player},
 };
 
@@ -218,12 +221,24 @@ async fn handle_login<DB: AuthDb>(
     let player = request.username.as_str();
     tracing::debug!("attempting login for {}", player);
 
-    match db.verify_player(player, request.password.as_str()).await {
-        Ok(true) => (),
-        Ok(false) => return Err(reject::custom(AuthError::AuthenticationError)),
+    let hash = match db.player_hash(player).await {
+        Ok(Some(hash)) => hash,
+        Ok(None) => return Err(reject::custom(AuthError::AuthenticationError)),
         Err(e) => {
-            tracing::error!("failed to verify player during token request: {}", e);
+            tracing::error!("failed to retrieve player during token request: {}", e);
             return Err(reject::custom(InternalError {}));
+        }
+    };
+
+    match verify_password(hash.as_str(), request.password.as_str()) {
+        Ok(_) => (),
+        Err(e) => {
+            if let VerifyError::Unknown(e) = e {
+                tracing::error!("failed to verify player during token request: {}", e);
+                return Err(reject::custom(InternalError {}));
+            } else {
+                return Err(reject::custom(AuthError::AuthenticationError));
+            }
         }
     }
 

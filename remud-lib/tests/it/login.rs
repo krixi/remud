@@ -193,7 +193,7 @@ async fn test_login_verify_failed() {
     t.test(
         "enter bad password",
         "ok",
-        vec!["Verification failed.", "Name?"],
+        vec!["Error retrieving user.", "Name?"],
     )
     .await;
 
@@ -224,7 +224,7 @@ async fn test_login_create_player_change_password() {
     )
     .await;
 
-    t.test("invalid password", "ok", vec!["Verification failed."])
+    t.test("invalid password", "ok", vec!["Failed to update password."])
         .await;
 
     t.test(
@@ -265,7 +265,7 @@ async fn test_login_create_player_change_password() {
     )
     .await;
 
-    t.test("fail confirm", "ok", vec!["Confirmation failed."])
+    t.test("fail confirm", "ok", vec!["Failed to update password."])
         .await;
 
     t.test(

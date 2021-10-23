@@ -22,8 +22,6 @@
 
 - add a resolve step for events to resolve targets so scripts have access to target information (get, drop, look at as examples)
 
-- password verification is slow - do it in another task
-
 - consider cleaning up timers at the end of a tick
 
 - finish building the dog
@@ -40,12 +38,6 @@
 
 - add currency
 
-Things that would benefit from a state machine:
-
-- add change password command
-
-- Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)
-
 - check places with player names, make sure they allow spaces in their parsing (unlike player <name> info)
 
 - make get player aware - you can't pick up player x.
@@ -57,3 +49,7 @@ Things that would benefit from a state machine:
 - consider look just working on objects - overload look <direction> w/ look <keyword> [<keyword>..]
 
 - add aliases (these would be applied before command lookup)
+
+Things that would benefit from a state machine:
+
+- Any other place non-linear stateful input sequence is required (combat, minigames, hacking, etc...)

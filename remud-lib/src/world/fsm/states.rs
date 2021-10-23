@@ -15,8 +15,7 @@ use bevy_ecs::prelude::*;
 use itertools::Itertools;
 use rand::{prelude::*, thread_rng};
 use rhai::{Array, ImmutableString};
-use std::{collections::HashMap, time::Duration};
-use std::{convert::TryInto, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, time::Duration};
 
 /// Wander around and look for the player
 #[derive(Debug, Default)]

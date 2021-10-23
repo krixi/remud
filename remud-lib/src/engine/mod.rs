@@ -17,9 +17,8 @@ use tokio::{
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
-        client::{Client, Clients, SendPrompt},
+        client::{Client, ClientEvent, Clients, SendPrompt},
         db::{Db, GameDb},
-        fsm::negotiate_login::Transition,
         persist::PersistPlugin,
     },
     macros::regex,
@@ -41,20 +40,28 @@ pub(crate) enum EngineMessage {
 }
 
 #[derive(Debug)]
-pub(crate) enum ClientMessage {
-    Connect(ClientId, mpsc::Sender<EngineResponse>),
+pub enum ClientMessage {
+    Connect(
+        ClientId,
+        mpsc::Sender<ClientMessage>,
+        mpsc::Sender<EngineResponse>,
+    ),
     Disconnect(ClientId),
-    Ready(ClientId),
     Input(ClientId, String),
+    PasswordHash(ClientId, Option<String>),
+    PasswordVerification(ClientId, Option<bool>),
+    Ready(ClientId),
 }
 
 impl ClientMessage {
     fn client_id(&self) -> ClientId {
         match self {
-            ClientMessage::Connect(id, _) => *id,
+            ClientMessage::Connect(id, _, _) => *id,
             ClientMessage::Disconnect(id) => *id,
-            ClientMessage::Ready(id) => *id,
             ClientMessage::Input(id, _) => *id,
+            ClientMessage::Ready(id) => *id,
+            ClientMessage::PasswordHash(id, _) => *id,
+            ClientMessage::PasswordVerification(id, _) => *id,
         }
     }
 }
@@ -270,10 +277,10 @@ impl Engine {
     #[tracing::instrument(name = "process client message", skip_all, fields(client_id = message.client_id().id()))]
     async fn process(&mut self, message: ClientMessage) {
         match message {
-            ClientMessage::Connect(client_id, tx) => {
+            ClientMessage::Connect(client_id, client_tx, engine_tx) => {
                 tracing::info!("{} connected", client_id);
 
-                self.clients.add(client_id, tx);
+                self.clients.add(client_id, client_tx, engine_tx);
             }
             ClientMessage::Disconnect(client_id) => {
                 tracing::info!("{} disconnected", client_id);
@@ -286,7 +293,7 @@ impl Engine {
 
                 if let Some(client) = self.clients.get_mut(client_id) {
                     client
-                        .transition(Transition::Disconnect, &mut self.game_world, &self.db)
+                        .process(ClientEvent::Disconnect, &mut self.game_world, &self.db)
                         .await;
                 }
 
@@ -295,21 +302,6 @@ impl Engine {
                     .send(EngineMessage::Disconnect(client_id))
                     .await
                     .ok();
-            }
-            ClientMessage::Ready(client_id) => {
-                tracing::info!("{} ready", client_id);
-
-                // this is where we invoke the character login fsm
-                if let Some(client) = self.clients.get_mut(client_id) {
-                    client
-                        .transition(Transition::Ready, &mut self.game_world, &self.db)
-                        .await;
-
-                    // manually drive the state machine in certain cases.
-                    client.update(None, &mut self.game_world, &self.db).await;
-                } else {
-                    tracing::error!("received message from unknown client: {:?}", message);
-                }
             }
             ClientMessage::Input(client_id, input) => {
                 if let Some(client) = self.clients.get_mut(client_id) {
@@ -320,12 +312,60 @@ impl Engine {
                     }
 
                     client
-                        .update(Some(input.as_str()), &mut self.game_world, &self.db)
+                        .process(
+                            ClientEvent::Input(input.as_str()),
+                            &mut self.game_world,
+                            &self.db,
+                        )
                         .await;
 
                     if let Some(player) = client.player() {
                         self.clients.init_player(client_id, player);
                     }
+                } else {
+                    tracing::error!("received input from unknown client");
+                }
+            }
+            ClientMessage::Ready(client_id) => {
+                tracing::info!("{} ready", client_id);
+
+                // this is where we invoke the character login fsm
+                if let Some(client) = self.clients.get_mut(client_id) {
+                    client
+                        .process(ClientEvent::Ready, &mut self.game_world, &self.db)
+                        .await;
+                } else {
+                    tracing::error!("received message from unknown client: {:?}", message);
+                }
+            }
+            ClientMessage::PasswordHash(client_id, hash) => {
+                if let Some(client) = self.clients.get_mut(client_id) {
+                    client
+                        .process(
+                            ClientEvent::PasswordHash(hash),
+                            &mut self.game_world,
+                            &self.db,
+                        )
+                        .await;
+                } else {
+                    tracing::error!("received password hash from unknown client");
+                }
+            }
+            ClientMessage::PasswordVerification(client_id, verified) => {
+                if let Some(client) = self.clients.get_mut(client_id) {
+                    client
+                        .process(
+                            ClientEvent::PasswordVerification(verified),
+                            &mut self.game_world,
+                            &self.db,
+                        )
+                        .await;
+
+                    if let Some(player) = client.player() {
+                        self.clients.init_player(client_id, player);
+                    }
+                } else {
+                    tracing::error!("received password verification from unknown client");
                 }
             }
         }

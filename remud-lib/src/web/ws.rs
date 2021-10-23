@@ -137,7 +137,11 @@ async fn websocket_connect(websocket: WebSocket, client_tx: mpsc::Sender<ClientM
     let (engine_tx, engine_rx) = mpsc::channel(16);
 
     if client_tx
-        .send(ClientMessage::Connect(client_id, engine_tx))
+        .send(ClientMessage::Connect(
+            client_id,
+            client_tx.clone(),
+            engine_tx,
+        ))
         .await
         .is_err()
     {
