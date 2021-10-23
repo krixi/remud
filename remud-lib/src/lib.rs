@@ -13,7 +13,7 @@ mod world;
 use std::{collections::HashMap, fmt, sync::atomic::AtomicUsize};
 
 use futures::future::join_all;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -22,9 +22,13 @@ use crate::{
     web::run_web_server,
 };
 
+use cadence::{Counted, Gauged, StatsdClient, DEFAULT_PORT};
+use tokio::net::UdpSocket;
+use tokio_cadence::TokioBatchUdpMetricSink;
 pub use web::{TlsOptions, WebOptions};
 
 static CLIENT_ID_COUNTER: Lazy<AtomicUsize> = Lazy::new(|| AtomicUsize::new(1));
+static METRICS: OnceCell<StatsdClient> = OnceCell::new();
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ClientId(usize);
@@ -51,6 +55,10 @@ pub enum RemudError {
     WebError(#[from] web::Error),
     #[error("failed to initialize database: {0}")]
     DbError(#[from] engine::db::Error),
+    #[error("failed to init metrics socket: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("failed to init metrics sink: {0}")]
+    MetricError(#[from] cadence::MetricError),
 }
 
 pub async fn run_remud(
@@ -60,6 +68,13 @@ pub async fn run_remud(
     ready_tx: Option<mpsc::Sender<()>>,
 ) -> Result<(), RemudError> {
     let db = Db::new(db_path).await.map_err(engine::Error::from)?;
+
+    let host = ("telegraf", DEFAULT_PORT);
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    let (sink, process) = TokioBatchUdpMetricSink::from(host, socket)?;
+    let metrics_task = tokio::spawn(process);
+    let client = StatsdClient::from_sink("remud", sink);
+    METRICS.get_or_init(|| client);
 
     'program: loop {
         let (client_tx, client_rx) = mpsc::channel(256);
@@ -88,7 +103,9 @@ pub async fn run_remud(
                 handle = telnet.accept(client_tx.clone()) => {
                     match handle {
                         Some((client_id, handle)) => {
+                            METRICS.get().unwrap().incr("telnet.client_connected").ok();
                             join_handles.insert(client_id, handle);
+                            METRICS.get().unwrap().gauge("telnet.num_clients", join_handles.len() as u64).ok();
                         },
                         None => break 'main
                     }
@@ -98,7 +115,9 @@ pub async fn run_remud(
                         Some(message) => {
                             match message {
                                 EngineMessage::Disconnect(client_id) => {
+                                    METRICS.get().unwrap().incr("telnet.client_disconnected").ok();
                                     join_handles.remove(&client_id);
+                                    METRICS.get().unwrap().gauge("telnet.num_clients", join_handles.len() as u64).ok();
                                 },
                                 EngineMessage::Restart => {
                                     tracing::warn!("engine restart, rebooting server");
@@ -147,6 +166,9 @@ pub async fn run_remud(
 
         tracing::warn!("servers halted, restarting game server");
     }
+
+    tracing::warn!("awaiting metrics shutdown");
+    metrics_task.await.unwrap();
 
     tracing::warn!("server shutdown complete");
 

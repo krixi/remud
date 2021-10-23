@@ -1,0 +1,66 @@
+version: '3'
+
+services:
+
+  remud-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    image: remud-build
+    networks:
+      - remud_net
+
+  remud-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - "./:/game/world"
+      - "./keys:/game/keys"
+    ports:
+      - "2004:2004"
+      - "2080:2080"
+    networks:
+      - remud_net
+    command: ./remud --db /game/world/world.db
+    depends_on:
+      - remud-build
+      - telegraf
+
+  influxdb:
+    image: influxdb:1.8-alpine
+    volumes:
+      - influxdb:/var/lib/influxdb
+    networks:
+      - remud_net
+    ports:
+      - "8086"
+
+  telegraf:
+    image: telegraf:alpine
+    volumes:
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - remud_net
+    depends_on:
+      - influxdb
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana:/var/lib/grafana
+    networks:
+      - remud_net
+    depends_on:
+      - influxdb
+
+volumes:
+  influxdb:
+  grafana:
+
+
+networks:
+  remud_net:
+    driver: bridge
