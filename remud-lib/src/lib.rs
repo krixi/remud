@@ -22,7 +22,7 @@ use crate::{
     web::run_web_server,
 };
 
-use cadence::{Counted, Gauged, StatsdClient, DEFAULT_PORT};
+use cadence::{Counted, Gauged, NopMetricSink, StatsdClient, DEFAULT_PORT};
 use tokio::net::UdpSocket;
 use tokio_cadence::TokioBatchUdpMetricSink;
 pub use web::{TlsOptions, WebOptions};
@@ -61,6 +61,28 @@ pub enum RemudError {
     MetricError(#[from] cadence::MetricError),
 }
 
+async fn init_telegraf_metrics(host: &str) -> anyhow::Result<()> {
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    let (sink, process) = TokioBatchUdpMetricSink::from((host, DEFAULT_PORT), socket)?;
+    tokio::spawn(process);
+    let client = StatsdClient::from_sink("remud", sink);
+    METRICS.get_or_init(|| client);
+    tracing::info!("initialized metrics client for host: {}", host);
+    Ok(())
+}
+
+async fn init_metrics() {
+    if init_telegraf_metrics("telegraf").await.is_ok() {
+        tracing::info!("initialized metrics to host: telegraf");
+    } else if init_telegraf_metrics("127.0.0.1").await.is_ok() {
+        tracing::info!("initialized metrics to host: 127.0.0.1");
+    } else {
+        tracing::info!("using a no-op metrics client because telegraf is not available");
+        let client = StatsdClient::from_sink("remud", NopMetricSink);
+        METRICS.get_or_init(|| client);
+    }
+}
+
 pub async fn run_remud(
     db_path: Option<&str>,
     telnet_port: u16,
@@ -68,13 +90,7 @@ pub async fn run_remud(
     ready_tx: Option<mpsc::Sender<()>>,
 ) -> Result<(), RemudError> {
     let db = Db::new(db_path).await.map_err(engine::Error::from)?;
-
-    let host = ("telegraf", DEFAULT_PORT);
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    let (sink, process) = TokioBatchUdpMetricSink::from(host, socket)?;
-    let metrics_task = tokio::spawn(process);
-    let client = StatsdClient::from_sink("remud", sink);
-    METRICS.get_or_init(|| client);
+    init_metrics().await;
 
     'program: loop {
         let (client_tx, client_rx) = mpsc::channel(256);
@@ -166,9 +182,6 @@ pub async fn run_remud(
 
         tracing::warn!("servers halted, restarting game server");
     }
-
-    tracing::warn!("awaiting metrics shutdown");
-    metrics_task.await.unwrap();
 
     tracing::warn!("server shutdown complete");
 
