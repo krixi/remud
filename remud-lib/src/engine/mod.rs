@@ -4,7 +4,7 @@ pub mod dialog;
 pub mod fsm;
 pub mod persist;
 
-use std::{borrow::Cow, collections::VecDeque};
+use std::{borrow::Cow, collections::VecDeque, time::Instant};
 
 use futures::future::join_all;
 use itertools::Itertools;
@@ -22,6 +22,7 @@ use crate::{
         persist::PersistPlugin,
     },
     macros::regex,
+    metrics::stats_time,
     web::{
         scripts::{JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse},
         ScriptsRequest, ScriptsResponse, WebMessage,
@@ -188,6 +189,7 @@ impl Engine {
         loop {
             tokio::select! {
                 _ = self.ticker.tick() => {
+                    let start = Instant::now();
                     self.game_world.run_pre_init();
                     self.dispatch_engine_messages().await;
 
@@ -200,6 +202,8 @@ impl Engine {
                     self.persist_updates().await;
 
                     self.reload_prototypes().await;
+
+                    stats_time("run-loop", start);
 
                     // Shutdown if requested
                     if self.game_world.should_shutdown(){
