@@ -1,15 +1,20 @@
 use crate::{
     color::{Color256, ColorTrue, COLOR_NAME_MAP, COLOR_TAG_MATCHER},
     engine::{ClientMessage, EngineResponse, Output},
+    metrics::{stats_gauge, stats_incr},
     ClientId, CLIENT_ID_COUNTER,
 };
 use futures::{SinkExt, StreamExt};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicU64;
 use std::{borrow::Cow, convert::TryFrom, str::FromStr, sync::atomic::Ordering};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use warp::{filters::ws::WebSocket, ws::Message, Filter, Rejection};
+
+static WS_CONNECTION_COUNTER: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
 
 pub(crate) fn websocket_filters(
     engine_tx: mpsc::Sender<ClientMessage>,
@@ -133,6 +138,11 @@ fn with_engine_tx(
 
 #[tracing::instrument(name = "websocket connect", skip_all)]
 async fn websocket_connect(websocket: WebSocket, client_tx: mpsc::Sender<ClientMessage>) {
+    stats_incr("ws.client_connected");
+    stats_gauge(
+        "ws.num_clients",
+        WS_CONNECTION_COUNTER.fetch_add(1, Ordering::SeqCst) + 1,
+    );
     let client_id = ClientId(CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst));
     let (engine_tx, engine_rx) = mpsc::channel(16);
 
@@ -222,6 +232,11 @@ async fn process(
         .send(ClientMessage::Disconnect(client_id))
         .await
         .ok();
+    stats_incr("ws.client_disconnected");
+    stats_gauge(
+        "ws.num_clients",
+        WS_CONNECTION_COUNTER.fetch_sub(1, Ordering::SeqCst) - 1,
+    );
 }
 
 fn colorize_web(message: &str) -> Vec<WsMessageSegment> {

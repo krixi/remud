@@ -2,30 +2,30 @@ version: '3'
 
 services:
 
-  remud-build:
-    build:
-      context: .
-      dockerfile: Dockerfile.build
-    image: remud-build
-    networks:
-      - remud_net
-
-  remud-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - "./:/game/world"
-      - "./keys:/game/keys"
-    ports:
-      - "2004:2004"
-      - "2080:2080"
-    networks:
-      - remud_net
-    command: ./remud --db /game/world/world.db
-    depends_on:
-      - remud-build
-      - telegraf
+#  remud-build:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile.build
+#    image: remud-build
+#    networks:
+#      - remud_net
+#
+#  remud-engine:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    volumes:
+#      - "./:/game/world"
+#      - "./keys:/game/keys"
+#    ports:
+#      - "2004:2004"
+#      - "2080:2080"
+#    networks:
+#      - remud_net
+#    command: ./remud --db /game/world/world.db
+#    depends_on:
+#      - remud-build
+#      - telegraf
 
   influxdb:
     image: influxdb:1.8-alpine
@@ -38,13 +38,22 @@ services:
 
   telegraf:
     image: telegraf:alpine
+    restart: always
+    hostname: localhost
+    environment:
+      HOST_PROC: /rootfs/proc
+      HOST_SYS: /rootfs/sys
+      HOST_ETC: /rootfs/etc
     volumes:
       - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /sys:/rootfs/sys:ro
+      - /proc:/rootfs/proc:ro
+      - /etc:/rootfs/etc:ro
     networks:
       - remud_net
     ports:
-      - "8125:8125"
+      - "8125:8125/udp"
     depends_on:
       - influxdb
 

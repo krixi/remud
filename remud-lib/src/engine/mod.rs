@@ -4,7 +4,7 @@ pub mod dialog;
 pub mod fsm;
 pub mod persist;
 
-use std::{borrow::Cow, collections::VecDeque, time::Instant};
+use std::{borrow::Cow, collections::VecDeque};
 
 use futures::future::join_all;
 use itertools::Itertools;
@@ -14,6 +14,11 @@ use tokio::{
     time::{interval, Duration, Interval},
 };
 
+use crate::metrics::stats_gauge;
+use crate::world::scripting::Script;
+use crate::world::types::object::{Object, Prototype};
+use crate::world::types::player::Player;
+use crate::world::types::room::Room;
 use crate::{
     ecs::{CorePlugin, Ecs},
     engine::{
@@ -22,7 +27,7 @@ use crate::{
         persist::PersistPlugin,
     },
     macros::regex,
-    metrics::stats_time,
+    metrics::StatsTimer,
     web::{
         scripts::{JsonScript, JsonScriptInfo, JsonScriptName, JsonScriptResponse},
         ScriptsRequest, ScriptsResponse, WebMessage,
@@ -136,7 +141,8 @@ pub struct Engine {
     engine_tx: mpsc::Sender<EngineMessage>,
     web_rx: mpsc::Receiver<WebMessage>,
     clients: Clients,
-    ticker: Interval,
+    metrics_ticker: Interval,
+    game_update_ticker: Interval,
     game_world: GameWorld,
     db: Db,
 }
@@ -178,18 +184,38 @@ impl Engine {
             engine_tx,
             web_rx,
             clients: Clients::default(),
-            ticker: interval(Duration::from_millis(15)),
+            metrics_ticker: interval(Duration::from_secs(1)),
+            game_update_ticker: interval(Duration::from_millis(15)),
             game_world,
             db,
         })
+    }
+
+    fn tick_metrics(&mut self) {
+        let world = self.game_world.world_mut();
+        let mut players_query = world.query::<&Player>();
+        let mut objects_query = world.query::<&Object>();
+        let mut prototypes_query = world.query::<&Prototype>();
+        let mut rooms_query = world.query::<&Room>();
+        let mut scripts_query = world.query::<&Script>();
+        stats_gauge("num-players", players_query.iter(world).len() as u64);
+        stats_gauge("num-objects", objects_query.iter(world).len() as u64);
+        stats_gauge("num-prototypes", prototypes_query.iter(world).len() as u64);
+        stats_gauge("num-rooms", rooms_query.iter(world).len() as u64);
+        stats_gauge("num-scripts", scripts_query.iter(world).len() as u64);
     }
 
     #[tracing::instrument(name = "run engine", skip_all)]
     pub async fn run(&mut self) {
         loop {
             tokio::select! {
-                _ = self.ticker.tick() => {
-                    let start = Instant::now();
+                _ = self.metrics_ticker.tick() => {
+                    let _timer = StatsTimer::new("engine-tick-metrics");
+                    self.tick_metrics();
+                }
+                _ = self.game_update_ticker.tick() => {
+                    let _timer = StatsTimer::new("engine-run-loop");
+
                     self.game_world.run_pre_init();
                     self.dispatch_engine_messages().await;
 
@@ -202,8 +228,6 @@ impl Engine {
                     self.persist_updates().await;
 
                     self.reload_prototypes().await;
-
-                    stats_time("run-loop", start);
 
                     // Shutdown if requested
                     if self.game_world.should_shutdown(){
@@ -248,7 +272,7 @@ impl Engine {
 
     #[tracing::instrument(name = "persist updates", skip_all)]
     pub async fn persist_updates(&mut self) {
-        // Dispatch all persistance requests
+        // Dispatch all persistence requests
         let mut handles = Vec::new();
         for update in self.game_world.updates() {
             let pool = self.db.get_pool();
@@ -264,6 +288,7 @@ impl Engine {
 
     #[tracing::instrument(name = "reload prototypes", skip_all)]
     pub async fn reload_prototypes(&mut self) {
+        let _timer = StatsTimer::new("engine-reload-prototypes");
         // Reload changed prototypes
         let prototype_reloads = self.game_world.prototype_reloads();
         for prototype in prototype_reloads {
@@ -282,11 +307,14 @@ impl Engine {
     async fn process(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::Connect(client_id, client_tx, engine_tx) => {
+                let _timer = StatsTimer::new("engine-process-connect");
+
                 tracing::info!("{} connected", client_id);
 
                 self.clients.add(client_id, client_tx, engine_tx);
             }
             ClientMessage::Disconnect(client_id) => {
+                let _timer = StatsTimer::new("engine-process-disconnect");
                 tracing::info!("{} disconnected", client_id);
 
                 if let Some(player) = self.clients.get(client_id).and_then(Client::player) {
@@ -308,6 +336,8 @@ impl Engine {
                     .ok();
             }
             ClientMessage::Input(client_id, input) => {
+                let _timer = StatsTimer::new("engine-process-input");
+
                 if let Some(client) = self.clients.get_mut(client_id) {
                     if client.expecting_sensitive_input() {
                         tracing::debug!("{} -> ****** (redacted)", client_id);
@@ -331,6 +361,8 @@ impl Engine {
                 }
             }
             ClientMessage::Ready(client_id) => {
+                let _timer = StatsTimer::new("engine-process-ready");
+
                 tracing::info!("{} ready", client_id);
 
                 // this is where we invoke the character login fsm
@@ -343,6 +375,7 @@ impl Engine {
                 }
             }
             ClientMessage::PasswordHash(client_id, hash) => {
+                let _timer = StatsTimer::new("engine-process-password-hash");
                 if let Some(client) = self.clients.get_mut(client_id) {
                     client
                         .process(
@@ -356,6 +389,7 @@ impl Engine {
                 }
             }
             ClientMessage::PasswordVerification(client_id, verified) => {
+                let _timer = StatsTimer::new("engine-process-password-verification");
                 if let Some(client) = self.clients.get_mut(client_id) {
                     client
                         .process(
@@ -382,19 +416,23 @@ impl Engine {
                 name,
                 trigger,
                 code,
-            }) => match self.game_world.create_script(name, trigger, code) {
-                Ok(e) => {
-                    message
-                        .response
-                        .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
-                        .ok();
+            }) => {
+                let _timer = StatsTimer::new("engine-process-web-create-script");
+                match self.game_world.create_script(name, trigger, code) {
+                    Ok(e) => {
+                        message
+                            .response
+                            .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
+                            .ok();
+                    }
+                    Err(e) => {
+                        tracing::error!("failed CreateScript request: {}", e);
+                        message.response.send(ScriptsResponse::Error(e)).ok();
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("failed CreateScript request: {}", e);
-                    message.response.send(ScriptsResponse::Error(e)).ok();
-                }
-            },
+            }
             ScriptsRequest::ReadScript(JsonScriptName { name }) => {
+                let _timer = StatsTimer::new("engine-process-web-read-script");
                 match self.game_world.read_script(name) {
                     Ok((script, err)) => {
                         message
@@ -411,6 +449,7 @@ impl Engine {
                 }
             }
             ScriptsRequest::ReadAllScripts => {
+                let _timer = StatsTimer::new("engine-process-web-read-all-scripts");
                 let scripts = self.game_world.read_all_scripts();
                 message
                     .response
@@ -426,19 +465,23 @@ impl Engine {
                 name,
                 trigger,
                 code,
-            }) => match self.game_world.update_script(name, trigger, code) {
-                Ok(e) => {
-                    message
-                        .response
-                        .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
-                        .ok();
+            }) => {
+                let _timer = StatsTimer::new("engine-process-web-update-script");
+                match self.game_world.update_script(name, trigger, code) {
+                    Ok(e) => {
+                        message
+                            .response
+                            .send(ScriptsResponse::ScriptCompiled(e.map(Into::into)))
+                            .ok();
+                    }
+                    Err(e) => {
+                        tracing::error!("failed UpdateScript request: {}", e);
+                        message.response.send(ScriptsResponse::Error(e)).ok();
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("failed UpdateScript request: {}", e);
-                    message.response.send(ScriptsResponse::Error(e)).ok();
-                }
-            },
+            }
             ScriptsRequest::DeleteScript(JsonScriptName { name }) => {
+                let _timer = StatsTimer::new("engine-process-web-delete-script");
                 match self.game_world.delete_script(name) {
                     Ok(_) => {
                         message.response.send(ScriptsResponse::Done).ok();

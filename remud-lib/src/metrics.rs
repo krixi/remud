@@ -61,3 +61,22 @@ pub(crate) fn stats_histogram<'a, T: Into<&'a str>>(key: T, value: u64) {
         tracing::warn!("unable to post histogram: {:?}", err);
     }
 }
+
+pub(crate) struct StatsTimer<'a> {
+    key: &'a str,
+    start: Instant,
+}
+impl<'a> StatsTimer<'a> {
+    pub fn new<T: Into<&'a str>>(key: T) -> Self {
+        StatsTimer {
+            key: key.into(),
+            start: Instant::now(),
+        }
+    }
+}
+
+impl<'a> Drop for StatsTimer<'a> {
+    fn drop(&mut self) {
+        stats_time(self.key, self.start);
+    }
+}
