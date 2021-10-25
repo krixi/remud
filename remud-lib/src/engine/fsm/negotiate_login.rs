@@ -12,9 +12,7 @@ use crate::{
 };
 
 use bevy_ecs::prelude::Entity;
-use std::{
-    fmt::Debug,
-};
+use std::fmt::Debug;
 
 static DEFAULT_LOGIN_ERROR: &str = "|Red1|Error retrieving user.|-|";
 static DEFAULT_PASSWORD_ERROR: &str = "|Red1|Verification failed.|-|";

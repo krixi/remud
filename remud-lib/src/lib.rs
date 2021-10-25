@@ -5,6 +5,7 @@ mod color;
 mod ecs;
 mod engine;
 mod macros;
+mod metrics;
 mod telnet;
 mod text;
 mod web;
@@ -19,6 +20,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     engine::{db::Db, Engine, EngineMessage},
+    metrics::{init_metrics, stats_gauge, stats_incr},
     web::run_web_server,
 };
 
@@ -51,6 +53,10 @@ pub enum RemudError {
     WebError(#[from] web::Error),
     #[error("failed to initialize database: {0}")]
     DbError(#[from] engine::db::Error),
+    #[error("failed to init metrics socket: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("failed to init metrics sink: {0}")]
+    MetricError(#[from] cadence::MetricError),
 }
 
 pub async fn run_remud(
@@ -60,6 +66,7 @@ pub async fn run_remud(
     ready_tx: Option<mpsc::Sender<()>>,
 ) -> Result<(), RemudError> {
     let db = Db::new(db_path).await.map_err(engine::Error::from)?;
+    init_metrics().await;
 
     'program: loop {
         let (client_tx, client_rx) = mpsc::channel(256);
@@ -88,7 +95,9 @@ pub async fn run_remud(
                 handle = telnet.accept(client_tx.clone()) => {
                     match handle {
                         Some((client_id, handle)) => {
+                            stats_incr("telnet.client_connected");
                             join_handles.insert(client_id, handle);
+                            stats_gauge("telnet.num_clients", join_handles.len() as u64);
                         },
                         None => break 'main
                     }
@@ -98,7 +107,9 @@ pub async fn run_remud(
                         Some(message) => {
                             match message {
                                 EngineMessage::Disconnect(client_id) => {
+                                    stats_incr("telnet.client_disconnected");
                                     join_handles.remove(&client_id);
+                                    stats_gauge("telnet.num_clients", join_handles.len() as u64);
                                 },
                                 EngineMessage::Restart => {
                                     tracing::warn!("engine restart, rebooting server");

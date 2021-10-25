@@ -8,12 +8,14 @@ use crate::{
     },
 };
 
+use crate::metrics::stats_incr;
 use bevy_ecs::prelude::*;
 use rhai::{Dynamic, Engine, Scope, AST};
 
 pub type SharedEngine = Arc<RwLock<Engine>>;
 
 pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
+    stats_incr("scripts.run-init");
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
@@ -32,6 +34,7 @@ pub fn run_init_script(world: SharedWorld, entity: Entity, script: ScriptName) {
     match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
+            stats_incr("scripts.run-init.error");
             tracing::warn!("init script {} execution error: {}", script, error);
             let error = {
                 if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
@@ -60,6 +63,7 @@ pub fn run_post_event_script(
     entity: Entity,
     script: ScriptName,
 ) {
+    stats_incr("scripts.run-post-event");
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
@@ -79,6 +83,7 @@ pub fn run_post_event_script(
     match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
+            stats_incr("scripts.run-post-event.error");
             tracing::warn!("post-event script {} execution error: {}", script, error);
             let error = {
                 if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
@@ -107,6 +112,7 @@ pub fn run_pre_event_script(
     entity: Entity,
     script: ScriptName,
 ) -> bool {
+    stats_incr("scripts.run-pre-event");
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return true,
@@ -127,6 +133,7 @@ pub fn run_pre_event_script(
     match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
+            stats_incr("scripts.run-pre-event.error");
             tracing::warn!("pre-event script {} execution error: {}", script, error);
             let error = {
                 if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
@@ -152,6 +159,7 @@ pub fn run_pre_event_script(
 }
 
 pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) {
+    stats_incr("scripts.run-timed");
     let (ast, engine) = match prepare_script_execution(&*world.read().unwrap(), &script) {
         Some(results) => results,
         None => return,
@@ -170,6 +178,7 @@ pub fn run_timed_script(world: SharedWorld, entity: Entity, script: ScriptName) 
     match engine.read().unwrap().run_ast_with_scope(&mut scope, &ast) {
         Ok(_) => (),
         Err(error) => {
+            stats_incr("scripts.run-timed.error");
             tracing::warn!("timed script {} execution error: {}", script, error);
             let error = {
                 if let Some(mut errors) = world.write().unwrap().get_mut::<ExecutionErrors>(entity)
