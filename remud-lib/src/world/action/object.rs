@@ -173,6 +173,7 @@ pub fn get_system(
                 };
 
             // Find a matching object in the room.
+            // objects in the room by keyword
             let target = room_query
                 .get_mut(room_entity)
                 .map(|(_, contents)| {

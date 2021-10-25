@@ -6,6 +6,7 @@ pub mod movement;
 pub mod object;
 pub mod observe;
 pub mod system;
+mod targeting;
 
 use bevy_ecs::prelude::*;
 use strum::EnumString;

@@ -4,12 +4,13 @@ use bevy_app::EventReader;
 use bevy_ecs::prelude::*;
 use itertools::Itertools;
 
+use crate::world::action::targeting::{Params, Target, TargetFinder};
 use crate::{
     text::{sorted_word_list, Tokenizer},
     world::{
         action::{get_room_std, into_action, Action},
         types::{
-            object::{Flags, Keywords, ObjectFlags},
+            object::{Flags, ObjectFlags},
             player::{Messages, Player},
             room::{Direction, Room},
             Contents, Description, Location, Named,
@@ -151,56 +152,18 @@ into_action!(LookAt);
 pub fn look_at_system(
     mut action_reader: EventReader<Action>,
     looker_query: Query<(Option<&Location>, Option<&Room>)>,
-    room_query: Query<&Room>,
-    contents_query: Query<&Contents>,
-    player_query: Query<(&Named, &Description)>,
-    object_query: Query<(&Named, &Description, &Keywords)>,
+    target_finder: TargetFinder,
     mut messages_query: Query<&mut Messages>,
 ) {
     for action in action_reader.iter() {
         if let Action::LookAt(LookAt { actor, keywords }) = action {
             let current_room = get_room_std(*actor, &looker_query);
-            let target_info = room_query
-                .get(current_room)
-                .ok()
-                .and_then(|room| {
-                    if keywords.len() == 1 {
-                        room.players()
-                            .iter()
-                            .filter_map(|player| player_query.get(*player).ok())
-                            .find(|(name, _)| keywords[0].as_str() == name.as_str())
-                            .map(|(name, description)| (name.as_str(), description.as_str()))
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    contents_query.get(current_room).ok().and_then(|contents| {
-                        contents
-                            .objects()
-                            .iter()
-                            .filter_map(|object| object_query.get(*object).ok())
-                            .find(|(_, _, object_keywords)| {
-                                object_keywords.contains_all(keywords.as_slice())
-                            })
-                            .map(|(name, description, _)| (name.as_str(), description.as_str()))
-                    })
-                })
-                .or_else(|| {
-                    contents_query.get(*actor).ok().and_then(|contents| {
-                        contents
-                            .objects()
-                            .iter()
-                            .filter_map(|object| object_query.get(*object).ok())
-                            .find(|(_, _, object_keywords)| {
-                                object_keywords.contains_all(keywords.as_slice())
-                            })
-                            .map(|(name, description, _)| (name.as_str(), description.as_str()))
-                    })
-                });
 
-            let resp: Vec<String> = if let Some((name, description)) = target_info {
-                vec![format!("|white|{}|-|", name), description.to_string()]
+            let target_info =
+                target_finder.resolve(Params::new(*actor, current_room, Some(keywords.clone())));
+
+            let resp: Vec<String> = if let Some(Target { name, desc, .. }) = target_info {
+                vec![format!("|white|{}|-|", name), desc.to_string()]
             } else {
                 vec![format!(
                     "You find nothing called \"{}\" to look at.",
