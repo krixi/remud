@@ -140,7 +140,7 @@ pub mod world_api {
     #[rhai_fn(pure)]
     pub fn location(world: &mut SharedWorld, entity: Entity) -> Dynamic {
         if let Some(location) = world.read().unwrap().get::<Location>(entity) {
-            Dynamic::from(location.location())
+            Dynamic::from(location.entity())
         } else {
             Dynamic::UNIT
         }

@@ -111,7 +111,7 @@ fn action_room(enactor: Entity, location_query: &Query<&Location>) -> Entity {
     let mut location = enactor;
 
     while let Ok(next_location) = location_query.get(location) {
-        location = next_location.location();
+        location = next_location.entity();
     }
 
     location

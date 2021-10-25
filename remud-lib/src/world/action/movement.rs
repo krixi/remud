@@ -49,7 +49,7 @@ pub fn move_system(
                 };
 
             // Retrieve information about the origin/current room.
-            let current_room = if let Ok(room) = room_query.get_mut(location.location()) {
+            let current_room = if let Ok(room) = room_query.get_mut(location.entity()) {
                 room
             } else {
                 tracing::warn!("cannot move {:?} without being in a room.", actor);
@@ -94,7 +94,7 @@ pub fn move_system(
             let from_direction = destination_room
                 .exits()
                 .iter()
-                .find(|(_, room)| **room == location.location())
+                .find(|(_, room)| **room == location.entity())
                 .map(|(direction, _)| direction)
                 .copied();
 
@@ -109,7 +109,7 @@ pub fn move_system(
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.location())
+                        .get_mut(location.entity())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
@@ -119,7 +119,7 @@ pub fn move_system(
                 }
                 Id::Object(_) => {
                     contents_query
-                        .get_mut(location.location())
+                        .get_mut(location.entity())
                         .unwrap()
                         .remove(*actor);
                     contents_query.get_mut(destination).unwrap().insert(*actor);
@@ -128,7 +128,7 @@ pub fn move_system(
                 Id::Prototype(_) => todo!(),
             }
 
-            location.set_location(destination);
+            location.set_entity(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = from_direction.map_or_else(
@@ -222,7 +222,7 @@ pub fn teleport_system(
                     continue;
                 };
 
-            let current_room = if let Ok(room) = room_query.get_mut(location.location()) {
+            let current_room = if let Ok(room) = room_query.get_mut(location.entity()) {
                 room
             } else {
                 tracing::warn!("cannot teleport {:?} without being in a room.", actor);
@@ -260,7 +260,7 @@ pub fn teleport_system(
             match id {
                 Id::Player(_) => {
                     room_query
-                        .get_mut(location.location())
+                        .get_mut(location.entity())
                         .unwrap()
                         .remove_player(*actor);
                     room_query
@@ -273,7 +273,7 @@ pub fn teleport_system(
                 Id::Prototype(_) => todo!(),
             }
 
-            location.set_location(destination);
+            location.set_entity(destination);
 
             // Notify players in the destination room that something has arrived.
             let arrive_message = format!("{} appears in a flash of light.", name);

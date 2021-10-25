@@ -141,7 +141,7 @@ pub fn player_info_system(
 
             let (player, flags, description, contents, location, hooks, timers, data, errors) =
                 player_query.get(player).unwrap();
-            let (room, room_name) = room_query.get(location.location()).unwrap();
+            let (room, room_name) = room_query.get(location.entity()).unwrap();
 
             let mut message = format!("|white|Player {}|-|", name);
 

@@ -68,7 +68,7 @@ pub fn drop_system(
                             })
                             .unwrap_or(false)
                     });
-                    (*id, location.location(), target)
+                    (*id, location.entity(), target)
                 } else {
                     tracing::warn!("entity {:?} cannot drop an item without Contents.", actor);
                     continue;
@@ -166,7 +166,7 @@ pub fn get_system(
             // Get the room that entity is in.
             let (entity_id, room_entity) =
                 if let Ok((id, location, _)) = getting_query.get_mut(*actor) {
-                    (*id, location.location())
+                    (*id, location.entity())
                 } else {
                     tracing::warn!("entity {:?} without Contents cannot get an item.", actor);
                     continue;

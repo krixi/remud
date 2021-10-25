@@ -1,4 +1,4 @@
-use cadence::{Counted, Gauged, Histogrammed, NopMetricSink, StatsdClient, Timed, DEFAULT_PORT};
+use cadence::{Counted, Gauged, NopMetricSink, StatsdClient, Timed, DEFAULT_PORT};
 use once_cell::sync::OnceCell;
 use std::time::Instant;
 use tokio::net::UdpSocket;
@@ -50,17 +50,17 @@ pub(crate) fn stats_gauge<'a, T: Into<&'a str>>(key: T, value: u64) {
     }
 }
 
-pub(crate) fn stats_decr<'a, T: Into<&'a str>>(key: T) {
-    if let Err(err) = METRICS.get().unwrap().decr(key.into()) {
-        tracing::warn!("unable to post decr: {:?}", err);
-    }
-}
-
-pub(crate) fn stats_histogram<'a, T: Into<&'a str>>(key: T, value: u64) {
-    if let Err(err) = METRICS.get().unwrap().histogram(key.into(), value) {
-        tracing::warn!("unable to post histogram: {:?}", err);
-    }
-}
+// pub(crate) fn stats_decr<'a, T: Into<&'a str>>(key: T) {
+//     if let Err(err) = METRICS.get().unwrap().decr(key.into()) {
+//         tracing::warn!("unable to post decr: {:?}", err);
+//     }
+// }
+//
+// pub(crate) fn stats_histogram<'a, T: Into<&'a str>>(key: T, value: u64) {
+//     if let Err(err) = METRICS.get().unwrap().histogram(key.into(), value) {
+//         tracing::warn!("unable to post histogram: {:?}", err);
+//     }
+// }
 
 pub(crate) struct StatsTimer<'a> {
     key: &'a str,

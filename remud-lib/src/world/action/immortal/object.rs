@@ -378,15 +378,15 @@ pub fn object_info_system(
 
             message.push_str("\r\n  |white|location|-|: ");
             if let Some(location) = location {
-                if let Ok(room) = room_query.get(location.location()) {
+                if let Ok(room) = room_query.get(location.entity()) {
                     message.push_str("room ");
                     message.push_str(room.id().to_string().as_str());
-                } else if let Ok(named) = player_query.get(location.location()) {
+                } else if let Ok(named) = player_query.get(location.entity()) {
                     message.push_str("player ");
                     message.push_str(named.as_str());
                 } else {
                     message.push_str("other ");
-                    message.push_str(format!("{:?}", location.location()).as_str());
+                    message.push_str(format!("{:?}", location.entity()).as_str());
                 }
             }
 
@@ -736,7 +736,7 @@ pub fn object_remove_system(
                 continue;
             };
 
-            let location = location_query.get(object_entity).unwrap().location();
+            let location = location_query.get(object_entity).unwrap().entity();
 
             objects.remove(*id);
             commands.entity(object_entity).despawn();

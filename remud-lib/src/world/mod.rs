@@ -102,7 +102,7 @@ impl GameWorld {
         let (name, room) = world
             .query::<(&Named, &Location)>()
             .get(&*world, player)
-            .map(|(named, location)| (named.to_string(), location.location()))
+            .map(|(named, location)| (named.to_string(), location.entity()))
             .unwrap();
 
         let players = world

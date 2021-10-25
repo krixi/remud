@@ -559,7 +559,7 @@ pub fn room_remove_system(
                     .get_mut(*player)
                     .map(|(_, location)| location)
                     .unwrap()
-                    .set_location(void_room_entity);
+                    .set_entity(void_room_entity);
 
                 queued_action_writer.send(
                     Action::from(Look {
@@ -576,7 +576,7 @@ pub fn room_remove_system(
                     .get_mut(*object)
                     .map(|(_, location)| location)
                     .unwrap()
-                    .set_location(void_room_entity);
+                    .set_entity(void_room_entity);
             }
 
             // Remove the room

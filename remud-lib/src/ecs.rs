@@ -161,7 +161,7 @@ impl WorldExt for World {
 
         while !self.entity(entity).contains::<Room>() {
             if let Some(next_location) = self.get::<Location>(location) {
-                location = next_location.location();
+                location = next_location.entity();
             } else {
                 panic!("target entity {:?} not located within a room", entity)
             }

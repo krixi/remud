@@ -84,7 +84,7 @@ fn get_room_std(entity: Entity, query: &Query<(Option<&Location>, Option<&Room>)
         if room.is_some() {
             None
         } else if let Some(location) = location {
-            Some(location.location())
+            Some(location.entity())
         } else {
             panic!("Entity {:?} does not have a location", entity);
         }
